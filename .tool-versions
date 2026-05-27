@@ -2,3 +2,4 @@ golang 1.26.1
 golangci-lint 2.11.4
 nodejs 25.1.0
 jq 1.7.1
+goreleaser 2.16.0

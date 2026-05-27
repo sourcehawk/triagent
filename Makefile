@@ -1,4 +1,4 @@
-.PHONY: build build-go build-launcher build-mcp test lint fmt frontend frontend-dev docs docs-dev docs-pages clean
+.PHONY: build build-go build-launcher build-mcp test lint fmt frontend frontend-dev docs docs-dev docs-pages release-check release-snapshot-quick release-snapshot clean
 
 # Build the embedded frontend bundle, then both Go binaries. Order matters:
 # `frontend` syncs into internal/web/dist/, which the launcher embeds via
@@ -57,7 +57,26 @@ docs-pages:
 	cd docs/site && npm install && DOCS_BASE_PATH=/triagent npm run build
 	touch docs/site/out/.nojekyll
 
+# Validate .goreleaser.yaml without building anything. Cheap; run before
+# pushing a tag.
+release-check:
+	goreleaser check
+
+# Fast local sanity build: current host platform only, skips archives /
+# homebrew / changelog. Use during config iteration. Depends on `frontend`
+# so the embedded bundle is fresh — otherwise the binary ships an empty
+# UI. Output lands under dist/.
+release-snapshot-quick: frontend
+	goreleaser build --snapshot --clean --single-target
+
+# Full snapshot release dry-run: builds every (goos, goarch) combo,
+# produces archives + checksums + Homebrew cask, but skips publishing
+# to GitHub / the tap. Mirrors what the release workflow does on a tag
+# push, minus the upload. Output lands under dist/.
+release-snapshot: frontend
+	goreleaser release --snapshot --clean --skip=publish
+
 clean:
-	rm -rf bin internal/web/dist/* internal/web/dist/.gitkeep
+	rm -rf bin internal/web/dist/* internal/web/dist/.gitkeep dist
 	mkdir -p internal/web/dist
 	touch internal/web/dist/.gitkeep
