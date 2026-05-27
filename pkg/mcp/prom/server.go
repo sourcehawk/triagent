@@ -95,10 +95,22 @@ func (s *Server) Run(ctx context.Context) error {
 // without racing on os.Stderr.
 var stderrWriter = osStderr()
 
-// register adds the tool surface. Phases 1+ flesh out each handler;
-// Task 1 leaves it empty.
+// register adds the tool and resource surface.
 func (s *Server) register() {
-	// Tools added in later phases.
+	s.impl.AddResource(&mcp.Resource{
+		URI:         "prom://info",
+		Name:        "prom info",
+		Description: "Indexed metric namespace summary + tool guidance. Read once at attach to learn what's available before issuing queries.",
+		MIMEType:    "text/plain",
+	}, func(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+		snap := s.snapshot.Load()
+		body := renderInfo(snap.catalog)
+		return &mcp.ReadResourceResult{
+			Contents: []*mcp.ResourceContents{
+				{URI: "prom://info", MIMEType: "text/plain", Text: body},
+			},
+		}, nil
+	})
 }
 
 // refreshCatalog rebuilds the catalog from the current endpoint and
