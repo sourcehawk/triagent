@@ -47,7 +47,10 @@ jobs:
       - name: Go lint
         uses: golangci/golangci-lint-action@v9
         with:
-          version: ${{ steps.tool-versions.outputs.golangci-lint }}
+          # golangci-lint-action@v9 requires a v-prefixed version
+          # (e.g. v2.11.4). .tool-versions stores the bare semver, so
+          # prepend the v here rather than pollute the asdf format.
+          version: v${{ steps.tool-versions.outputs.golangci-lint }}
           args: --timeout 10m
 
       - name: Setup Node.js
