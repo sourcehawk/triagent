@@ -51,9 +51,9 @@ const (
 
 	envIncidentioToken = "TRIAGENT_MCP_INCIDENTIO_TOKEN"
 
-	envPromURL    = "TRIAGENT_PROM_URL"
-	envPromBearer = "TRIAGENT_PROM_BEARER"
-	envPromBasic  = "TRIAGENT_PROM_BASIC"
+	envPromURL    = "TRIAGENT_MCP_PROM_URL"
+	envPromBearer = "TRIAGENT_MCP_PROM_BEARER"
+	envPromBasic  = "TRIAGENT_MCP_PROM_BASIC"
 )
 
 type serveFlags struct {
