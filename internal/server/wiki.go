@@ -135,12 +135,17 @@ func declineWikiViaSubprocess(ctx context.Context, mcpBin, proposals, proposalID
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, mcpBin, "wiki-delete-proposal", proposalID,
-		"--proposals", proposals)
 	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
+	err := runCmdWithETXTBSYRetry(func() *exec.Cmd {
+		stdout.Reset()
+		stderr.Reset()
+		cmd := exec.CommandContext(ctx, mcpBin, "wiki-delete-proposal", proposalID,
+			"--proposals", proposals)
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		return cmd
+	})
+	if err != nil {
 		return fmt.Errorf("run wiki-delete-proposal: %w (stderr: %s, stdout: %s)", err, stderr.String(), stdout.String())
 	}
 	return nil

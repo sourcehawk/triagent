@@ -101,6 +101,18 @@ func (a *apiHandlers) handlePushSessionPR(w http.ResponseWriter, r *http.Request
 	inv.PushStartedAt = &now
 	inv.PushError = ""
 	inv.mu.Unlock()
+
+	if !a.manager.trackBackground() {
+		// Launcher is shutting down. Undo the in-memory state we just set
+		// so a future launcher boot sees an idle investigation rather
+		// than a stuck "in progress" flag.
+		inv.mu.Lock()
+		inv.PushInProgress = false
+		inv.PushStartedAt = nil
+		inv.mu.Unlock()
+		writeError(w, http.StatusServiceUnavailable, "manager is shutting down")
+		return
+	}
 	_ = a.manager.persistMetadata(inv)
 	inv.publishPushState(PushStatePayload{Phase: "pushing", StartedAt: &now})
 
@@ -115,6 +127,7 @@ func (a *apiHandlers) handlePushSessionPR(w http.ResponseWriter, r *http.Request
 // triagent-mcp drafter mid-flight, and the goroutine still dies cleanly on
 // launcher shutdown.
 func (a *apiHandlers) runPushSessionPR(inv *Investigation, sessionDir string, req sessionPushRequest) {
+	defer a.manager.bgDone()
 	ctx := a.manager.ParentContext()
 	res, errs, err := pushSessionPR(ctx, a.capabilities,
 		a.opts.SessionsCloneRoot,

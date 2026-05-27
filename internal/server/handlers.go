@@ -494,11 +494,14 @@ func (a *apiHandlers) handlePreflight(w http.ResponseWriter, r *http.Request) {
 				BackendFactory: a.autoBackendFactory,
 				Profile:        a.prof,
 			}
-			go func() {
-				if err := a.manager.EnableAuto(inv, opts); err != nil {
-					fmt.Fprintf(os.Stderr, "investigate: EnableAuto %s: %v\n", inv.ID, err)
-				}
-			}()
+			if a.manager.trackBackground() {
+				go func() {
+					defer a.manager.bgDone()
+					if err := a.manager.EnableAuto(inv, opts); err != nil {
+						fmt.Fprintf(os.Stderr, "investigate: EnableAuto %s: %v\n", inv.ID, err)
+					}
+				}()
+			}
 		}
 	}
 

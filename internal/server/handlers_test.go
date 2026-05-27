@@ -15,10 +15,16 @@ import (
 
 // newPreflightAPI returns an apiHandlers suitable for testing handlePreflight.
 // The preflightFn is stubbed out so no kubernetes I/O occurs.
+//
+// Registers manager.Shutdown as a t.Cleanup so the per-investigation
+// persistence store's writer goroutine drains any queued events.jsonl
+// writes before tempdir teardown reaches the session subdirectory.
+// Without it, the writer goroutine can race RemoveAll and leave a
+// freshly re-created events.jsonl behind ("directory not empty").
 func newPreflightAPI(t *testing.T) *apiHandlers {
 	t.Helper()
 	sessionsRoot := t.TempDir()
-	return &apiHandlers{
+	a := &apiHandlers{
 		opts:        Options{SessionsRoot: sessionsRoot},
 		manager:     NewManager(context.Background(), sessionsRoot),
 		connections: connections.NewWithDir(t.TempDir()),
@@ -29,6 +35,8 @@ func newPreflightAPI(t *testing.T) *apiHandlers {
 			}, nil
 		},
 	}
+	t.Cleanup(a.manager.Shutdown)
+	return a
 }
 
 func TestPreflight_AcceptsPickerFieldsAndDerivesURL(t *testing.T) {

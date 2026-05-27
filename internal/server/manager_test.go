@@ -57,6 +57,7 @@ func (f *fakeAutoBackend) seenPrompts() []string {
 func TestManager_StartFromWatch_RunsSessionAndOptionalAuto(t *testing.T) {
 	root := t.TempDir()
 	mgr := NewManager(context.Background(), root)
+	t.Cleanup(mgr.Shutdown)
 	inv := mgr.RegisterForTest("inv-wf-auto")
 	require.NoError(t, os.MkdirAll(inv.SessionDir, 0o700))
 

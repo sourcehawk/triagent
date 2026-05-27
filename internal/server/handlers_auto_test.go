@@ -415,6 +415,11 @@ func TestPreflight_AutoTrue_StartsAutoOperator(t *testing.T) {
 			return &fakeAutoBackend{sessionID: "fake-op-session"}, nil
 		},
 	}
+	// Shutdown drains every Investigation's persistence store writer
+	// goroutine before t.TempDir cleanup unlinks the session subdir;
+	// without it the writer can race RemoveAll and leave a freshly
+	// re-created events.jsonl behind ("directory not empty").
+	t.Cleanup(a.manager.Shutdown)
 
 	body := strings.NewReader(`{"inputs":{"cluster_id":{"value":"abc"}},"auto":true,"prom":{}}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/preflight", body)

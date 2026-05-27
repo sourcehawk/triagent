@@ -841,6 +841,14 @@ type Manager struct {
 	byID         map[string]*Investigation
 	closed       bool
 
+	// bgWG tracks background goroutines (currently the push-PR pipeline)
+	// the manager spawned via ParentContext. Shutdown waits on it after
+	// cancelling the parent context so per-session file I/O (atomic
+	// metadata write, SSE publish) has fully completed before callers
+	// tear down on-disk state. Add is gated by closed under mu so a late
+	// trackBackground after Shutdown can't race Wait.
+	bgWG sync.WaitGroup
+
 	// terminalHook is called when an investigation reaches a terminal
 	// lifecycle state (archive, delete, auto-mode finished/aborted).
 	// Wired by server.New to bridge the watches subsystem's slot-release.
@@ -1177,7 +1185,14 @@ func (m *Manager) Remove(id string, removeFromDisk bool) bool {
 	return true
 }
 
-// Shutdown closes every investigation. After Shutdown, Register fails.
+// Shutdown closes every investigation and waits for tracked background
+// goroutines (e.g. the push-PR pipeline) to exit. After Shutdown,
+// Register fails and trackBackground refuses new work.
+//
+// Callers must cancel the manager's parent context before invoking
+// Shutdown — the production launcher does this via cancelManager in
+// Server.Run. Without it, push goroutines blocked on parent-ctx-derived
+// work (drafter, network) never release and Wait deadlocks.
 func (m *Manager) Shutdown() {
 	m.mu.Lock()
 	investigations := make([]*Investigation, 0, len(m.byID))
@@ -1191,6 +1206,27 @@ func (m *Manager) Shutdown() {
 		inv.Close()
 		m.FireCloseHook(inv.ID)
 	}
+	m.bgWG.Wait()
+}
+
+// trackBackground reserves a slot on the manager's background goroutine
+// counter. Returns false if the manager has already been shut down, in
+// which case the caller must not spawn the goroutine. On true the
+// caller is responsible for calling bgDone exactly once when the
+// goroutine exits (defer).
+func (m *Manager) trackBackground() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.closed {
+		return false
+	}
+	m.bgWG.Add(1)
+	return true
+}
+
+// bgDone releases a slot reserved by trackBackground. Safe to defer.
+func (m *Manager) bgDone() {
+	m.bgWG.Done()
 }
 
 // ReconcileUpstreamPushed sweeps every investigation the manager knows
@@ -1488,13 +1524,18 @@ func (m *Manager) StartFromWatch(inv *Investigation, start func() error, autoOpt
 	if err := start(); err != nil {
 		fmt.Fprintf(os.Stderr, "investigate: start watch-spawned %s: %v\n", inv.ID, err)
 	}
-	if autoOpts != nil {
-		go func() {
-			if err := m.EnableAuto(inv, *autoOpts); err != nil {
-				fmt.Fprintf(os.Stderr, "investigate: EnableAuto %s: %v\n", inv.ID, err)
-			}
-		}()
+	if autoOpts == nil {
+		return
 	}
+	if !m.trackBackground() {
+		return
+	}
+	go func() {
+		defer m.bgDone()
+		if err := m.EnableAuto(inv, *autoOpts); err != nil {
+			fmt.Fprintf(os.Stderr, "investigate: EnableAuto %s: %v\n", inv.ID, err)
+		}
+	}()
 }
 
 // EnableAuto spawns the AutoOperator and starts the per-investigation
