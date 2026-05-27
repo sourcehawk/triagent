@@ -327,3 +327,48 @@ func TestQueryRange_RejectsOverSeriesCap(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "30 series")
 }
+
+func TestQueryRange_RejectsInvalidEnd(t *testing.T) {
+	t.Parallel()
+	cat := cardCatalog("noisy", 5)
+	snap := &snapshot{client: newPromClient("http://stub", "", "", http.DefaultClient), catalog: cat}
+	_, err := runRangeQuery(context.Background(), snap, `noisy{namespace="x"}`, "15m", "not-an-rfc3339-time", 10, 100, false)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid end")
+}
+
+func TestQueryRange_RejectsRangeOverCap(t *testing.T) {
+	t.Parallel()
+	cat := cardCatalog("noisy", 5)
+	snap := &snapshot{client: newPromClient("http://stub", "", "", http.DefaultClient), catalog: cat}
+	_, err := runRangeQuery(context.Background(), snap, `noisy{namespace="x"}`, "25h", "", 10, 100, false)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "exceeds cap")
+}
+
+func TestQueryRange_RawTruncatesAtMaxPoints(t *testing.T) {
+	t.Parallel()
+	stub := newStubProm(t, stubHandlers{
+		queryRange: func(w http.ResponseWriter, r *http.Request) {
+			pts := make([]any, 0, 5)
+			for i := 0; i < 5; i++ {
+				pts = append(pts, []any{1700000000 + i*10, "1"})
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"status": "success",
+				"data": map[string]any{
+					"resultType": "matrix",
+					"result": []map[string]any{
+						{"metric": map[string]string{"pod": "a", "namespace": "x"}, "values": pts},
+					},
+				},
+			})
+		},
+	})
+	cat := cardCatalog("noisy", 5)
+	snap := &snapshot{client: newPromClient(stub.URL, "", "", http.DefaultClient), catalog: cat}
+	res, err := runRangeQuery(context.Background(), snap, `noisy{namespace="x"}`, "15m", "", 10, 3, true)
+	require.NoError(t, err)
+	require.Len(t, res.Series, 1)
+	assert.Len(t, res.Series[0].Points, 3, "raw points must be capped at max_points")
+}

@@ -233,7 +233,7 @@ func runRangeQuery(ctx context.Context, snap *snapshot, expr, rangeStr, endStr s
 
 	end := time.Now().UTC()
 	if endStr != "" {
-		t, perr := time.Parse(time.RFC3339, endStr)
+		t, perr := time.Parse(time.RFC3339Nano, endStr)
 		if perr != nil {
 			return RangeResult{}, fmt.Errorf("invalid end %q: %w", endStr, perr)
 		}
@@ -262,25 +262,31 @@ func runRangeQuery(ctx context.Context, snap *snapshot, expr, rangeStr, endStr s
 		)
 	}
 
-	out := RangeResult{Step: step}
+	out := RangeResult{Step: step, Series: []RangeSeries{}}
 	for _, sr := range res.Result {
-		values := make([]float64, 0, len(sr.Values))
-		points := make([]RangePoint, 0, len(sr.Values))
-		for _, pair := range sr.Values {
-			v, ts, perr := parseSamplePair(pair)
-			if perr != nil {
-				return RangeResult{}, perr
-			}
-			values = append(values, v)
-			points = append(points, RangePoint{Timestamp: ts, Value: v})
-		}
 		series := RangeSeries{Labels: sr.Metric}
 		if raw {
+			points := make([]RangePoint, 0, len(sr.Values))
+			for _, pair := range sr.Values {
+				v, ts, perr := parseSamplePair(pair)
+				if perr != nil {
+					return RangeResult{}, perr
+				}
+				points = append(points, RangePoint{Timestamp: ts, Value: v})
+			}
 			if len(points) > maxPoints {
 				points = points[:maxPoints]
 			}
 			series.Points = points
 		} else {
+			values := make([]float64, 0, len(sr.Values))
+			for _, pair := range sr.Values {
+				v, _, perr := parseSamplePair(pair)
+				if perr != nil {
+					return RangeResult{}, perr
+				}
+				values = append(values, v)
+			}
 			stats := computeStats(values)
 			series.Stats = &stats
 			series.Sparkline = sparkline(values)
