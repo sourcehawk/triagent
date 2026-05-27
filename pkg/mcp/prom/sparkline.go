@@ -14,21 +14,21 @@ func sparkline(vals []float64) string {
 		return strings.Repeat("·", sparklineWidth)
 	}
 	buckets := downsample(vals, sparklineWidth)
-	min, max := buckets[0], buckets[0]
+	minVal, maxVal := buckets[0], buckets[0]
 	for _, v := range buckets {
-		if v < min {
-			min = v
+		if v < minVal {
+			minVal = v
 		}
-		if v > max {
-			max = v
+		if v > maxVal {
+			maxVal = v
 		}
 	}
-	rng := max - min
+	rng := maxVal - minVal
 	var b strings.Builder
 	for _, v := range buckets {
 		idx := 0
 		if rng > 0 {
-			frac := (v - min) / rng
+			frac := (v - minVal) / rng
 			idx = int(frac * float64(len(sparklineRunes)-1))
 			if idx < 0 {
 				idx = 0
@@ -42,13 +42,17 @@ func sparkline(vals []float64) string {
 	return b.String()
 }
 
-// downsample chooses one representative value per bucket. Uses the bucket
-// midpoint by default; with very long inputs (>width*2) it picks the
-// max of each bucket so spikes survive.
+// downsample chooses one representative value per bucket so the result
+// fits exactly `width` slots. Sparse inputs (len(vals) <= width) are
+// stretched by nearest-left-neighbour repetition — this yields a
+// visible staircase rather than a smooth ramp, which is acceptable for
+// the 20-cell sparkline and avoids the noise that interpolation would
+// introduce on already-coarse series. Dense inputs (len(vals) > width)
+// collapse each bucket to its max so transient spikes survive the
+// reduction.
 func downsample(vals []float64, width int) []float64 {
 	if len(vals) <= width {
 		out := make([]float64, width)
-		// Stretch: repeat each value evenly.
 		for i := 0; i < width; i++ {
 			idx := i * len(vals) / width
 			out[i] = vals[idx]
@@ -63,13 +67,13 @@ func downsample(vals []float64, width int) []float64 {
 		if hi > len(vals) {
 			hi = len(vals)
 		}
-		max := vals[lo]
+		maxVal := vals[lo]
 		for _, v := range vals[lo:hi] {
-			if v > max {
-				max = v
+			if v > maxVal {
+				maxVal = v
 			}
 		}
-		out[i] = max
+		out[i] = maxVal
 	}
 	return out
 }
