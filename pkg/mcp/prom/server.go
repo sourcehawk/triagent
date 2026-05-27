@@ -147,7 +147,7 @@ type listMetricsIn struct {
 func (s *Server) handleListMetrics(ctx context.Context, _ *mcp.CallToolRequest, in listMetricsIn) (*mcp.CallToolResult, SearchResult, error) {
 	snap := s.snapshot.Load()
 	if snap == nil || len(snap.catalog.names) == 0 {
-		return errorResult("catalog empty — the endpoint may have no metrics indexed, or it is not yet reachable"), SearchResult{}, nil
+		return errorResult("catalog empty — the endpoint may have no metrics indexed, or it is not yet reachable"), SearchResult{Matches: []SearchMatch{}}, nil
 	}
 	r := searchMetrics(snap.catalog, in.Query, in.Limit)
 	if r.Error != "" {
@@ -186,11 +186,11 @@ type describeMetricIn struct {
 func (s *Server) handleDescribeMetric(ctx context.Context, _ *mcp.CallToolRequest, in describeMetricIn) (*mcp.CallToolResult, DescribeResult, error) {
 	snap := s.snapshot.Load()
 	if snap == nil || len(snap.catalog.names) == 0 {
-		return errorResult("catalog empty — the endpoint may have no metrics indexed, or it is not yet reachable"), DescribeResult{}, nil
+		return errorResult("catalog empty — the endpoint may have no metrics indexed, or it is not yet reachable"), DescribeResult{Labels: []labelInfo{}}, nil
 	}
 	res, err := describeMetric(ctx, snap.client, snap.catalog, in.Name)
 	if err != nil {
-		return errorResult(err.Error()), DescribeResult{}, nil
+		return errorResult(err.Error()), DescribeResult{Labels: []labelInfo{}}, nil
 	}
 	return nil, res, nil
 }
@@ -241,11 +241,11 @@ type promQueryRangeIn struct {
 func (s *Server) handleQueryRange(ctx context.Context, _ *mcp.CallToolRequest, in promQueryRangeIn) (*mcp.CallToolResult, RangeResult, error) {
 	snap := s.snapshot.Load()
 	if snap == nil || len(snap.catalog.names) == 0 {
-		return errorResult("catalog empty — the endpoint may have no metrics indexed, or it is not yet reachable"), RangeResult{}, nil
+		return errorResult("catalog empty — the endpoint may have no metrics indexed, or it is not yet reachable"), RangeResult{Series: []RangeSeries{}}, nil
 	}
 	res, err := runRangeQuery(ctx, snap, in.Promql, in.Range, in.End, in.MaxSeries, in.MaxPoints, in.Raw)
 	if err != nil {
-		return errorResult(err.Error()), RangeResult{}, nil
+		return errorResult(err.Error()), RangeResult{Series: []RangeSeries{}}, nil
 	}
 	return nil, res, nil
 }
