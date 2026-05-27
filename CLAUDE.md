@@ -70,6 +70,13 @@ Durable rules, conventions, and rationale. Code is the source of truth for "what
 - **Long pipelines don't stop on transient failures.** Autonomous runs continue past a commit/build hiccup and surface it in the end-of-run summary — don't bail on the first non-blocking error.
 - **Frontend embed:** `internal/web/dist/.gitkeep` is the tracked anchor that lets `//go:embed all:dist` compile on a fresh checkout before `make build` populates the directory. Don't remove it; the `.gitignore` negation rule depends on it.
 
+## Completing underdeveloped code paths
+
+- **When you touch a code path that is clearly underdeveloped — repeatedly buggy, missing tests, edge cases unhandled — finish it rather than punt.** "Wasn't covered before so it's not my problem" leaves the gap for the next person and the cycle repeats. If you're already reading and modifying the code, you're the cheapest person to add the missing test, handle the nil case, fix the off-by-one you noticed. The general "don't expand scope" rule yields when the surface area you're already in is demonstrably immature.
+- **Signals the surface is underdeveloped:** the same area has been patched repeatedly, a branch you're modifying has no test coverage, empty / nil / error / concurrency inputs are handled inconsistently or not at all, `TODO` / `FIXME` markers are still in place, behaviour is described in a comment but never asserted in a test.
+- **"Finish it" means: add the missing tests including the edge cases, fix the bugs the tests surface, and explicitly name anything you found but deliberately aren't fixing in this change** so it isn't silently inherited. Don't leave a known-broken edge case behind because the original ticket didn't enumerate it.
+- **Still scope-disciplined.** This is permission to complete what you're already touching, not licence to refactor adjacent modules. If the gap is two files over from your change, surface it in the PR description; don't pull it in.
+
 ## Naming & terminology
 
 - **Use `signal-watches`** for the polling/auto-spawn subsystem — not "alert rules" / "state machine" / "monitor".
