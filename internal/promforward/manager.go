@@ -9,11 +9,12 @@ import (
 	"k8s.io/client-go/rest"
 )
 
-// KubeBuilder turns a kubeconfig context name into a (rest.Config,
-// kubernetes.Interface) pair. The Manager calls it on first Get for a
-// new context. Production wires it to a clientcmd-backed builder
-// scoped to the per-investigation kubeconfig path; tests inject a stub.
-type KubeBuilder func(contextName string) (*rest.Config, kubernetes.Interface, error)
+// KubeBuilder turns an investigation id and a kubeconfig context name into a
+// (rest.Config, kubernetes.Interface) pair. The Manager calls it on first Get
+// for a new context. Production wires it to a clientcmd-backed builder that
+// reads the per-investigation KubeconfigPath via the investigation id; tests
+// inject a stub.
+type KubeBuilder func(investigationID, contextName string) (*rest.Config, kubernetes.Interface, error)
 
 // Options configures the Manager.
 type Options struct {
@@ -82,7 +83,7 @@ func (m *Manager) Get(ctx context.Context, investigationID, contextName string) 
 		prior.fwd.Stop()
 	}
 
-	cfg, cs, err := m.opts.KubeBuilder(contextName)
+	cfg, cs, err := m.opts.KubeBuilder(investigationID, contextName)
 	if err != nil {
 		return "", fmt.Errorf("build kube client for context %q: %w", contextName, err)
 	}

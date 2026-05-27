@@ -3,6 +3,7 @@ package preflight
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -66,6 +67,10 @@ const (
 
 	EnvSlackToken      = "TRIAGENT_MCP_SLACK_TOKEN"
 	EnvIncidentioToken = "TRIAGENT_MCP_INCIDENTIO_TOKEN"
+
+	EnvPromResolverURL = "TRIAGENT_MCP_PROM_RESOLVER_URL"
+	EnvPromBearer      = "TRIAGENT_MCP_PROM_BEARER"
+	EnvPromBasic       = "TRIAGENT_MCP_PROM_BASIC"
 
 	EnvParallelUpstreams = "TRIAGENT_MCP_PARALLEL_UPSTREAMS"
 
@@ -325,6 +330,26 @@ func writeMCPConfig(in mcpConfigInputs) (string, error) {
 		}
 	}
 
+	if in.Profile != nil && in.Profile.Defaults.Prometheus.Service != "" {
+		promEnv := map[string]string{}
+		if origin := telemetryOrigin(in.TelemetryURL); origin != "" {
+			promEnv[EnvPromResolverURL] = origin + "/api/internal/prom/" + in.TraceID + "/endpoint"
+		}
+		if v := os.Getenv(EnvPromBearer); v != "" {
+			promEnv[EnvPromBearer] = v
+		}
+		if v := os.Getenv(EnvPromBasic); v != "" {
+			promEnv[EnvPromBasic] = v
+		}
+		mergeEnv(promEnv, telemetryEnv(in, MCPAliasProm))
+		mergeEnv(promEnv, kubeEnv(in))
+		servers[MCPAliasProm] = map[string]any{
+			"command": in.MCPBin,
+			"args":    []string{"serve", "--kind=prom"},
+			"env":     promEnv,
+		}
+	}
+
 	// Spawn-mode extra MCPs from the profile. These are emitted before the
 	// parallel broker so they appear in the upstreams map that the broker
 	// receives.
@@ -379,6 +404,21 @@ func writeMCPConfig(in mcpConfigInputs) (string, error) {
 		return "", err
 	}
 	return path, nil
+}
+
+// telemetryOrigin extracts scheme://host[:port] from a launcher
+// telemetry URL like "http://127.0.0.1:8080/api/internal/tool-events".
+// Empty input → empty result. Used to build the prom resolver URL
+// without pulling pkg/mcp/meta into preflight.
+func telemetryOrigin(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
 }
 
 // parallelUpstreams projects the assembled servers map into the slim

@@ -29,9 +29,9 @@ func (s *stubForwarder) Start(_ context.Context) (string, error) {
 func (s *stubForwarder) Stop() { s.stopped.Add(1) }
 
 // stubKubeBuilder hands back a fixed rest.Config / clientset for any
-// context name. The Manager doesn't use these values when its Factory
-// is the stub one.
-func stubKubeBuilder(_ string) (*rest.Config, kubernetes.Interface, error) {
+// investigation id and context name. The Manager doesn't use these values when
+// its Factory is the stub one.
+func stubKubeBuilder(_, _ string) (*rest.Config, kubernetes.Interface, error) {
 	return &rest.Config{}, nil, nil
 }
 
@@ -110,7 +110,7 @@ func TestManager_GetReturnsKubeBuilderError(t *testing.T) {
 		Factory: func(*rest.Config, kubernetes.Interface, Target) (PortForwarder, error) {
 			return &stubForwarder{}, nil
 		},
-		KubeBuilder: func(string) (*rest.Config, kubernetes.Interface, error) {
+		KubeBuilder: func(_, _ string) (*rest.Config, kubernetes.Interface, error) {
 			return nil, nil, errors.New("kubeconfig parse error")
 		},
 	})

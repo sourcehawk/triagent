@@ -30,10 +30,13 @@ import (
 	"github.com/sourcehawk/triagent/internal/editor"
 	"github.com/sourcehawk/triagent/internal/preflight"
 	"github.com/sourcehawk/triagent/internal/profile"
+	"github.com/sourcehawk/triagent/internal/promforward"
 	"github.com/sourcehawk/triagent/internal/repos"
 	"github.com/sourcehawk/triagent/internal/watches"
 	"github.com/sourcehawk/triagent/internal/watches/sources"
 	"github.com/sourcehawk/triagent/internal/web"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 )
 
 const (
@@ -573,6 +576,36 @@ func New(opts Options) (*Server, error) {
 		})
 	}
 
+	var promForwarder *promforward.Manager
+	if opts.Profile != nil && opts.Profile.Defaults.Prometheus.Service != "" {
+		target := promforward.Target{
+			Service:   opts.Profile.Defaults.Prometheus.Service,
+			Namespace: opts.Profile.Defaults.Prometheus.Namespace,
+			Port:      opts.Profile.Defaults.Prometheus.Port,
+		}
+		promForwarder = promforward.NewManager(promforward.Options{
+			KubeBuilder: func(invID, ctxName string) (*rest.Config, kubernetes.Interface, error) {
+				inv := manager.Get(invID)
+				if inv == nil {
+					return nil, nil, fmt.Errorf("investigation %q not found", invID)
+				}
+				cfg, err := buildKubeConfigForContext(inv.KubeconfigPath, ctxName)
+				if err != nil {
+					return nil, nil, err
+				}
+				cs, err := kubernetes.NewForConfig(cfg)
+				if err != nil {
+					return nil, nil, err
+				}
+				return cfg, cs, nil
+			},
+			Target: target,
+		})
+		manager.SetCloseHook(func(invID string) {
+			promForwarder.Stop(invID)
+		})
+	}
+
 	api := &apiHandlers{
 		opts:         opts,
 		manager:      manager,
@@ -599,6 +632,7 @@ func New(opts Options) (*Server, error) {
 		sessionDrafter:     defaultSessionDrafter(opts.MCPBinaryPath),
 		architectureWorker: repos.NewArchitectureWorker(opts.MCPBinaryPath, opts.GitCacheDir),
 		generationContext:  manager.ParentContext,
+		promForwarder:      promForwarder,
 	}
 	api.architectureWorker.SetEventPublisher(repoSummaryPublisher{manager: manager})
 

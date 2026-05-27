@@ -401,18 +401,25 @@ func runParallel(ctx context.Context, _ serveFlags) error {
 }
 
 func runProm(ctx context.Context, f serveFlags) error {
-	if f.promURL == "" {
-		return fmt.Errorf("--prom-url is required (or set $%s)", envPromURL)
+	resolverURL := os.Getenv("TRIAGENT_MCP_PROM_RESOLVER_URL")
+	launcherToken := os.Getenv("TRIAGENT_MCP_TELEMETRY_TOKEN")
+	if f.promURL == "" && resolverURL == "" {
+		return fmt.Errorf("--prom-url is required (or set $%s or $TRIAGENT_MCP_PROM_RESOLVER_URL)", envPromURL)
 	}
 	srv, err := prom.New(prom.Options{
-		Endpoint:  f.promURL,
-		Bearer:    f.promBearer,
-		BasicAuth: f.promBasic,
+		Endpoint:         f.promURL,
+		Bearer:           f.promBearer,
+		BasicAuth:        f.promBasic,
+		EndpointResolver: resolverURL,
+		LauncherToken:    launcherToken,
 	})
 	if err != nil {
 		return fmt.Errorf("build prom mcp server: %w", err)
 	}
-	log.Info("mcp serve --kind=prom starting", "endpoint", f.promURL)
+	log.Info("mcp serve --kind=prom starting",
+		"endpoint", f.promURL,
+		"resolver", resolverURL,
+	)
 	return srv.Run(ctx)
 }
 

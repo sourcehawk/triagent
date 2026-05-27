@@ -819,6 +819,13 @@ type Manager struct {
 	// nil disables the hook. Guarded by mu (R when reading, W when setting).
 	terminalHook func(invID, watchID string)
 
+	// closeHook is called when an investigation is removed or the
+	// manager shuts down — every Close() path fires it. Used to
+	// release per-investigation resources (e.g. prom port-forwards)
+	// without entangling them in Investigation itself.
+	// nil disables the hook. Guarded by mu (R when reading, W when setting).
+	closeHook func(invID string)
+
 	// globalMu guards globalNextSeq and globalRing. Acquired before
 	// globalRing.mu — never the reverse.
 	globalMu      sync.Mutex
@@ -882,6 +889,15 @@ func (m *Manager) SetTerminalHook(fn func(invID, watchID string)) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.terminalHook = fn
+}
+
+// SetCloseHook registers a callback fired when an investigation's
+// resources are torn down (Remove, Shutdown). The hook receives the
+// investigation id. nil disables it.
+func (m *Manager) SetCloseHook(fn func(invID string)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.closeHook = fn
 }
 
 // fireTerminal invokes the registered hook when present. Idempotent —
@@ -1112,6 +1128,12 @@ func (m *Manager) Remove(id string, removeFromDisk bool) bool {
 	}
 	dir := inv.SessionDir
 	inv.Close()
+	m.mu.RLock()
+	hook := m.closeHook
+	m.mu.RUnlock()
+	if hook != nil {
+		hook(inv.ID)
+	}
 	if removeFromDisk && dir != "" {
 		_ = os.RemoveAll(dir)
 	}
@@ -1128,8 +1150,14 @@ func (m *Manager) Shutdown() {
 	m.byID = map[string]*Investigation{}
 	m.closed = true
 	m.mu.Unlock()
+	m.mu.RLock()
+	hook := m.closeHook
+	m.mu.RUnlock()
 	for _, inv := range investigations {
 		inv.Close()
+		if hook != nil {
+			hook(inv.ID)
+		}
 	}
 }
 

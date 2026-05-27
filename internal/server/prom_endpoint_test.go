@@ -28,7 +28,7 @@ func newTestPromMgr(url string) *promforward.Manager {
 		Factory: func(*rest.Config, kubernetes.Interface, promforward.Target) (promforward.PortForwarder, error) {
 			return &fakeFwd{url: url}, nil
 		},
-		KubeBuilder: func(_ string) (*rest.Config, kubernetes.Interface, error) {
+		KubeBuilder: func(_, _ string) (*rest.Config, kubernetes.Interface, error) {
 			return &rest.Config{}, nil, nil
 		},
 		Target: promforward.Target{Service: "prometheus", Namespace: "monitoring", Port: 9090},
