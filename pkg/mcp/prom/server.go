@@ -1,0 +1,116 @@
+// Package prom implements the triagent-mcp `prom` MCP server: a bounded,
+// scope-enforced, scalar-first surface over a single Prometheus endpoint.
+// Discovery is keyword-search-only (no flat metric dump); queries are
+// rejected when they reference high-cardinality metrics without a label
+// matcher; every tool enforces hard output ceilings rather than
+// truncating responses in place.
+//
+// The endpoint is held in an atomic pointer so the launcher can rebind
+// the MCP on `switch_context` (wired by the launcher-integration plan).
+// The catalog is rebuilt on rebind; in-flight tool calls complete against
+// the snapshot they captured at entry.
+package prom
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"sync/atomic"
+	"time"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+// Options configures the prom MCP server.
+type Options struct {
+	// Endpoint is the Prometheus base URL (no trailing slash, no /api
+	// suffix). Required.
+	Endpoint string
+	// Bearer is an optional Authorization: Bearer <token>. Mutually
+	// exclusive with BasicAuth.
+	Bearer string
+	// BasicAuth is an optional "user:pass". Mutually exclusive with Bearer.
+	BasicAuth string
+	// HTTPClient is optional; defaults to a http.Client with 10s timeout.
+	HTTPClient *http.Client
+}
+
+// Server is the prom MCP server.
+type Server struct {
+	impl     *mcp.Server
+	snapshot atomic.Pointer[snapshot]
+}
+
+// snapshot holds the per-binding state. Replaced wholesale on rebind so
+// in-flight calls finish against the old endpoint without locking.
+type snapshot struct {
+	endpoint string
+	client   *promClient
+	catalog  *catalog
+}
+
+// New constructs a Server. It does NOT fetch the catalog — that happens
+// in Run, so a misconfigured endpoint fails loudly at startup instead of
+// during the first tool call.
+func New(opts Options) (*Server, error) {
+	if opts.Endpoint == "" {
+		return nil, fmt.Errorf("Endpoint is required")
+	}
+	if opts.Bearer != "" && opts.BasicAuth != "" {
+		return nil, fmt.Errorf("Bearer and BasicAuth are mutually exclusive")
+	}
+	httpClient := opts.HTTPClient
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: 10 * time.Second}
+	}
+	impl := mcp.NewServer(&mcp.Implementation{
+		Name:    "triagent-mcp-prom",
+		Version: "0.1.0",
+	}, nil)
+	s := &Server{impl: impl}
+	s.snapshot.Store(&snapshot{
+		endpoint: opts.Endpoint,
+		client:   newPromClient(opts.Endpoint, opts.Bearer, opts.BasicAuth, httpClient),
+		catalog:  emptyCatalog(),
+	})
+	s.register()
+	return s, nil
+}
+
+// Run serves MCP requests over stdio. Fetches the initial catalog
+// synchronously before serving so the first tool call sees a populated
+// catalog when the endpoint is reachable. A failed initial fetch is
+// logged but does not abort — the catalog stays empty and tools surface
+// "catalog empty" to the agent.
+func (s *Server) Run(ctx context.Context) error {
+	if err := s.refreshCatalog(ctx); err != nil {
+		// Non-fatal: surface to logs via the SDK's stderr; tools will
+		// report "catalog empty" until a rebind succeeds.
+		fmt.Fprintf(stderrWriter, "prom: initial catalog fetch failed: %v\n", err)
+	}
+	return s.impl.Run(ctx, &mcp.StdioTransport{})
+}
+
+// stderrWriter is a seam — tests override it to capture the warning line
+// without racing on os.Stderr.
+var stderrWriter = osStderr()
+
+// register adds the tool surface. Phases 1+ flesh out each handler;
+// Task 1 leaves it empty.
+func (s *Server) register() {
+	// Tools added in later phases.
+}
+
+// refreshCatalog is the catalog rebuild path. Implemented in Phase 1.
+// Stub here so server.go compiles.
+func (s *Server) refreshCatalog(_ context.Context) error {
+	return nil
+}
+
+// errorResult formats a tool-level error result (matches the wiki/meta pattern).
+func errorResult(msg string) *mcp.CallToolResult {
+	return &mcp.CallToolResult{
+		IsError: true,
+		Content: []mcp.Content{&mcp.TextContent{Text: msg}},
+	}
+}
