@@ -3,6 +3,7 @@ package promforward
 import (
 	"context"
 	"errors"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -177,4 +178,85 @@ func TestManager_GetSwapsOnDifferentTarget(t *testing.T) {
 	assert.Equal(t, "http://127.0.0.1:7011", url)
 	assert.Equal(t, int32(1), stubA.stopped.Load(), "old forwarder must be stopped when target changes")
 	assert.Equal(t, int32(1), stubB.started.Load())
+}
+
+// raceStubForwarder lets a test block inside Start until signalled, and
+// observe when Stop is called. It is used by the Stop-during-provisioning
+// race test.
+type raceStubForwarder struct {
+	url          string
+	startBegan   chan struct{} // closed when Start is entered
+	startProceed chan struct{} // closed by the test to let Start return
+	stopRan      chan struct{} // closed (once) when Stop is called
+	once         sync.Once
+}
+
+func (s *raceStubForwarder) Start(_ context.Context) (string, error) {
+	close(s.startBegan)
+	<-s.startProceed
+	return s.url, nil
+}
+
+func (s *raceStubForwarder) Stop() {
+	s.once.Do(func() { close(s.stopRan) })
+}
+
+// TestManager_StopDuringProvisioningTearsDownNewForwarder reproduces the
+// race where Stop runs while Get is between fwd.Start returning and the
+// re-lock that stores the entry. The just-built forwarder must be torn
+// down and Get must return an error instead of a leaked, live forwarder.
+func TestManager_StopDuringProvisioningTearsDownNewForwarder(t *testing.T) {
+	t.Parallel()
+	startBegan := make(chan struct{})
+	stopRan := make(chan struct{})
+	stub := &raceStubForwarder{
+		url:          "http://127.0.0.1:9090",
+		startBegan:   startBegan,
+		startProceed: make(chan struct{}),
+		stopRan:      stopRan,
+	}
+	mgr := NewManager(Options{
+		Factory: func(*rest.Config, kubernetes.Interface, Target) (PortForwarder, error) {
+			return stub, nil
+		},
+		KubeBuilder: stubKubeBuilder,
+	})
+
+	getDone := make(chan error, 1)
+	go func() {
+		_, err := mgr.Get(context.Background(), "inv-1", "cluster-a", Target{})
+		getDone <- err
+	}()
+
+	// Wait for Start to begin, then call Stop concurrently.
+	<-startBegan
+	mgr.Stop("inv-1")
+
+	// Let Start return.
+	close(stub.startProceed)
+
+	// Get must return an error and the just-provisioned forwarder must
+	// have been torn down.
+	err := <-getDone
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "closed during provisioning")
+	<-stopRan // Stop was called on the just-built forwarder.
+}
+
+// TestManager_GetAfterStopErrors verifies that a Get call that arrives
+// after Stop already returned also gets a closed-error rather than
+// provisioning a new forwarder.
+func TestManager_GetAfterStopErrors(t *testing.T) {
+	t.Parallel()
+	stub := &stubForwarder{url: "http://127.0.0.1:7020"}
+	mgr := NewManager(Options{
+		Factory:     func(*rest.Config, kubernetes.Interface, Target) (PortForwarder, error) { return stub, nil },
+		KubeBuilder: stubKubeBuilder,
+	})
+	_, err := mgr.Get(context.Background(), "inv-1", "cluster-a", Target{Service: "p", Namespace: "n", Port: 9090})
+	require.NoError(t, err)
+	mgr.Stop("inv-1")
+	_, err = mgr.Get(context.Background(), "inv-1", "cluster-a", Target{Service: "p", Namespace: "n", Port: 9090})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "has been closed")
 }

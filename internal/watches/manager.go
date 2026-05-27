@@ -77,6 +77,7 @@ type Manager struct {
 	ctx       context.Context
 	ctxCancel context.CancelFunc // set by Start; called by Stop to drain spawner goroutines.
 	spawnerWG sync.WaitGroup    // tracks all live spawner goroutines; Stop waits on it.
+	stopped   bool              // set under m.mu by Stop; gates further spawnerWG.Add calls.
 }
 
 func NewManager(opts ManagerOpts) (*Manager, error) {
@@ -127,6 +128,11 @@ func (m *Manager) Start(ctx context.Context) {
 
 func (m *Manager) Stop() {
 	m.mu.Lock()
+	if m.stopped {
+		m.mu.Unlock()
+		return
+	}
+	m.stopped = true
 	// Cancel the derived context so all spawner Run() loops exit.
 	if m.ctxCancel != nil {
 		m.ctxCancel()
@@ -139,7 +145,8 @@ func (m *Manager) Stop() {
 	m.mu.Unlock()
 	// Wait for all spawner goroutines to finish writing before returning.
 	// Lock is released first so spawner goroutines that need m.mu don't
-	// deadlock while draining.
+	// deadlock while draining. No new Add calls can race with Wait because
+	// both spawn sites check m.stopped under m.mu before calling Add.
 	m.spawnerWG.Wait()
 }
 
@@ -169,12 +176,14 @@ func (m *Manager) spawnLocked(id string, w Watch) {
 		if len(state.Queued) > 0 || len(state.Running) > 0 {
 			sp := NewSpawner(dir, id, maxOne(w.AutoStart.MaxConcurrent), m.makeSpawnerCreate(id), m.spawnerOptions()...)
 			m.spawners[id] = sp
-			m.spawnerWG.Add(1)
-			go func() {
-				defer m.spawnerWG.Done()
-				sp.Run(m.ctx)
-			}()
-			sp.signalKick()
+			if !m.stopped {
+				m.spawnerWG.Add(1)
+				go func() {
+					defer m.spawnerWG.Done()
+					sp.Run(m.ctx)
+				}()
+				sp.signalKick()
+			}
 		}
 	}
 }
@@ -591,11 +600,13 @@ func (m *Manager) SpawnFromSignal(_ context.Context, watchID string, req SpawnFr
 	if !ok {
 		sp = NewSpawner(dir, watchID, maxOne(w.AutoStart.MaxConcurrent), m.makeSpawnerCreate(watchID), m.spawnerOptions()...)
 		m.spawners[watchID] = sp
-		m.spawnerWG.Add(1)
-		go func() {
-			defer m.spawnerWG.Done()
-			sp.Run(m.ctx)
-		}()
+		if !m.stopped {
+			m.spawnerWG.Add(1)
+			go func() {
+				defer m.spawnerWG.Done()
+				sp.Run(m.ctx)
+			}()
+		}
 	}
 	m.mu.Unlock()
 

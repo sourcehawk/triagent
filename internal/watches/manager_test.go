@@ -512,6 +512,62 @@ func TestAutoStart_RetriesPersistAcrossRestart(t *testing.T) {
 	}
 }
 
+// TestManager_StopRefusesFutureSpawns verifies that calling SpawnFromSignal
+// after Stop does not start a new spawner goroutine (which would race with
+// the already-returned spawnerWG.Wait in Stop). The invariant: no panic,
+// no data race, and a second Stop call is idempotent.
+func TestManager_StopRefusesFutureSpawns(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	yaml := filepath.Join(dir, "user_watches.yaml")
+	reg := NewSourceRegistry()
+	reg.Register(&stubSource{})
+	spawnCount := 0
+	mgr, err := NewManager(ManagerOpts{
+		UserWatchesPath: yaml,
+		Sources:         reg,
+		IDGen:           func() string { return "fixed" },
+		Create: func(_ context.Context, _ CreateRequest) (string, error) {
+			spawnCount++
+			return "INV", nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mgr.Start(context.Background())
+
+	// Create an auto-start watch.
+	w, err := mgr.Create(Watch{
+		Name:      "after-stop",
+		Source:    SourceConfig{Kind: SourceGitHubIssues, Owner: "o", Repo: "r"},
+		Polling:   PollingConfig{IntervalSeconds: 300},
+		AutoStart: AutoStartConfig{Enabled: true, MaxConcurrent: 1},
+		Enabled:   true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Stop the manager. After this, spawnerWG.Wait has returned.
+	mgr.Stop()
+
+	// SpawnFromSignal after stop must not call spawnerWG.Add — that would
+	// race with the already-returned Wait. The call may succeed or silently
+	// skip the goroutine start; the key invariant is no panic and no race.
+	_, _, err = mgr.SpawnFromSignal(context.Background(), w.ID, SpawnFromSignalReq{
+		Briefing:     "post-stop",
+		CitedItemIDs: []string{"I1"},
+		AutoMode:     true,
+	})
+	// SpawnFromSignal's return is best-effort after stop; don't assert on
+	// the exact error — assert only that we got here without a race.
+	_ = err
+
+	// Second Stop must be a no-op (idempotent).
+	mgr.Stop()
+}
+
 var errFakeTransient = errFake{"transient boom"}
 
 type errFake struct{ msg string }

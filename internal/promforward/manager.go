@@ -30,8 +30,9 @@ type Options struct {
 type Manager struct {
 	opts Options
 
-	mu    sync.Mutex
-	bound map[string]boundEntry // investigation id → current entry
+	mu     sync.Mutex
+	bound  map[string]boundEntry // investigation id → current entry
+	closed map[string]struct{}   // ids whose Stop has been called; refuses re-provision
 }
 
 type boundEntry struct {
@@ -47,7 +48,7 @@ func NewManager(opts Options) *Manager {
 	if opts.Factory == nil {
 		opts.Factory = newClientGoForwarder
 	}
-	return &Manager{opts: opts, bound: map[string]boundEntry{}}
+	return &Manager{opts: opts, bound: map[string]boundEntry{}, closed: map[string]struct{}{}}
 }
 
 // Get returns the loopback URL of the port-forward bound for the given
@@ -63,6 +64,10 @@ func (m *Manager) Get(ctx context.Context, investigationID, contextName string, 
 	}
 
 	m.mu.Lock()
+	if _, isClosed := m.closed[investigationID]; isClosed {
+		m.mu.Unlock()
+		return "", fmt.Errorf("investigation %q has been closed; refusing to provision port-forward", investigationID)
+	}
 	if existing, ok := m.bound[investigationID]; ok &&
 		existing.contextName == contextName && existing.target == target {
 		m.mu.Unlock()
@@ -102,6 +107,13 @@ func (m *Manager) Get(ctx context.Context, investigationID, contextName string, 
 	}
 
 	m.mu.Lock()
+	if _, isClosed := m.closed[investigationID]; isClosed {
+		// Stop ran while we were provisioning. Tear down our freshly-
+		// built forwarder so nothing leaks.
+		m.mu.Unlock()
+		fwd.Stop()
+		return "", fmt.Errorf("investigation %q closed during provisioning; forwarder torn down", investigationID)
+	}
 	if existing, ok := m.bound[investigationID]; ok {
 		// A concurrent Get raced us and already stored an entry. The
 		// caller-visible behaviour is "last writer wins" — but we must
@@ -127,9 +139,11 @@ func (m *Manager) Get(ctx context.Context, investigationID, contextName string, 
 	return url, nil
 }
 
-// Stop tears down the forwarder for investigationID. Idempotent.
+// Stop tears down the forwarder for investigationID and marks it closed
+// so future Get calls refuse to provision a new one. Idempotent.
 func (m *Manager) Stop(investigationID string) {
 	m.mu.Lock()
+	m.closed[investigationID] = struct{}{}
 	entry, ok := m.bound[investigationID]
 	delete(m.bound, investigationID)
 	m.mu.Unlock()
