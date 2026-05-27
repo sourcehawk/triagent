@@ -46,3 +46,19 @@ func TestManager_CloseHook_NilIsNoop(t *testing.T) {
 	// Default: no hook set. Must not panic.
 	require.True(t, mgr.Remove(inv.ID, false))
 }
+
+func TestManager_CloseHook_FiresOnArchive(t *testing.T) {
+	t.Parallel()
+	mgr, inv := newTestManagerWithInvestigationForLabel(t)
+	var called []string
+	var mu sync.Mutex
+	mgr.SetCloseHook(func(id string) {
+		mu.Lock()
+		defer mu.Unlock()
+		called = append(called, id)
+	})
+	mgr.FireCloseHook(inv.ID)
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal(t, []string{inv.ID}, called)
+}

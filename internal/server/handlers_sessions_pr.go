@@ -38,7 +38,8 @@ func (a *apiHandlers) handleArchiveInvestigation(w http.ResponseWriter, r *http.
 			writeError(w, http.StatusInternalServerError, "persist: "+err.Error())
 			return
 		}
-		a.manager.fireTerminal(inv) // M6.4: release spawner slot on archive
+		a.manager.fireTerminal(inv)       // M6.4: release spawner slot on archive
+		a.manager.FireCloseHook(inv.ID) // release per-investigation resources (prom port-forward, ...)
 	}
 	writeJSON(w, http.StatusOK, inv.Snapshot())
 }

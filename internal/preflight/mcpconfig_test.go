@@ -335,6 +335,30 @@ func TestWriteMCPConfig_ExtraMCPs_MissingEnv_Errors(t *testing.T) {
 	assert.Contains(t, err.Error(), "UNDEFINED_TRIAGENT_VAR")
 }
 
+// TestWriteMCPConfig_K8sHasSessionDir locks in that the k8s MCP env block
+// carries TRIAGENT_MCP_SESSION_DIR so its switch_context handler can write
+// <sessionDir>/active-context for the prom resolver. Without this the
+// hot-swap loop is silently broken even though unit tests pass (tests inject
+// sessionDir directly).
+func TestWriteMCPConfig_K8sHasSessionDir(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	in := mcpConfigInputs{
+		Dir:    dir,
+		MCPBin: "/usr/bin/triagent-mcp",
+	}
+	path, err := writeMCPConfig(in)
+	require.NoError(t, err)
+	servers := readMCPConfig(t, path)
+	k8s, ok := servers[MCPAliasK8s]
+	require.True(t, ok, "triagent-k8s server entry missing")
+	env, _ := k8s["env"].(map[string]any)
+	require.NotNil(t, env)
+	require.Equal(t, dir, env[EnvSessionDir],
+		"k8s MCP must receive %s so switch_context can write <sessionDir>/active-context for the prom resolver",
+		EnvSessionDir)
+}
+
 func TestWriteMCPConfig_KubeconfigInjectedIntoEveryServer(t *testing.T) {
 	dir := t.TempDir()
 	path, err := writeMCPConfig(mcpConfigInputs{

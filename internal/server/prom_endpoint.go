@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/sourcehawk/triagent/pkg/mcp/k8s"
 )
 
 // promForwarderAPI is the subset of promforward.Manager the handler
@@ -63,7 +65,7 @@ func (a *apiHandlers) handlePromEndpoint(w http.ResponseWriter, r *http.Request)
 // k8s MCP's switchContext handler. Returns the trimmed context name or
 // an error when the file is missing / empty.
 func readActiveContext(sessionDir string) (string, error) {
-	body, err := os.ReadFile(filepath.Join(sessionDir, "active-context"))
+	body, err := os.ReadFile(filepath.Join(sessionDir, k8s.ActiveContextFile))
 	if err != nil {
 		return "", err
 	}

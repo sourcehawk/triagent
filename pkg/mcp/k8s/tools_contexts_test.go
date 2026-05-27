@@ -115,7 +115,7 @@ func TestSwitchContext_FailedSwitchDoesNotWriteActiveContext(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, res.IsError)
 
-	_, err = os.Stat(filepath.Join(sessionDir, activeContextFile))
+	_, err = os.Stat(filepath.Join(sessionDir, ActiveContextFile))
 	require.True(t, os.IsNotExist(err), "active-context must not be written on failed switch")
 }
 

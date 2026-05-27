@@ -900,6 +900,20 @@ func (m *Manager) SetCloseHook(fn func(invID string)) {
 	m.closeHook = fn
 }
 
+// FireCloseHook invokes the registered close hook for invID, if any.
+// Used by archive and other terminal-lifecycle paths to release
+// per-investigation resources (e.g. prom port-forwards) without
+// requiring those paths to know about the hook's consumers.
+// Idempotent: safe to call multiple times for the same investigation.
+func (m *Manager) FireCloseHook(invID string) {
+	m.mu.RLock()
+	hook := m.closeHook
+	m.mu.RUnlock()
+	if hook != nil {
+		hook(invID)
+	}
+}
+
 // fireTerminal invokes the registered hook when present. Idempotent —
 // callers may invoke it on every transition; the watches Spawner's
 // OnInvestigationTerminal is itself idempotent. Only fires when the
@@ -1128,12 +1142,7 @@ func (m *Manager) Remove(id string, removeFromDisk bool) bool {
 	}
 	dir := inv.SessionDir
 	inv.Close()
-	m.mu.RLock()
-	hook := m.closeHook
-	m.mu.RUnlock()
-	if hook != nil {
-		hook(inv.ID)
-	}
+	m.FireCloseHook(inv.ID)
 	if removeFromDisk && dir != "" {
 		_ = os.RemoveAll(dir)
 	}
@@ -1150,14 +1159,9 @@ func (m *Manager) Shutdown() {
 	m.byID = map[string]*Investigation{}
 	m.closed = true
 	m.mu.Unlock()
-	m.mu.RLock()
-	hook := m.closeHook
-	m.mu.RUnlock()
 	for _, inv := range investigations {
 		inv.Close()
-		if hook != nil {
-			hook(inv.ID)
-		}
+		m.FireCloseHook(inv.ID)
 	}
 }
 

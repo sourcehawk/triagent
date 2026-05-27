@@ -203,6 +203,7 @@ func writeMCPConfig(in mcpConfigInputs) (string, error) {
 			k8sEnv[passthrough] = v
 		}
 	}
+	k8sEnv[EnvSessionDir] = in.Dir
 	mergeEnv(k8sEnv, telemetryEnv(in, MCPAliasK8s))
 	mergeEnv(k8sEnv, kubeEnv(in))
 
