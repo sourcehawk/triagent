@@ -63,8 +63,9 @@ Durable rules, conventions, and rationale. Code is the source of truth for "what
 
 - **TDD is the standard.** Write a failing test, run it, watch it fail for the right reason, then implement. Never bundle two unrelated changes in one commit.
 - **Go test fixtures use `t.TempDir()`** for filesystem, and disable git GPG signing via `GIT_CONFIG_NOSYSTEM=1` + `commit.gpgsign=false` (see `pkg/mcp/git/tools_test.go::initFixtureRepo`). Configure `user.name` / `user.email` on init or commits hang on CI.
-- **`go test -race -count=1 ./...` is the canonical backend test.** Race-clean is non-negotiable — the launcher fans out across goroutines.
-- **Frontend: `npm test -- --run`** plus `npm run typecheck` and `npm run build`. Build is fast; run it for any layout / routing change.
+- **`make test` runs the whole suite (Go race + frontend vitest); `make test-go` and `make test-frontend` are the per-language escape hatches.** Race-clean is non-negotiable — the launcher fans out across goroutines.
+- **Frontend extras not bundled into `make test`: `cd frontend && npm run typecheck` and `npm run build`.** Build is fast; run it for any layout / routing change. Typecheck is a CI gate but isn't a "test" — keep it separate.
+- **Before claiming an implementation done, run `make test` and `make lint`; if `frontend/` changed, also `cd frontend && npm run typecheck`.** CI gates on all three; running them locally is the cheapest place to catch the failure. "Tests passed in the package I touched" is not the same — the launcher's cross-package wiring (wire tests, embed tests, sub-agent runner) breaks under unrelated edits.
 - **Commit conventions:** `feat(<area>): ...`, `refactor(<area>): ...`, `fix(<area>): ...`, `test(<area>): ...`, `chore(<area>): ...`. Areas mirror the module path (`pkg/mcp/git`, `internal/server`, `frontend`, `watches`).
 - **Never `--no-verify`, never `git add -A` / `git add .`.** Pre-commit hooks exist for a reason; staging by name keeps secrets and stray files out.
 - **Long pipelines don't stop on transient failures.** Autonomous runs continue past a commit/build hiccup and surface it in the end-of-run summary — don't bail on the first non-blocking error.

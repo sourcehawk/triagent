@@ -65,14 +65,16 @@ Makefile                build / test / frontend / docs / release targets
 
 ## Tests and verification
 
-- `make test` → `go test -race -count=1 ./...` (canonical backend test; race-clean is non-negotiable).
+- `make test` → Go race tests + frontend vitest (wholesale). Use this before claiming an implementation done; CI runs the same set.
+- `make test-go` → `go test -race -count=1 ./...` only (Go escape hatch; race-clean is non-negotiable).
+- `make test-frontend` → frontend vitest only (`cd frontend && npm install && npm test -- --run`).
 - `make lint` → `golangci-lint run ./...`.
 - `make build` → frontend bundle (`make frontend`) + both Go binaries. Run for any layout / routing change so the
   embedded bundle stays fresh.
 - `make frontend-dev` → local Next.js dev server (proxies `/api/*` to `:8080`); pair with `go run . start` in another
   terminal for the UI dev loop.
-- Frontend unit tests live next to the code under `frontend/`; run `npm test -- --run` from `frontend/` plus
-  `npm run typecheck`.
+- Frontend typecheck isn't bundled into `make test` (it's not a test); run `cd frontend && npm run typecheck` whenever
+  you've touched `frontend/`. CI gates on it.
 - `make release-check` validates `.goreleaser.yaml`; `make release-snapshot-quick` builds the host platform without
   publishing (use during release-config iteration).
 

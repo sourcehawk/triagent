@@ -1,4 +1,4 @@
-.PHONY: build build-go build-launcher build-mcp test lint fmt frontend frontend-dev docs docs-dev docs-pages release-check release-snapshot-quick release-snapshot clean
+.PHONY: build build-go build-launcher build-mcp test test-go test-frontend lint fmt frontend frontend-dev docs docs-dev docs-pages release-check release-snapshot-quick release-snapshot clean
 
 # Build the embedded frontend bundle, then both Go binaries. Order matters:
 # `frontend` syncs into internal/web/dist/, which the launcher embeds via
@@ -15,8 +15,17 @@ build-launcher:
 build-mcp:
 	go build -o bin/triagent-mcp ./cmd/triagent-mcp
 
-test:
+# Wholesale test run: Go race suite + frontend vitest. CI runs both, so
+# use this before claiming an implementation done. The per-language
+# targets (`make test-go`, `make test-frontend`) stay available when you
+# only need one half.
+test: test-go test-frontend
+
+test-go:
 	go test -race -count=1 ./...
+
+test-frontend:
+	cd frontend && npm install && npm test -- --run
 
 lint:
 	golangci-lint run ./...

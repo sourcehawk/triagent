@@ -81,21 +81,23 @@ want the Go binary to embed the updated bundle.
 ## Test
 
 ```sh
-# Go tests (canonical; race detector on)
+# Wholesale: Go race suite + frontend vitest. CI runs the same set.
 make test
-# equivalent: go test -race -count=1 ./...
 
-# Frontend unit tests
-cd frontend && npm test -- --run
+# Per-language escape hatches:
+make test-go          # equivalent: go test -race -count=1 ./...
+make test-frontend    # equivalent: cd frontend && npm install && npm test -- --run
 
-# Frontend type-check
+# Frontend type-check (not in `make test`; CI runs it separately)
 cd frontend && npm run typecheck
 
 # Frontend build (catches bundler errors)
 cd frontend && npm run build
 ```
 
-Run `make test` before every commit. The race detector is non-negotiable — the launcher fans out across goroutines.
+Run `make test` and `make lint` before claiming an implementation done — CI gates on both. The race detector is
+non-negotiable — the launcher fans out across goroutines. If you've touched `frontend/`, also run `npm run typecheck`
+since it isn't bundled into `make test`.
 
 ## Lint
 

@@ -236,7 +236,8 @@ the durable conventions, and [open issues](https://github.com/sourcehawk/triagen
 Quick loop:
 
 ```sh
-make test    # Go unit tests
+make test    # Go race tests + frontend vitest (wholesale)
+make lint    # Go lint
 make build   # frontend bundle + both binaries
 
 # UI dev loop (no Go rebuild for frontend changes):
