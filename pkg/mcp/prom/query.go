@@ -15,11 +15,10 @@ const queryHardSeriesCap = 50
 // QueryResult is the JSON shape returned to the agent.
 type QueryResult struct {
 	ResultType  string   `json:"result_type"`
-	Samples     []Sample `json:"samples,omitempty"`
+	Samples     []Sample `json:"samples"`
 	ScalarValue *float64 `json:"value,omitempty"`
 	StringValue string   `json:"string_value,omitempty"`
 	Timestamp   string   `json:"timestamp,omitempty"`
-	Truncated   bool     `json:"truncated,omitempty"`
 }
 
 // Sample is a single labeled data point from an instant query result.

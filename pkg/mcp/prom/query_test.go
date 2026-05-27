@@ -93,12 +93,12 @@ func TestQuery_ScalarPassthrough(t *testing.T) {
 	assert.InDelta(t, 7.0, *res.ScalarValue, 0.0001)
 }
 
-func TestQuery_EmptyVectorReturnsError(t *testing.T) {
+func TestQuery_EmptyVectorReturnsEmptySamples(t *testing.T) {
 	t.Parallel()
 	// Prom returns {"resultType":"vector","result":[]} when a query
-	// matches no series. decodeQueryData treats an empty result envelope
-	// as a malformed-response signal — assert the error is surfaced
-	// cleanly to the agent rather than silently producing zero samples.
+	// matches no series. runInstantQuery returns a successful
+	// QueryResult with Samples == [] (non-nil empty slice) so the
+	// JSON shape carries an explicit empty array, not a missing key.
 	stub := newStubProm(t, stubHandlers{
 		query: func(w http.ResponseWriter, r *http.Request) {
 			_ = json.NewEncoder(w).Encode(map[string]any{
@@ -110,11 +110,10 @@ func TestQuery_EmptyVectorReturnsError(t *testing.T) {
 	cat := cardCatalog("up", 12)
 	snap := &snapshot{client: newPromClient(stub.URL, "", "", http.DefaultClient), catalog: cat}
 	res, err := runInstantQuery(context.Background(), snap, "up", "")
-	// Whether the contract is "empty samples" or "error", lock the
-	// observed behaviour so a refactor can't silently flip it.
-	if err == nil {
-		require.Empty(t, res.Samples, "no series returned should yield empty Samples")
-	}
+	require.NoError(t, err)
+	require.Equal(t, "vector", res.ResultType)
+	require.NotNil(t, res.Samples, "Samples must be non-nil to marshal as [] rather than null")
+	require.Empty(t, res.Samples)
 }
 
 func TestQuery_MatrixRejected(t *testing.T) {
