@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -110,6 +111,9 @@ type ValueResult struct {
 }
 
 func runRecentValue(ctx context.Context, snap *snapshot, metric string, labels map[string]string) (ValueResult, error) {
+	if metric == "" {
+		return ValueResult{}, fmt.Errorf("metric is required — pass the exact metric name from prom_list_metrics")
+	}
 	if len(labels) == 0 {
 		return ValueResult{}, fmt.Errorf("labels required (non-empty) — prom_recent_value needs at least one label matcher to scope the lookup")
 	}
@@ -150,7 +154,7 @@ func buildMatcherString(labels map[string]string) string {
 	for _, k := range keys {
 		parts = append(parts, k+`="`+escapeMatcherValue(labels[k])+`"`)
 	}
-	return joinComma(parts)
+	return strings.Join(parts, ",")
 }
 
 func escapeMatcherValue(s string) string {
@@ -163,17 +167,6 @@ func escapeMatcherValue(s string) string {
 		out = append(out, c)
 	}
 	return string(out)
-}
-
-func joinComma(parts []string) string {
-	if len(parts) == 0 {
-		return ""
-	}
-	out := parts[0]
-	for _, p := range parts[1:] {
-		out += "," + p
-	}
-	return out
 }
 
 // parseStringPair handles Prom's [timestampSeconds, "value"] shape for

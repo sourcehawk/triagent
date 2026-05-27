@@ -212,3 +212,38 @@ func TestRecentValue_MultipleMatches(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "multiple series matched")
 }
+
+func TestBuildMatcherString_Deterministic(t *testing.T) {
+	t.Parallel()
+	got := buildMatcherString(map[string]string{"b": "2", "a": "1"})
+	assert.Equal(t, `a="1",b="2"`, got)
+}
+
+func TestBuildMatcherString_EscapesQuotesAndBackslashes(t *testing.T) {
+	t.Parallel()
+	got := buildMatcherString(map[string]string{"k": `val"with"quotes`})
+	assert.Equal(t, `k="val\"with\"quotes"`, got)
+
+	got = buildMatcherString(map[string]string{"k": `val\back`})
+	assert.Equal(t, `k="val\\back"`, got)
+
+	// Combined: a literal backslash followed by a quote should produce
+	// `\\\"` in the rendered matcher.
+	got = buildMatcherString(map[string]string{"k": "\\\""})
+	assert.Equal(t, "k=\"\\\\\\\"\"", got)
+}
+
+func TestBuildMatcherString_EmptyMap(t *testing.T) {
+	t.Parallel()
+	assert.Equal(t, "", buildMatcherString(nil))
+	assert.Equal(t, "", buildMatcherString(map[string]string{}))
+}
+
+func TestRecentValue_RequiresMetric(t *testing.T) {
+	t.Parallel()
+	cat := cardCatalog("foo", 5)
+	snap := &snapshot{client: newPromClient("http://stub", "", "", http.DefaultClient), catalog: cat}
+	_, err := runRecentValue(context.Background(), snap, "", map[string]string{"k": "v"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "metric is required")
+}
