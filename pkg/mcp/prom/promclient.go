@@ -105,6 +105,89 @@ func (c *promClient) labelNames(ctx context.Context) ([]string, error) {
 	return resp.Data, nil
 }
 
+// QueryResponse is the shape Prom returns from /api/v1/query and
+// /api/v1/query_range. ResultType is one of "vector", "matrix",
+// "scalar", "string". For vectors/matrices, Result holds the per-series
+// rows; for scalars/strings, Scalar holds the `[timestamp, "value"]` pair.
+type QueryResponse struct {
+	ResultType string         `json:"resultType"`
+	Result     []SeriesResult `json:"-"` // vector/matrix samples
+	Scalar     []any          `json:"-"` // scalar: [ts, "v"]
+}
+
+type SeriesResult struct {
+	Metric map[string]string `json:"metric"`
+	Value  []any             `json:"value,omitempty"`  // instant: [ts, "v"]
+	Values [][]any           `json:"values,omitempty"` // range: [[ts, "v"], ...]
+}
+
+func (c *promClient) query(ctx context.Context, expr, atTime string) (QueryResponse, error) {
+	q := url.Values{}
+	q.Set("query", expr)
+	if atTime != "" {
+		q.Set("time", atTime)
+	}
+	var raw struct {
+		Status string          `json:"status"`
+		Data   json.RawMessage `json:"data"`
+	}
+	if err := c.doJSON(ctx, "/api/v1/query", q, &raw); err != nil {
+		return QueryResponse{}, err
+	}
+	if raw.Status != "success" {
+		return QueryResponse{}, fmt.Errorf("prom query: status=%q", raw.Status)
+	}
+	return decodeQueryData(raw.Data)
+}
+
+func (c *promClient) queryRange(ctx context.Context, expr, start, end, step string) (QueryResponse, error) {
+	q := url.Values{}
+	q.Set("query", expr)
+	q.Set("start", start)
+	q.Set("end", end)
+	q.Set("step", step)
+	var raw struct {
+		Status string          `json:"status"`
+		Data   json.RawMessage `json:"data"`
+	}
+	if err := c.doJSON(ctx, "/api/v1/query_range", q, &raw); err != nil {
+		return QueryResponse{}, err
+	}
+	if raw.Status != "success" {
+		return QueryResponse{}, fmt.Errorf("prom query_range: status=%q", raw.Status)
+	}
+	return decodeQueryData(raw.Data)
+}
+
+// decodeQueryData splits the polymorphic /api/v1/query data envelope
+// into the QueryResponse shape — scalars/strings land in Scalar, vectors
+// and matrices land in Result.
+func decodeQueryData(data json.RawMessage) (QueryResponse, error) {
+	var head struct {
+		ResultType string          `json:"resultType"`
+		Result     json.RawMessage `json:"result"`
+	}
+	if err := json.Unmarshal(data, &head); err != nil {
+		return QueryResponse{}, err
+	}
+	out := QueryResponse{ResultType: head.ResultType}
+	switch head.ResultType {
+	case "scalar", "string":
+		var pair []any
+		if err := json.Unmarshal(head.Result, &pair); err != nil {
+			return QueryResponse{}, err
+		}
+		out.Scalar = pair
+	default: // vector or matrix
+		var rows []SeriesResult
+		if err := json.Unmarshal(head.Result, &rows); err != nil {
+			return QueryResponse{}, err
+		}
+		out.Result = rows
+	}
+	return out, nil
+}
+
 // metadata returns the metric metadata table.
 func (c *promClient) metadata(ctx context.Context) (map[string]MetricMetadata, error) {
 	var resp struct {

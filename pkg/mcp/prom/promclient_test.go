@@ -129,3 +129,55 @@ func TestPromClient_NonSuccess(t *testing.T) {
 	_, err := c.labelNames(context.Background())
 	require.Error(t, err)
 }
+
+func TestPromClient_QueryInstant(t *testing.T) {
+	t.Parallel()
+	stub := newStubProm(t, stubHandlers{
+		query: func(w http.ResponseWriter, r *http.Request) {
+			writeJSON(t, w, map[string]any{
+				"status": "success",
+				"data": map[string]any{
+					"resultType": "vector",
+					"result": []map[string]any{
+						{"metric": map[string]string{"job": "x"}, "value": []any{1700000000, "0.5"}},
+					},
+				},
+			})
+		},
+	})
+	c := newPromClient(stub.URL, "", "", http.DefaultClient)
+	res, err := c.query(context.Background(), "up", "")
+	require.NoError(t, err)
+	assert.Equal(t, "vector", res.ResultType)
+	require.Len(t, res.Result, 1)
+	assert.Equal(t, "0.5", res.Result[0].Value[1])
+}
+
+func TestPromClient_QueryRange(t *testing.T) {
+	t.Parallel()
+	stub := newStubProm(t, stubHandlers{
+		queryRange: func(w http.ResponseWriter, r *http.Request) {
+			writeJSON(t, w, map[string]any{
+				"status": "success",
+				"data": map[string]any{
+					"resultType": "matrix",
+					"result": []map[string]any{
+						{
+							"metric": map[string]string{"pod": "a"},
+							"values": []any{
+								[]any{1700000000, "0.1"},
+								[]any{1700000060, "0.2"},
+							},
+						},
+					},
+				},
+			})
+		},
+	})
+	c := newPromClient(stub.URL, "", "", http.DefaultClient)
+	res, err := c.queryRange(context.Background(), "up", "1700000000", "1700001000", "60")
+	require.NoError(t, err)
+	assert.Equal(t, "matrix", res.ResultType)
+	require.Len(t, res.Result, 1)
+	require.Len(t, res.Result[0].Values, 2)
+}
