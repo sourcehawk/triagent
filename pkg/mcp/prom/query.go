@@ -172,6 +172,10 @@ func escapeMatcherValue(s string) string {
 const (
 	rangeHardSeriesCap = 25
 	rangeMaxDuration   = 24 * time.Hour
+	// rangeHardPointsCap is the hard ceiling on max_points regardless of
+	// caller input. Mirrors rangeHardSeriesCap; both bound the worst-case
+	// JSON payload of a range query response.
+	rangeHardPointsCap = 200
 )
 
 // RangeResult is the JSON shape returned by prom_query_range.
@@ -223,6 +227,9 @@ func runRangeQuery(ctx context.Context, snap *snapshot, expr, rangeStr, endStr s
 	if maxPoints <= 0 {
 		maxPoints = 100
 	}
+	if maxPoints > rangeHardPointsCap {
+		maxPoints = rangeHardPointsCap
+	}
 	if maxSeries <= 0 {
 		maxSeries = 10
 	}
@@ -249,9 +256,11 @@ func runRangeQuery(ctx context.Context, snap *snapshot, expr, rangeStr, endStr s
 	if maxPoints > 1 {
 		stepSec = (durSeconds + maxPoints - 2) / (maxPoints - 1)
 	} else {
-		// Degenerate: a single-sample request — make step at least the
-		// full duration so Prom returns one sample for end.
-		stepSec = durSeconds
+		// maxPoints == 1: set step larger than the range so Prom's
+		// inclusive-endpoint rule (floor(dur/step) + 1) yields exactly
+		// one sample. durSeconds alone produces 2 samples because
+		// floor(dur/dur) + 1 = 2; durSeconds + 1 gives floor(dur/(dur+1)) + 1 = 1.
+		stepSec = durSeconds + 1
 	}
 	if stepSec < 1 {
 		stepSec = 1

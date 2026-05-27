@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -223,4 +224,23 @@ func TestPromClient_QueryRange(t *testing.T) {
 	assert.Equal(t, "matrix", res.ResultType)
 	require.Len(t, res.Result, 1)
 	require.Len(t, res.Result[0].Values, 2)
+}
+
+func TestPromClient_SeriesBoundedBody(t *testing.T) {
+	t.Parallel()
+	// Stub returns a deliberately oversized series response (>1 MiB).
+	// The defensive cap should trip before the decode finishes.
+	stub := newStubProm(t, stubHandlers{
+		series: func(w http.ResponseWriter, r *http.Request) {
+			// Each entry is ~130 bytes; 30000 entries ≈ 3.9 MiB — well over the 1 MiB cap.
+			entry := `{"__name__":"foo","x":"` + strings.Repeat("a", 100) + `"}`
+			entries := strings.Repeat(entry+",", 30000)
+			entries = strings.TrimSuffix(entries, ",")
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"success","data":[` + entries + `]}`))
+		},
+	})
+	c := newPromClient(stub.URL, "", "", http.DefaultClient)
+	_, err := c.series(context.Background(), "foo", 200)
+	require.Error(t, err, "oversized response must trip the body cap")
 }

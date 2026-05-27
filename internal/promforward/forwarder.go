@@ -51,8 +51,8 @@ type resolveTargetResult struct {
 // resolves the actual pod port from the matching ServicePort.TargetPort.
 // client-go's portforward only accepts a pod, so we resolve the service
 // to a pod selector and pick the first running pod.
-func resolveTarget(cs kubernetes.Interface, target Target) (resolveTargetResult, error) {
-	svc, err := cs.CoreV1().Services(target.Namespace).Get(context.Background(), target.Service, metav1.GetOptions{})
+func resolveTarget(ctx context.Context, cs kubernetes.Interface, target Target) (resolveTargetResult, error) {
+	svc, err := cs.CoreV1().Services(target.Namespace).Get(ctx, target.Service, metav1.GetOptions{})
 	if err != nil {
 		return resolveTargetResult{}, fmt.Errorf("get service %s/%s: %w", target.Namespace, target.Service, err)
 	}
@@ -76,7 +76,7 @@ func resolveTarget(cs kubernetes.Interface, target Target) (resolveTargetResult,
 	}
 
 	selector := labelSelector(svc.Spec.Selector)
-	pods, err := cs.CoreV1().Pods(target.Namespace).List(context.Background(), metav1.ListOptions{LabelSelector: selector})
+	pods, err := cs.CoreV1().Pods(target.Namespace).List(ctx, metav1.ListOptions{LabelSelector: selector})
 	if err != nil {
 		return resolveTargetResult{}, fmt.Errorf("list pods for %s: %w", svc.Name, err)
 	}

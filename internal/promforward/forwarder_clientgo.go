@@ -3,6 +3,7 @@ package promforward
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -37,7 +38,7 @@ func (f *clientGoForwarder) Start(ctx context.Context) (string, error) {
 	if f.stopCh != nil {
 		return "http://127.0.0.1:" + strconv.Itoa(f.localPort), nil
 	}
-	res, err := resolveTarget(f.cs, f.target)
+	res, err := resolveTarget(ctx, f.cs, f.target)
 	if err != nil {
 		return "", err
 	}
@@ -66,7 +67,7 @@ func (f *clientGoForwarder) Start(ctx context.Context) (string, error) {
 	readyCh := make(chan struct{})
 	ports := []string{strconv.Itoa(local) + ":" + strconv.Itoa(res.podPort)}
 
-	pf, err := portforward.New(dialer, ports, stopCh, readyCh, nil, nil)
+	pf, err := portforward.New(dialer, ports, stopCh, readyCh, io.Discard, io.Discard)
 	if err != nil {
 		return "", fmt.Errorf("build port-forwarder: %w", err)
 	}

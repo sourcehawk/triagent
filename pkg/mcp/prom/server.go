@@ -285,7 +285,7 @@ type promQueryRangeIn struct {
 	Range     string `json:"range" jsonschema:"Required. Duration string (e.g. \"15m\", \"1h\"). Cap 24h."`
 	End       string `json:"end,omitempty" jsonschema:"Optional ISO-8601 end time. Defaults to now."`
 	MaxSeries int    `json:"max_series,omitempty" jsonschema:"Per-call series cap; default 10, hard ceiling 25."`
-	MaxPoints int    `json:"max_points,omitempty" jsonschema:"Points-per-series budget; default 100. Drives the auto-computed step."`
+	MaxPoints int    `json:"max_points,omitempty" jsonschema:"Points-per-series budget; default 100, hard ceiling 200. Drives the auto-computed step."`
 	Raw       bool   `json:"raw,omitempty" jsonschema:"When true, return raw [ts, value] points (capped to max_points). Default false → per-series summary stats + sparkline."`
 }
 

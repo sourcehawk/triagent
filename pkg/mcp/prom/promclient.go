@@ -67,6 +67,43 @@ func (c *promClient) applyAuth(req *http.Request) {
 	}
 }
 
+// seriesMaxBodyBytes caps the response body for /api/v1/series probes
+// regardless of whether the Prometheus server honors the `limit` query
+// parameter (added in Prom 2.39). 1 MiB is generous — a probe response
+// at cardProbeLimit=200 rows with typical label volume sits well under
+// 100 KiB.
+const seriesMaxBodyBytes = 1 * 1024 * 1024
+
+// doJSONBounded is like doJSON but caps the response body at maxBytes
+// (returns an error if Prom returns more). Used by /api/v1/series to
+// hold the line on bounded output even when an older Prom ignores the
+// `limit` query parameter.
+func (c *promClient) doJSONBounded(ctx context.Context, path string, q url.Values, out any, maxBytes int64) error {
+	u := c.endpoint + path
+	if len(q) > 0 {
+		u += "?" + q.Encode()
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return err
+	}
+	c.applyAuth(req)
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode/100 != 2 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return fmt.Errorf("prom %s returned %d: %s", path, resp.StatusCode, string(body))
+	}
+	// Wrap with a defensive limit. If Prom returns more than maxBytes,
+	// json.Decoder returns an "unexpected EOF" or similar error — the
+	// caller surfaces it rather than allocating a huge buffer.
+	body := http.MaxBytesReader(nil, resp.Body, maxBytes)
+	return json.NewDecoder(body).Decode(out)
+}
+
 // series issues GET /api/v1/series?match[]=<expr>&limit=<n>. The Prom
 // response shape is {"status":"success","data":[{label:value, ...}, ...]}.
 // Returns the raw label maps so callers can both count and read sample
@@ -81,7 +118,7 @@ func (c *promClient) series(ctx context.Context, matchExpr string, limit int) ([
 		Status string              `json:"status"`
 		Data   []map[string]string `json:"data"`
 	}
-	if err := c.doJSON(ctx, "/api/v1/series", q, &resp); err != nil {
+	if err := c.doJSONBounded(ctx, "/api/v1/series", q, &resp, seriesMaxBodyBytes); err != nil {
 		return nil, err
 	}
 	if resp.Status != "success" {

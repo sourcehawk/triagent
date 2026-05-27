@@ -1,6 +1,7 @@
 package promforward
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -31,7 +32,7 @@ func TestResolveTarget_ServiceSelectorMatchesPod(t *testing.T) {
 			Status: corev1.PodStatus{Phase: corev1.PodRunning},
 		},
 	)
-	res, err := resolveTarget(cs, Target{Service: "prometheus", Namespace: "monitoring", Port: 9090})
+	res, err := resolveTarget(context.Background(), cs, Target{Service: "prometheus", Namespace: "monitoring", Port: 9090})
 	require.NoError(t, err)
 	assert.Equal(t, "prometheus-0", res.podName)
 	assert.Equal(t, "monitoring", res.podNamespace)
@@ -49,7 +50,7 @@ func TestResolveTarget_NoPods(t *testing.T) {
 			},
 		},
 	})
-	_, err := resolveTarget(cs, Target{Service: "prometheus", Namespace: "monitoring", Port: 9090})
+	_, err := resolveTarget(context.Background(), cs, Target{Service: "prometheus", Namespace: "monitoring", Port: 9090})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no pods")
 }
@@ -57,7 +58,7 @@ func TestResolveTarget_NoPods(t *testing.T) {
 func TestResolveTarget_ServiceMissing(t *testing.T) {
 	t.Parallel()
 	cs := fake.NewSimpleClientset()
-	_, err := resolveTarget(cs, Target{Service: "prometheus", Namespace: "monitoring", Port: 9090})
+	_, err := resolveTarget(context.Background(), cs, Target{Service: "prometheus", Namespace: "monitoring", Port: 9090})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "service")
 }
@@ -79,7 +80,7 @@ func TestResolveTarget_PodNotRunning(t *testing.T) {
 			Status:     corev1.PodStatus{Phase: corev1.PodPending},
 		},
 	)
-	_, err := resolveTarget(cs, Target{Service: "prometheus", Namespace: "monitoring", Port: 9090})
+	_, err := resolveTarget(context.Background(), cs, Target{Service: "prometheus", Namespace: "monitoring", Port: 9090})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no running pods")
 }
@@ -104,7 +105,7 @@ func TestResolveTarget_TargetPortInt(t *testing.T) {
 			Status: corev1.PodStatus{Phase: corev1.PodRunning},
 		},
 	)
-	res, err := resolveTarget(cs, Target{Service: "prometheus", Namespace: "monitoring", Port: 9090})
+	res, err := resolveTarget(context.Background(), cs, Target{Service: "prometheus", Namespace: "monitoring", Port: 9090})
 	require.NoError(t, err)
 	assert.Equal(t, 8080, res.podPort)
 }
@@ -129,7 +130,7 @@ func TestResolveTarget_TargetPortNamed(t *testing.T) {
 			Status: corev1.PodStatus{Phase: corev1.PodRunning},
 		},
 	)
-	res, err := resolveTarget(cs, Target{Service: "prometheus", Namespace: "monitoring", Port: 9090})
+	res, err := resolveTarget(context.Background(), cs, Target{Service: "prometheus", Namespace: "monitoring", Port: 9090})
 	require.NoError(t, err)
 	assert.Equal(t, 9999, res.podPort)
 }
@@ -147,7 +148,7 @@ func TestResolveTarget_NoMatchingServicePort(t *testing.T) {
 			},
 		},
 	)
-	_, err := resolveTarget(cs, Target{Service: "prometheus", Namespace: "monitoring", Port: 9090})
+	_, err := resolveTarget(context.Background(), cs, Target{Service: "prometheus", Namespace: "monitoring", Port: 9090})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no port matching")
 }

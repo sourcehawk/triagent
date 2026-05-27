@@ -399,3 +399,53 @@ func TestQueryRange_RawTruncatesAtMaxPoints(t *testing.T) {
 	require.Len(t, res.Series, 1)
 	assert.Len(t, res.Series[0].Points, 3, "raw points must be capped at max_points")
 }
+
+func TestQueryRange_MaxPointsOne(t *testing.T) {
+	t.Parallel()
+	var seenStep string
+	stub := newStubProm(t, stubHandlers{
+		queryRange: func(w http.ResponseWriter, r *http.Request) {
+			seenStep = r.URL.Query().Get("step")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"status": "success",
+				"data": map[string]any{
+					"resultType": "matrix",
+					"result":     []map[string]any{{"metric": map[string]string{"x": "1", "namespace": "x"}, "values": []any{[]any{1700000900, "42"}}}},
+				},
+			})
+		},
+	})
+	cat := cardCatalog("m", 5)
+	snap := &snapshot{client: newPromClient(stub.URL, "", "", http.DefaultClient), catalog: cat}
+	res, err := runRangeQuery(context.Background(), snap, `m{namespace="x"}`, "15m", "", 10, 1, true)
+	require.NoError(t, err)
+	// step must exceed the 900s duration so Prom returns one sample.
+	require.Equal(t, "901s", seenStep)
+	require.Len(t, res.Series, 1)
+	require.Len(t, res.Series[0].Points, 1)
+}
+
+func TestQueryRange_ClampsMaxPointsToCeiling(t *testing.T) {
+	t.Parallel()
+	var seenStep string
+	stub := newStubProm(t, stubHandlers{
+		queryRange: func(w http.ResponseWriter, r *http.Request) {
+			seenStep = r.URL.Query().Get("step")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"status": "success",
+				"data": map[string]any{
+					"resultType": "matrix",
+					"result":     []map[string]any{{"metric": map[string]string{"x": "1", "namespace": "x"}, "values": []any{[]any{1700000000, "0"}}}},
+				},
+			})
+		},
+	})
+	cat := cardCatalog("m", 5)
+	snap := &snapshot{client: newPromClient(stub.URL, "", "", http.DefaultClient), catalog: cat}
+	// Caller asks for max_points=100000, but the clamp should produce
+	// a step matching maxPoints=rangeHardPointsCap (=200).
+	_, err := runRangeQuery(context.Background(), snap, `m{namespace="x"}`, "1h", "", 10, 100000, false)
+	require.NoError(t, err)
+	// 3600s / (200-1) = ceiling division: (3600 + 199 - 2) / 199 = 3797/199 = 19s (floor).
+	require.Equal(t, "19s", seenStep)
+}
