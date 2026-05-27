@@ -2,6 +2,7 @@ package prom
 
 import (
 	"context"
+	"strings"
 )
 
 const (
@@ -20,7 +21,7 @@ const (
 // during probe).
 func cardinalityOf(ctx context.Context, c *promClient, cat *catalog, name string) (int, error) {
 	cat.mu.Lock()
-	if v, ok := cat.cardEst[name]; ok && v != 0 {
+	if v, ok := cat.cardEst[name]; ok {
 		cat.mu.Unlock()
 		return v, nil
 	}
@@ -83,7 +84,7 @@ func buildLabelProfile(rows []map[string]string, cat *catalog, name string) labe
 			SampleValues: sample,
 		})
 	}
-	annotateTypicalScope(labels, len(rows))
+	annotateTypicalScope(labels)
 	related := relatedByPrefix(cat.names, name, 10)
 	return labelProfile{
 		labels:           labels,
@@ -92,24 +93,20 @@ func buildLabelProfile(rows []map[string]string, cat *catalog, name string) labe
 	}
 }
 
-// annotateTypicalScope marks the most likely "scope" key: lowest
-// cardinality that appears in ≥80% of series, with namespace/service
-// nudged ahead.
-func annotateTypicalScope(labels []labelInfo, totalSeries int) {
-	const presenceThreshold = 0.8
+// annotateTypicalScope marks the most likely "scope" key on `labels` in
+// place: the lowest-cardinality label wins, with `namespace`/`service`
+// taking precedence when present. A presence-threshold gate (e.g. label
+// must appear in ≥80% of series) is a possible future refinement; it
+// requires per-row presence counts we don't track today.
+func annotateTypicalScope(labels []labelInfo) {
 	bestIdx := -1
 	bestCard := -1
 	for i, l := range labels {
-		// The probe-derived cardinality counts distinct values; the
-		// "presence" check (≥80% of series) is approximate — we proxy it
-		// by requiring distinct values ≤ totalSeries (always true) AND
-		// preferring namespace/service when present.
 		if bestIdx == -1 || l.Cardinality < bestCard {
 			bestIdx = i
 			bestCard = l.Cardinality
 		}
 	}
-	// Nudge: if namespace/service is present, override the pick.
 	for i, l := range labels {
 		if l.Key == "namespace" || l.Key == "service" {
 			bestIdx = i
@@ -119,25 +116,25 @@ func annotateTypicalScope(labels []labelInfo, totalSeries int) {
 	if bestIdx >= 0 {
 		labels[bestIdx].TypicalScope = true
 	}
-	_ = totalSeries       // currently unused; presence threshold deferred
-	_ = presenceThreshold // deferred: will gate the presence check
 }
 
 // relatedByPrefix returns sibling metric names sharing the longest
-// underscore-bounded prefix with `name`. Capped at `n`.
+// underscore-bounded prefix with `name` (excluding `name` itself).
+// Returns nil when `name` has no usable prefix — names with no
+// underscore, or a leading underscore at index 0, have no group.
+// Capped at `n` results.
 func relatedByPrefix(names []string, name string, n int) []string {
 	if len(names) == 0 {
 		return nil
 	}
-	var prefix string
-	if i := lastUnderscore(name); i > 0 {
-		prefix = name[:i+1]
-	} else {
+	i := strings.LastIndexByte(name, '_')
+	if i <= 0 {
 		return nil
 	}
+	prefix := name[:i+1]
 	var out []string
 	for _, m := range names {
-		if m == name || !startsWith(m, prefix) {
+		if m == name || !strings.HasPrefix(m, prefix) {
 			continue
 		}
 		out = append(out, m)
@@ -146,20 +143,4 @@ func relatedByPrefix(names []string, name string, n int) []string {
 		}
 	}
 	return out
-}
-
-func lastUnderscore(s string) int {
-	for i := len(s) - 1; i >= 0; i-- {
-		if s[i] == '_' {
-			return i
-		}
-	}
-	return -1
-}
-
-func startsWith(s, prefix string) bool {
-	if len(prefix) > len(s) {
-		return false
-	}
-	return s[:len(prefix)] == prefix
 }

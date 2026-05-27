@@ -68,3 +68,46 @@ func TestCardinality_Cached(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int32(1), calls.Load(), "second call must hit cache")
 }
+
+func TestCardinality_ZeroSeriesCachedAndNotReprobed(t *testing.T) {
+	t.Parallel()
+	var calls atomic.Int32
+	stub := newStubProm(t, stubHandlers{
+		series: func(w http.ResponseWriter, r *http.Request) {
+			calls.Add(1)
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": []map[string]string{}})
+		},
+	})
+	c := newPromClient(stub.URL, "", "", http.DefaultClient)
+	cat := emptyCatalog()
+	cat.names = []string{"z"}
+	got, err := cardinalityOf(context.Background(), c, cat, "z")
+	require.NoError(t, err)
+	assert.Equal(t, 0, got)
+	got, err = cardinalityOf(context.Background(), c, cat, "z")
+	require.NoError(t, err)
+	assert.Equal(t, 0, got)
+	assert.Equal(t, int32(1), calls.Load(), "zero-series cardinality must be cached, not re-probed")
+}
+
+func TestCardinality_LowCardFillsLabelsCache(t *testing.T) {
+	t.Parallel()
+	stub := newStubProm(t, stubHandlers{
+		series: func(w http.ResponseWriter, r *http.Request) {
+			rows := []map[string]string{
+				{"__name__": "up", "instance": "a", "job": "n1"},
+				{"__name__": "up", "instance": "b", "job": "n1"},
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": rows})
+		},
+	})
+	c := newPromClient(stub.URL, "", "", http.DefaultClient)
+	cat := emptyCatalog()
+	cat.names = []string{"up"}
+	_, err := cardinalityOf(context.Background(), c, cat, "up")
+	require.NoError(t, err)
+	prof, ok := cat.labelsCache["up"]
+	require.True(t, ok, "labelsCache must be filled on low-card path")
+	assert.Equal(t, 2, prof.totalCardinality)
+	require.NotEmpty(t, prof.labels)
+}

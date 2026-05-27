@@ -20,7 +20,7 @@ type catalog struct {
 	prefixIdx map[string]int            // "<prefix>_" → count
 
 	mu          sync.Mutex
-	cardEst     map[string]int   // lazy; 0 means "unprobed"; -1 means "high (limit reached)"
+	cardEst     map[string]int   // lazy; presence (ok from map lookup) means "probed"; value of -1 is the high-card sentinel
 	labelsCache map[string]labelProfile
 }
 
