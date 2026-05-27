@@ -113,6 +113,27 @@ func TestResolvePromTarget_ProfileEmptyService(t *testing.T) {
 	assert.Nil(t, target)
 }
 
+// TestResolvePromTarget_OverrideOnlyWithProfileNoProm: profile exists but has
+// no prom configured, override supplies the full target — the override wins.
+// This is the "override-only-no-profile-prom" path: the Manager is now
+// provisioned whenever a profile is present (not just when profile has prom),
+// so this path must produce a valid non-nil target.
+func TestResolvePromTarget_OverrideOnlyWithProfileNoProm(t *testing.T) {
+	t.Parallel()
+	prof := &profile.Profile{} // profile present, but no prometheus defaults
+	override := &promOverrideBody{
+		Service:   "custom-prom",
+		Namespace: "custom-ns",
+		Port:      8080,
+	}
+	target, disabled := resolvePromTarget(prof, override)
+	require.False(t, disabled)
+	require.NotNil(t, target)
+	assert.Equal(t, "custom-prom", target.Service)
+	assert.Equal(t, "custom-ns", target.Namespace)
+	assert.Equal(t, 8080, target.Port)
+}
+
 // ── GET /api/profile/prom-defaults ───────────────────────────────────────────
 
 func TestHandleProfilePromDefaults_HappyPath(t *testing.T) {

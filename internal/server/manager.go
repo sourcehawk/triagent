@@ -315,6 +315,12 @@ type InvestigationDTO struct {
 	// OriginatingSignal is the back-reference to the specific signal that
 	// produced this investigation. nil for preflight-created investigations.
 	OriginatingSignal *OriginatingSignal `json:"originatingSignal,omitempty"`
+	// PromTarget is the per-investigation Prometheus port-forward target.
+	// Nil means no prom target was configured (or prom is disabled).
+	PromTarget *promforward.Target `json:"promTarget,omitempty"`
+	// PromDisabled, when true, explicitly opts this investigation out of
+	// the prom MCP regardless of profile defaults.
+	PromDisabled bool `json:"promDisabled,omitempty"`
 	// Resumable is true for restored sessions whose claude conversation
 	// can be picked up via --resume on the next follow-up. False once
 	// rehydrated, when archived, or when no session id was captured.
@@ -383,6 +389,8 @@ func (i *Investigation) Snapshot() InvestigationDTO {
 		Auto:               i.Auto,
 		OriginatingWatchID: i.OriginatingWatchID,
 		OriginatingSignal:  i.OriginatingSignal,
+		PromTarget:         i.PromTarget,
+		PromDisabled:       i.PromDisabled,
 		Resumable:          !i.archived && i.ClaudeSessionID != "" && i.needsRehydrate,
 		Slug:            computeSessionSlug(i.CreatedAt, i.Namespace, i.ID),
 		SyncState: sessionSyncStateFor(sessionSyncStateInputs{

@@ -576,8 +576,12 @@ func New(opts Options) (*Server, error) {
 		})
 	}
 
+	// Provision the prom Manager whenever we have a profile — the Manager
+	// itself has no dependency on profile-level prom config because
+	// per-investigation overrides can supply the full target even when the
+	// profile has no defaults.prometheus section.
 	var promForwarder *promforward.Manager
-	if opts.Profile != nil && opts.Profile.Defaults.Prometheus.Service != "" {
+	if opts.Profile != nil {
 		promForwarder = promforward.NewManager(promforward.Options{
 			KubeBuilder: func(invID, ctxName string) (*rest.Config, kubernetes.Interface, error) {
 				inv := manager.Get(invID)
