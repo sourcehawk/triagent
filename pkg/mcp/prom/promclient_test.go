@@ -132,8 +132,10 @@ func TestPromClient_NonSuccess(t *testing.T) {
 
 func TestPromClient_QueryInstant(t *testing.T) {
 	t.Parallel()
+	gotTime := make(chan string, 1)
 	stub := newStubProm(t, stubHandlers{
 		query: func(w http.ResponseWriter, r *http.Request) {
+			gotTime <- r.URL.Query().Get("time")
 			writeJSON(t, w, map[string]any{
 				"status": "success",
 				"data": map[string]any{
@@ -151,6 +153,47 @@ func TestPromClient_QueryInstant(t *testing.T) {
 	assert.Equal(t, "vector", res.ResultType)
 	require.Len(t, res.Result, 1)
 	assert.Equal(t, "0.5", res.Result[0].Value[1])
+	assert.Empty(t, <-gotTime, "time param must be omitted when atTime is empty")
+}
+
+func TestPromClient_QueryScalar(t *testing.T) {
+	t.Parallel()
+	stub := newStubProm(t, stubHandlers{
+		query: func(w http.ResponseWriter, r *http.Request) {
+			writeJSON(t, w, map[string]any{
+				"status": "success",
+				"data": map[string]any{
+					"resultType": "scalar",
+					"result":     []any{1700000000, "7"},
+				},
+			})
+		},
+	})
+	c := newPromClient(stub.URL, "", "", http.DefaultClient)
+	res, err := c.query(context.Background(), "vector(7)", "")
+	require.NoError(t, err)
+	assert.Equal(t, "scalar", res.ResultType)
+	require.Len(t, res.Scalar, 2)
+	assert.Equal(t, "7", res.Scalar[1])
+}
+
+func TestPromClient_QueryUnknownResultType(t *testing.T) {
+	t.Parallel()
+	stub := newStubProm(t, stubHandlers{
+		query: func(w http.ResponseWriter, r *http.Request) {
+			writeJSON(t, w, map[string]any{
+				"status": "success",
+				"data": map[string]any{
+					"resultType": "future_shape",
+					"result":     []any{},
+				},
+			})
+		},
+	})
+	c := newPromClient(stub.URL, "", "", http.DefaultClient)
+	_, err := c.query(context.Background(), "expr", "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown resultType")
 }
 
 func TestPromClient_QueryRange(t *testing.T) {

@@ -121,23 +121,31 @@ type SeriesResult struct {
 	Values [][]any           `json:"values,omitempty"` // range: [[ts, "v"], ...]
 }
 
+// doQuery is the shared body of query and queryRange: issue a GET with
+// the supplied url.Values, parse the {status, data} envelope, and
+// dispatch through decodeQueryData. `path` is `/api/v1/query` or
+// `/api/v1/query_range`.
+func (c *promClient) doQuery(ctx context.Context, path string, q url.Values) (QueryResponse, error) {
+	var raw struct {
+		Status string          `json:"status"`
+		Data   json.RawMessage `json:"data"`
+	}
+	if err := c.doJSON(ctx, path, q, &raw); err != nil {
+		return QueryResponse{}, err
+	}
+	if raw.Status != "success" {
+		return QueryResponse{}, fmt.Errorf("prom %s: status=%q", path, raw.Status)
+	}
+	return decodeQueryData(raw.Data)
+}
+
 func (c *promClient) query(ctx context.Context, expr, atTime string) (QueryResponse, error) {
 	q := url.Values{}
 	q.Set("query", expr)
 	if atTime != "" {
 		q.Set("time", atTime)
 	}
-	var raw struct {
-		Status string          `json:"status"`
-		Data   json.RawMessage `json:"data"`
-	}
-	if err := c.doJSON(ctx, "/api/v1/query", q, &raw); err != nil {
-		return QueryResponse{}, err
-	}
-	if raw.Status != "success" {
-		return QueryResponse{}, fmt.Errorf("prom query: status=%q", raw.Status)
-	}
-	return decodeQueryData(raw.Data)
+	return c.doQuery(ctx, "/api/v1/query", q)
 }
 
 func (c *promClient) queryRange(ctx context.Context, expr, start, end, step string) (QueryResponse, error) {
@@ -146,22 +154,15 @@ func (c *promClient) queryRange(ctx context.Context, expr, start, end, step stri
 	q.Set("start", start)
 	q.Set("end", end)
 	q.Set("step", step)
-	var raw struct {
-		Status string          `json:"status"`
-		Data   json.RawMessage `json:"data"`
-	}
-	if err := c.doJSON(ctx, "/api/v1/query_range", q, &raw); err != nil {
-		return QueryResponse{}, err
-	}
-	if raw.Status != "success" {
-		return QueryResponse{}, fmt.Errorf("prom query_range: status=%q", raw.Status)
-	}
-	return decodeQueryData(raw.Data)
+	return c.doQuery(ctx, "/api/v1/query_range", q)
 }
 
 // decodeQueryData splits the polymorphic /api/v1/query data envelope
-// into the QueryResponse shape — scalars/strings land in Scalar, vectors
-// and matrices land in Result.
+// into the QueryResponse shape. Scalar and string land in Scalar; vector
+// and matrix land in Result. Any other resultType is treated as an
+// error rather than silently accepted — Prom's response shape contract
+// is fixed, and a mismatch indicates either a version drift or a stub
+// bug we want surfaced.
 func decodeQueryData(data json.RawMessage) (QueryResponse, error) {
 	var head struct {
 		ResultType string          `json:"resultType"`
@@ -169,6 +170,9 @@ func decodeQueryData(data json.RawMessage) (QueryResponse, error) {
 	}
 	if err := json.Unmarshal(data, &head); err != nil {
 		return QueryResponse{}, err
+	}
+	if len(head.Result) == 0 {
+		return QueryResponse{}, fmt.Errorf("prom response missing result field for resultType=%q", head.ResultType)
 	}
 	out := QueryResponse{ResultType: head.ResultType}
 	switch head.ResultType {
@@ -178,12 +182,14 @@ func decodeQueryData(data json.RawMessage) (QueryResponse, error) {
 			return QueryResponse{}, err
 		}
 		out.Scalar = pair
-	default: // vector or matrix
+	case "vector", "matrix":
 		var rows []SeriesResult
 		if err := json.Unmarshal(head.Result, &rows); err != nil {
 			return QueryResponse{}, err
 		}
 		out.Result = rows
+	default:
+		return QueryResponse{}, fmt.Errorf("prom response has unknown resultType=%q", head.ResultType)
 	}
 	return out, nil
 }
