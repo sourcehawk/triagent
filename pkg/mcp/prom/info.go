@@ -15,7 +15,7 @@ func renderInfo(cat *catalog) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%d metrics indexed at %s.\n", len(cat.names), cat.endpoint)
 	if len(cat.names) == 0 {
-		b.WriteString("\ncatalog empty — switch context may not have a Prom endpoint, or the port-forward is still establishing.\n")
+		b.WriteString("\ncatalog empty — the endpoint may have no metrics indexed, or it is not yet reachable.\n")
 		b.WriteString(toolGuidanceBlock())
 		return b.String()
 	}
@@ -60,6 +60,10 @@ func renderInfo(cat *catalog) string {
 	return b.String()
 }
 
+// colPad returns the space count to insert between the `*` character that
+// follows the prefix in renderInfo's row format and the count column at
+// position `target`. The -1 accounts for the `*` that renderInfo emits
+// immediately after the prefix in its `"  %s*%s%d\n"` format.
 func colPad(prefix string) int {
 	const target = 18
 	pad := target - len(prefix) - 1
