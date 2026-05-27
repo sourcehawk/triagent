@@ -20,6 +20,12 @@ func TestNew_ReturnsServer(t *testing.T) {
 	require.NotNil(t, srv)
 }
 
+func TestNew_BearerAndBasicAuthMutuallyExclusive(t *testing.T) {
+	t.Parallel()
+	_, err := New(Options{Endpoint: "http://127.0.0.1:9090", Bearer: "tok", BasicAuth: "user:pass"})
+	require.Error(t, err)
+}
+
 func TestRun_ReturnsOnCanceledContext(t *testing.T) {
 	t.Parallel()
 	srv, err := New(Options{Endpoint: "http://127.0.0.1:9090"})

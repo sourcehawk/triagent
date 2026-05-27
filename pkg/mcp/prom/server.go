@@ -101,13 +101,13 @@ func (s *Server) register() {
 	// Tools added in later phases.
 }
 
-// refreshCatalog is the catalog rebuild path. Implemented in Phase 1.
-// Stub here so server.go compiles.
+// refreshCatalog is the catalog rebuild path. Stub here so server.go
+// compiles; the real implementation lands in Task 4.
 func (s *Server) refreshCatalog(_ context.Context) error {
 	return nil
 }
 
-// errorResult formats a tool-level error result (matches the wiki/meta pattern).
+// errorResult formats a tool-level error result.
 func errorResult(msg string) *mcp.CallToolResult {
 	return &mcp.CallToolResult{
 		IsError: true,
