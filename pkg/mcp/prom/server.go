@@ -74,7 +74,7 @@ type snapshot struct {
 // during the first tool call.
 func New(opts Options) (*Server, error) {
 	if opts.Endpoint == "" && opts.EndpointResolver == "" {
-		return nil, fmt.Errorf("Endpoint or EndpointResolver is required")
+		return nil, fmt.Errorf("endpoint or EndpointResolver is required")
 	}
 	if opts.Bearer != "" && opts.BasicAuth != "" {
 		return nil, fmt.Errorf("bearer and BasicAuth are mutually exclusive")
