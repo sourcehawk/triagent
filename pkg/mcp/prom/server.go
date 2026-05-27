@@ -127,6 +127,11 @@ func (s *Server) register() {
 		Name:        "prom_query",
 		Description: "Run an instant PromQL query. Scalar-first: prefer expressions that aggregate or top-N down to a small result. Hard cap of 50 series — over-cap responses are rejected with a corrective hint, never silently truncated. High-cardinality metrics MUST carry a non-`__name__` label matcher; unscoped references are rejected before the HTTP round-trip. Use prom_describe_metric to learn the scope keys for a given metric.",
 	}, telemetry.Wrap("prom_query", s.handleQuery))
+
+	mcp.AddTool(s.impl, &mcp.Tool{
+		Name:        "prom_recent_value",
+		Description: "Read the current value of `metric` for the exact label set `labels`. Returns a single value or a structured error (no data / multiple-series-matched-narrow-the-label-set). Preferred over composing PromQL when you know the labels.",
+	}, telemetry.Wrap("prom_recent_value", s.handleRecentValue))
 }
 
 type listMetricsIn struct {
@@ -198,6 +203,23 @@ func (s *Server) handleQuery(ctx context.Context, _ *mcp.CallToolRequest, in pro
 	res, err := runInstantQuery(ctx, snap, in.Promql, in.Time)
 	if err != nil {
 		return errorResult(err.Error()), QueryResult{}, nil
+	}
+	return nil, res, nil
+}
+
+type recentValueIn struct {
+	Metric string            `json:"metric" jsonschema:"Required. Exact metric name from prom_list_metrics."`
+	Labels map[string]string `json:"labels" jsonschema:"Required (non-empty). Label key/value pairs that uniquely identify the series to read."`
+}
+
+func (s *Server) handleRecentValue(ctx context.Context, _ *mcp.CallToolRequest, in recentValueIn) (*mcp.CallToolResult, ValueResult, error) {
+	snap := s.snapshot.Load()
+	if snap == nil || len(snap.catalog.names) == 0 {
+		return errorResult("catalog empty — the endpoint may have no metrics indexed, or it is not yet reachable"), ValueResult{}, nil
+	}
+	res, err := runRecentValue(ctx, snap, in.Metric, in.Labels)
+	if err != nil {
+		return errorResult(err.Error()), ValueResult{}, nil
 	}
 	return nil, res, nil
 }

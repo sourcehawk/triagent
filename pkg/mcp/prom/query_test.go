@@ -157,3 +157,58 @@ func TestQuery_StringResultSurfacesValue(t *testing.T) {
 	assert.Equal(t, "hello", res.StringValue)
 	assert.NotEmpty(t, res.Timestamp)
 }
+
+func TestRecentValue_RequiresLabels(t *testing.T) {
+	t.Parallel()
+	cat := cardCatalog("foo", 5)
+	snap := &snapshot{client: newPromClient("http://stub", "", "", http.DefaultClient), catalog: cat}
+	_, err := runRecentValue(context.Background(), snap, "foo", nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "labels required")
+}
+
+func TestRecentValue_SingleSample(t *testing.T) {
+	t.Parallel()
+	stub := newStubProm(t, stubHandlers{
+		query: func(w http.ResponseWriter, r *http.Request) {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"status": "success",
+				"data": map[string]any{
+					"resultType": "vector",
+					"result": []map[string]any{
+						{"metric": map[string]string{"pod": "a", "namespace": "x"}, "value": []any{1700000000, "0.93"}},
+					},
+				},
+			})
+		},
+	})
+	cat := cardCatalog("zeebe_partition_health", 5)
+	snap := &snapshot{client: newPromClient(stub.URL, "", "", http.DefaultClient), catalog: cat}
+	res, err := runRecentValue(context.Background(), snap, "zeebe_partition_health", map[string]string{"pod": "a"})
+	require.NoError(t, err)
+	assert.InDelta(t, 0.93, res.Value, 0.001)
+	assert.NotEmpty(t, res.Timestamp)
+}
+
+func TestRecentValue_MultipleMatches(t *testing.T) {
+	t.Parallel()
+	stub := newStubProm(t, stubHandlers{
+		query: func(w http.ResponseWriter, r *http.Request) {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"status": "success",
+				"data": map[string]any{
+					"resultType": "vector",
+					"result": []map[string]any{
+						{"metric": map[string]string{"pod": "a"}, "value": []any{1700000000, "0.1"}},
+						{"metric": map[string]string{"pod": "b"}, "value": []any{1700000000, "0.2"}},
+					},
+				},
+			})
+		},
+	})
+	cat := cardCatalog("zeebe_partition_health", 5)
+	snap := &snapshot{client: newPromClient(stub.URL, "", "", http.DefaultClient), catalog: cat}
+	_, err := runRecentValue(context.Background(), snap, "zeebe_partition_health", map[string]string{"namespace": "x"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "multiple series matched")
+}

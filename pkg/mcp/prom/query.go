@@ -3,6 +3,7 @@ package prom
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strconv"
 	"time"
 )
@@ -100,6 +101,79 @@ func parseSamplePair(pair []any) (float64, string, error) {
 	nsec := int64((tsFloat - float64(sec)) * 1e9)
 	ts := time.Unix(sec, nsec).UTC().Format(time.RFC3339Nano)
 	return v, ts, nil
+}
+
+// ValueResult is the JSON shape returned by prom_recent_value.
+type ValueResult struct {
+	Value     float64 `json:"value"`
+	Timestamp string  `json:"timestamp"`
+}
+
+func runRecentValue(ctx context.Context, snap *snapshot, metric string, labels map[string]string) (ValueResult, error) {
+	if len(labels) == 0 {
+		return ValueResult{}, fmt.Errorf("labels required (non-empty) — prom_recent_value needs at least one label matcher to scope the lookup")
+	}
+	expr := metric + "{" + buildMatcherString(labels) + "}"
+	if err := checkScope(ctx, snap.client, snap.catalog, expr); err != nil {
+		return ValueResult{}, err
+	}
+	res, err := snap.client.query(ctx, expr, "")
+	if err != nil {
+		return ValueResult{}, err
+	}
+	if res.ResultType != "vector" {
+		return ValueResult{}, fmt.Errorf("unexpected result type %q for metric+labels query", res.ResultType)
+	}
+	switch len(res.Result) {
+	case 0:
+		return ValueResult{}, fmt.Errorf("no data — no series matches %q with the given labels", metric)
+	case 1:
+		v, ts, err := parseSamplePair(res.Result[0].Value)
+		if err != nil {
+			return ValueResult{}, err
+		}
+		return ValueResult{Value: v, Timestamp: ts}, nil
+	default:
+		return ValueResult{}, fmt.Errorf("multiple series matched (%d) — narrow the label set", len(res.Result))
+	}
+}
+
+// buildMatcherString renders {k1="v1",k2="v2"} contents with deterministic
+// key ordering so equivalent inputs produce identical query strings.
+func buildMatcherString(labels map[string]string) string {
+	keys := make([]string, 0, len(labels))
+	for k := range labels {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		parts = append(parts, k+`="`+escapeMatcherValue(labels[k])+`"`)
+	}
+	return joinComma(parts)
+}
+
+func escapeMatcherValue(s string) string {
+	out := make([]byte, 0, len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c == '\\' || c == '"' {
+			out = append(out, '\\')
+		}
+		out = append(out, c)
+	}
+	return string(out)
+}
+
+func joinComma(parts []string) string {
+	if len(parts) == 0 {
+		return ""
+	}
+	out := parts[0]
+	for _, p := range parts[1:] {
+		out += "," + p
+	}
+	return out
 }
 
 // parseStringPair handles Prom's [timestampSeconds, "value"] shape for
