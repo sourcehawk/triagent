@@ -11,7 +11,7 @@ const (
 
 // SearchResult is the JSON-returned shape of prom_list_metrics.
 type SearchResult struct {
-	Matches  []SearchMatch   `json:"matches,omitempty"`
+	Matches  []SearchMatch   `json:"matches"`
 	Overflow *OverflowReport `json:"overflow,omitempty"`
 	Error    string          `json:"error,omitempty"`
 }
@@ -35,7 +35,7 @@ type OverflowFct struct {
 // searchMetrics implements the prom_list_metrics rules:
 //   - non-empty, non-wildcard query
 //   - tokens AND-match against name OR HELP (case-insensitive substring)
-//   - rank by token-match count (descending) then name (ascending)
+//   - rank matches alphabetically by name
 //   - cap at min(limit, searchHardCap)
 //   - if more than the cap match, return a facet breakdown instead of the
 //     first N — never silently truncate a useful match set.
@@ -59,9 +59,8 @@ func searchMetrics(cat *catalog, query string, limit int) SearchResult {
 	}
 
 	type scored struct {
-		name  string
-		typ   string
-		score int
+		name string
+		typ  string
 	}
 	var matches []scored
 	for _, name := range cat.names {
@@ -73,16 +72,13 @@ func searchMetrics(cat *catalog, query string, limit int) SearchResult {
 			}
 		}
 		if hit == len(tokens) {
-			matches = append(matches, scored{name, cat.metadata[name].Type, hit})
+			matches = append(matches, scored{name, cat.metadata[name].Type})
 		}
 	}
 	if len(matches) == 0 {
 		return SearchResult{Matches: []SearchMatch{}}
 	}
 	sort.Slice(matches, func(i, j int) bool {
-		if matches[i].score != matches[j].score {
-			return matches[i].score > matches[j].score
-		}
 		return matches[i].name < matches[j].name
 	})
 	if len(matches) > limit {
@@ -100,16 +96,7 @@ func searchMetrics(cat *catalog, query string, limit int) SearchResult {
 }
 
 func tokenize(q string) []string {
-	low := strings.ToLower(q)
-	parts := strings.Fields(low)
-	out := parts[:0]
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if p != "" {
-			out = append(out, p)
-		}
-	}
-	return out
+	return strings.Fields(strings.ToLower(q))
 }
 
 // buildOverflow groups names by their next path segment after the

@@ -98,6 +98,22 @@ func TestSearch_HardCapAt50(t *testing.T) {
 	assert.Equal(t, 80, r.Overflow.Total)
 }
 
+func TestSearch_HelpTextMatch(t *testing.T) {
+	t.Parallel()
+	r := searchMetrics(sampleCatalog(), "load average", 30)
+	require.Len(t, r.Matches, 1)
+	assert.Equal(t, "node_load1", r.Matches[0].Name)
+}
+
+func TestSearch_NoMatches(t *testing.T) {
+	t.Parallel()
+	r := searchMetrics(sampleCatalog(), "xyzzy", 30)
+	require.NotNil(t, r.Matches)
+	assert.Empty(t, r.Matches)
+	assert.Nil(t, r.Overflow)
+	assert.Empty(t, r.Error)
+}
+
 // itoa avoids importing strconv just for tests; keeps the test file
 // self-contained.
 func itoa(i int) string {
