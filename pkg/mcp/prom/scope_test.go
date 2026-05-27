@@ -81,3 +81,48 @@ func jsonWrite(w http.ResponseWriter, v any) error {
 	w.Header().Set("Content-Type", "application/json")
 	return json.NewEncoder(w).Encode(v)
 }
+
+func TestScope_EmptyCatalog(t *testing.T) {
+	t.Parallel()
+	cat := emptyCatalog()
+	err := checkScope(context.Background(), nil, cat, "anything_at_all")
+	require.NoError(t, err, "empty catalog matches no metric name → vacuously scoped")
+}
+
+func TestScope_MetricNotInCatalog(t *testing.T) {
+	t.Parallel()
+	cat := cardCatalog("known_metric", 500)
+	err := checkScope(context.Background(), nil, cat, "unknown_metric")
+	require.NoError(t, err, "name not in catalog can't be matched, so scope check is a no-op")
+}
+
+func TestScope_LongestNameWinsOnPrefixOverlap(t *testing.T) {
+	t.Parallel()
+	cat := emptyCatalog()
+	cat.names = []string{"http_requests", "http_requests_total"}
+	cat.cardEst = map[string]int{
+		"http_requests":       500,
+		"http_requests_total": 500,
+	}
+	// The longer name has a label matcher; the shorter prefix does not
+	// appear standalone. checkScope must NOT report the shorter name as
+	// unscoped — longest-first sort + standalone-identifier boundary
+	// check together guarantee this.
+	err := checkScope(context.Background(), nil, cat, `http_requests_total{job="api"}`)
+	require.NoError(t, err)
+}
+
+func TestScope_TwoRefsOneUnscoped(t *testing.T) {
+	t.Parallel()
+	cat := emptyCatalog()
+	cat.names = []string{"high_card_a", "high_card_b"}
+	cat.cardEst = map[string]int{
+		"high_card_a": 500,
+		"high_card_b": 500,
+	}
+	// First metric is scoped, second is not — checkScope must surface
+	// the unscoped one.
+	err := checkScope(context.Background(), nil, cat, `high_card_a{job="x"} / high_card_b`)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "high_card_b")
+}

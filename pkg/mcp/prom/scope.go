@@ -21,52 +21,36 @@ func checkScope(ctx context.Context, c *promClient, cat *catalog, promql string)
 	if q == "" {
 		return fmt.Errorf("promql is required")
 	}
-	// Walk catalog metric names longest-first so a longer name doesn't
-	// get masked by a shorter prefix in the substring scan (e.g.
-	// "http_requests_total" before "http_requests").
+	// Walk catalog metric names longest-first so a longer name (e.g.
+	// "http_requests_total") isn't masked by a shorter prefix
+	// ("http_requests") in the substring scan.
 	names := append([]string(nil), cat.names...)
 	sort.Slice(names, func(i, j int) bool { return len(names[i]) > len(names[j]) })
 
-	// remaining tracks the spans of the query still eligible for a
-	// metric-name hit. We carve out matched spans as we go so the same
-	// substring isn't double-counted.
-	type span struct{ lo, hi int }
-	spans := []span{{0, len(q)}}
-
 	for _, name := range names {
-		var nextSpans []span
-		for _, sp := range spans {
-			rest := q[sp.lo:sp.hi]
-			idx := 0
-			for {
-				rel := strings.Index(rest[idx:], name)
-				if rel < 0 {
-					break
-				}
-				abs := sp.lo + idx + rel
-				if !isStandaloneIdentifier(q, abs, name) {
-					idx += rel + 1
-					continue
-				}
-				scoped, err := isScoped(ctx, c, cat, q, abs+len(name), name)
-				if err != nil {
-					return err
-				}
-				if !scoped {
-					est := cat.cardEst[name]
-					return fmt.Errorf(
-						"scope required for high-cardinality metric %q (cardinality estimate %s). Add at least one non-__name__ label matcher, e.g. namespace=\"...\", service=\"...\", job=\"...\". See prom_describe_metric for typical scope keys.",
-						name, formatCard(est),
-					)
-				}
-				idx += rel + len(name)
+		idx := 0
+		for {
+			rel := strings.Index(q[idx:], name)
+			if rel < 0 {
+				break
 			}
-			// Anything we didn't carve out stays eligible for shorter
-			// names later in the loop (no-op carving in v1; simplifies
-			// the loop without losing correctness).
-			nextSpans = append(nextSpans, sp)
+			abs := idx + rel
+			if !isStandaloneIdentifier(q, abs, name) {
+				idx = abs + 1
+				continue
+			}
+			scoped, est, err := isScoped(ctx, c, cat, q, abs+len(name), name)
+			if err != nil {
+				return err
+			}
+			if !scoped {
+				return fmt.Errorf(
+					"scope required for high-cardinality metric %q (cardinality estimate %s). Add at least one non-__name__ label matcher, e.g. namespace=\"...\", service=\"...\", job=\"...\". See prom_describe_metric for typical scope keys.",
+					name, formatCard(est),
+				)
+			}
+			idx = abs + len(name)
 		}
-		spans = nextSpans
 	}
 	return nil
 }
@@ -106,10 +90,11 @@ func isIdentChar(c byte) bool {
 }
 
 // isScoped looks at the chars immediately after a metric-name match and
-// returns true if a `{...}` block follows that contains at least one
-// matcher with a key other than `__name__`. When the metric is below
-// the scope-required threshold (and known), scope is not required.
-func isScoped(ctx context.Context, c *promClient, cat *catalog, q string, after int, name string) (bool, error) {
+// returns (scoped, cardinalityEstimate, err). The est is surfaced so
+// callers building error messages don't need to re-read catalog state
+// (which would race against concurrent probes). When the metric is
+// below the scope-required threshold (and known), scope is not required.
+func isScoped(ctx context.Context, c *promClient, cat *catalog, q string, after int, name string) (bool, int, error) {
 	cat.mu.Lock()
 	est, ok := cat.cardEst[name]
 	cat.mu.Unlock()
@@ -119,16 +104,16 @@ func isScoped(ctx context.Context, c *promClient, cat *catalog, q string, after 
 		} else {
 			v, err := cardinalityOf(ctx, c, cat, name)
 			if err != nil {
-				return false, err
+				return false, 0, err
 			}
 			est = v
 		}
 	}
 	if est >= 0 && est < scopeRequiredThreshold {
-		return true, nil
+		return true, est, nil
 	}
 	// est == -1 (high-card sentinel) OR est >= threshold → require scope.
-	return hasNonNameMatcher(q, after), nil
+	return hasNonNameMatcher(q, after), est, nil
 }
 
 // hasNonNameMatcher returns true if a `{...}` block immediately after
