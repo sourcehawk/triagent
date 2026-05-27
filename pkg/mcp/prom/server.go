@@ -122,6 +122,11 @@ func (s *Server) register() {
 		Name:        "prom_describe_metric",
 		Description: "Return label keys, sample values, related sibling metrics, and total cardinality for a known metric. Use after prom_list_metrics to learn the scope keys before querying. The first call against a fresh metric pays one HTTP round-trip; subsequent calls are cached.",
 	}, telemetry.Wrap("prom_describe_metric", s.handleDescribeMetric))
+
+	mcp.AddTool(s.impl, &mcp.Tool{
+		Name:        "prom_query",
+		Description: "Run an instant PromQL query. Scalar-first: prefer expressions that aggregate or top-N down to a small result. Hard cap of 50 series — over-cap responses are rejected with a corrective hint, never silently truncated. High-cardinality metrics MUST carry a non-`__name__` label matcher; unscoped references are rejected before the HTTP round-trip. Use prom_describe_metric to learn the scope keys for a given metric.",
+	}, telemetry.Wrap("prom_query", s.handleQuery))
 }
 
 type listMetricsIn struct {
@@ -176,6 +181,23 @@ func (s *Server) handleDescribeMetric(ctx context.Context, _ *mcp.CallToolReques
 	res, err := describeMetric(ctx, snap.client, snap.catalog, in.Name)
 	if err != nil {
 		return errorResult(err.Error()), DescribeResult{}, nil
+	}
+	return nil, res, nil
+}
+
+type promQueryIn struct {
+	Promql string `json:"promql" jsonschema:"Required. Instant PromQL. Prefer expressions that collapse to a scalar or ≤50-series vector — count(... > 0.9), topk(5, ...), max_over_time(...). Range-returning queries belong in prom_query_range."`
+	Time   string `json:"time,omitempty" jsonschema:"Optional ISO-8601 / Unix-seconds. Defaults to now."`
+}
+
+func (s *Server) handleQuery(ctx context.Context, _ *mcp.CallToolRequest, in promQueryIn) (*mcp.CallToolResult, QueryResult, error) {
+	snap := s.snapshot.Load()
+	if snap == nil || len(snap.catalog.names) == 0 {
+		return errorResult("catalog empty — the endpoint may have no metrics indexed, or it is not yet reachable"), QueryResult{}, nil
+	}
+	res, err := runInstantQuery(ctx, snap, in.Promql, in.Time)
+	if err != nil {
+		return errorResult(err.Error()), QueryResult{}, nil
 	}
 	return nil, res, nil
 }
