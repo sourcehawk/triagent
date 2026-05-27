@@ -187,7 +187,11 @@ func readTypeDirs(ctx context.Context, systemDir string) ([]playbookTypeItem, er
 	if _, statErr := os.Stat(filepath.Join(systemDir, ".git")); statErr == nil {
 		hasGit = true
 	}
-	var out []playbookTypeItem
+	// Non-nil so JSON marshals an empty result as `[]`, not `null` — the
+	// frontend iterates the response in a useMemo and a nil → null →
+	// undefined chain crashes the playbooks page on a fresh install
+	// whose upstream clone has no type subdirs yet.
+	out := []playbookTypeItem{}
 	for _, e := range entries {
 		if !e.IsDir() {
 			continue

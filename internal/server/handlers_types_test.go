@@ -60,6 +60,34 @@ func gitSetupOriginWithMain(t *testing.T, dir string) {
 	}
 }
 
+// TestHandleListPlaybookTypes_EmptyDir_ReturnsEmptyArray locks in the
+// JSON contract for the empty case: `types` must serialize to `[]`, never
+// `null`. The frontend's PlaybookList passes the response into a
+// `for (const t of availableTypes)` loop inside a useMemo, which throws
+// "$ is not iterable" on null — a default-profile install with no
+// upstream playbook types on disk would otherwise crash the page.
+func TestHandleListPlaybookTypes_EmptyDir_ReturnsEmptyArray(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	a := &apiHandlers{opts: Options{PluginPlaybooksDir: dir}}
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/playbook-types", nil).
+		WithContext(context.Background())
+	a.handleListPlaybookTypes(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status %d body=%s", rr.Code, rr.Body.String())
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(rr.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("unmarshal body: %v; body=%s", err, rr.Body.String())
+	}
+	if got := string(raw["types"]); got != "[]" {
+		t.Errorf("types must serialize as []; got %s (full body: %s)", got, rr.Body.String())
+	}
+}
+
 func TestHandleListPlaybookTypes_TrackedField(t *testing.T) {
 	t.Parallel()
 	skipIfNoGit(t)
