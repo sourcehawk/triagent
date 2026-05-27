@@ -41,6 +41,7 @@ const (
 	MCPAliasSlack      = "triagent-slack"
 	MCPAliasIncidentio = "triagent-incidentio"
 	MCPAliasParallel   = "triagent-parallel"
+	MCPAliasProm       = "triagent-prom"
 	// MCPAliasGitPrefix is prepended to a repo's effective alias to form
 	// the per-repo MCP server alias (e.g. "triagent-git-zeebe").
 	MCPAliasGitPrefix = "triagent-git-"
