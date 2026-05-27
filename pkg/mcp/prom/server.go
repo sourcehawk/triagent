@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/sourcehawk/triagent/pkg/mcp/telemetry"
 )
 
 // Options configures the prom MCP server.
@@ -111,6 +112,28 @@ func (s *Server) register() {
 			},
 		}, nil
 	})
+
+	mcp.AddTool(s.impl, &mcp.Tool{
+		Name:        "prom_list_metrics",
+		Description: "Search the indexed metric namespace by token-AND match against name and HELP text. Returns up to `limit` matches (cap 50). When more than the cap match, returns a sub-prefix facet breakdown instead of the first N — refine with more tokens or pick a sub-prefix and re-search. Required: non-empty, non-wildcard `query`.",
+	}, telemetry.Wrap("prom_list_metrics", s.handleListMetrics))
+}
+
+type listMetricsIn struct {
+	Query string `json:"query" jsonschema:"Required. Space-separated tokens; AND-matched against metric name OR HELP text (case-insensitive)."`
+	Limit int    `json:"limit,omitempty" jsonschema:"Max matches to return; default 30, hard cap 50. Over-cap match sets come back as a facet breakdown, never truncated."`
+}
+
+func (s *Server) handleListMetrics(ctx context.Context, _ *mcp.CallToolRequest, in listMetricsIn) (*mcp.CallToolResult, SearchResult, error) {
+	snap := s.snapshot.Load()
+	if snap == nil || len(snap.catalog.names) == 0 {
+		return errorResult("catalog empty — the endpoint may have no metrics indexed, or it is not yet reachable"), SearchResult{}, nil
+	}
+	r := searchMetrics(snap.catalog, in.Query, in.Limit)
+	if r.Error != "" {
+		return errorResult(r.Error), SearchResult{}, nil
+	}
+	return nil, r, nil
 }
 
 // refreshCatalog rebuilds the catalog from the current endpoint and
