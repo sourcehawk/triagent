@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -49,4 +50,27 @@ func TestDescribe_UnknownMetric(t *testing.T) {
 	cat.names = []string{"foo"}
 	_, err := describeMetric(context.Background(), nil, cat, "bar")
 	require.Error(t, err)
+}
+
+func TestDescribe_CacheHitSkipsProbe(t *testing.T) {
+	t.Parallel()
+	var calls atomic.Int32
+	stub := newStubProm(t, stubHandlers{
+		series: func(w http.ResponseWriter, r *http.Request) {
+			calls.Add(1)
+			rows := []map[string]string{
+				{"__name__": "foo", "namespace": "ns"},
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": rows})
+		},
+	})
+	c := newPromClient(stub.URL, "", "", http.DefaultClient)
+	cat := emptyCatalog()
+	cat.names = []string{"foo"}
+	cat.metadata = map[string]MetricMetadata{"foo": {Type: "gauge"}}
+	_, err := describeMetric(context.Background(), c, cat, "foo")
+	require.NoError(t, err)
+	_, err = describeMetric(context.Background(), c, cat, "foo")
+	require.NoError(t, err)
+	assert.Equal(t, int32(1), calls.Load(), "second describe call must hit the labelsCache, not re-probe")
 }

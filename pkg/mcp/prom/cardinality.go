@@ -2,6 +2,7 @@ package prom
 
 import (
 	"context"
+	"sort"
 	"strings"
 )
 
@@ -16,6 +17,32 @@ const (
 	scopeRequiredThreshold = 50
 )
 
+// probeAndCache issues the series probe for `name` and stores both
+// cardEst and labelsCache under cat.mu in a single critical section.
+// Returns the freshly-built labelProfile so callers that need it (like
+// describeMetric) don't re-fetch from the cache.
+//
+// The cache write is a "last writer wins" overwrite — concurrent callers
+// for the same metric race to probe; the later writer's labelProfile
+// supersedes. Result is consistent because both probes derive from the
+// same series-endpoint state.
+func probeAndCache(ctx context.Context, c *promClient, cat *catalog, name string) (labelProfile, error) {
+	rows, err := c.series(ctx, name, cardProbeLimit)
+	if err != nil {
+		return labelProfile{}, err
+	}
+	prof := buildLabelProfile(rows, cat, name)
+	cat.mu.Lock()
+	defer cat.mu.Unlock()
+	if len(rows) >= cardProbeLimit {
+		cat.cardEst[name] = -1
+	} else {
+		cat.cardEst[name] = len(rows)
+	}
+	cat.labelsCache[name] = prof
+	return prof, nil
+}
+
 // cardinalityOf returns the cached cardinality for `name`, probing if
 // not yet known. -1 is the "high cardinality" sentinel (limit reached
 // during probe).
@@ -27,21 +54,12 @@ func cardinalityOf(ctx context.Context, c *promClient, cat *catalog, name string
 	}
 	cat.mu.Unlock()
 
-	rows, err := c.series(ctx, name, cardProbeLimit)
-	if err != nil {
+	if _, err := probeAndCache(ctx, c, cat, name); err != nil {
 		return 0, err
 	}
 	cat.mu.Lock()
 	defer cat.mu.Unlock()
-	if len(rows) >= cardProbeLimit {
-		cat.cardEst[name] = -1
-		return -1, nil
-	}
-	cat.cardEst[name] = len(rows)
-	// Bonus: stash the rows for the describe tool's first call so it
-	// doesn't re-probe.
-	cat.labelsCache[name] = buildLabelProfile(rows, cat, name)
-	return len(rows), nil
+	return cat.cardEst[name], nil
 }
 
 // buildLabelProfile derives describe_metric's per-label info from a
@@ -84,6 +102,9 @@ func buildLabelProfile(rows []map[string]string, cat *catalog, name string) labe
 			SampleValues: sample,
 		})
 	}
+	sort.Slice(labels, func(i, j int) bool {
+		return labels[i].Key < labels[j].Key
+	})
 	annotateTypicalScope(labels)
 	related := relatedByPrefix(cat.names, name, 10)
 	return labelProfile{

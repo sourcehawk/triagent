@@ -27,40 +27,25 @@ func describeMetric(ctx context.Context, c *promClient, cat *catalog, name strin
 	prof, ok := cat.labelsCache[name]
 	cat.mu.Unlock()
 	if !ok {
-		rows, err := c.series(ctx, name, cardProbeLimit)
+		var err error
+		prof, err = probeAndCache(ctx, c, cat, name)
 		if err != nil {
 			return DescribeResult{}, err
 		}
-		cat.mu.Lock()
-		if len(rows) >= cardProbeLimit {
-			cat.cardEst[name] = -1
-		} else {
-			cat.cardEst[name] = len(rows)
-		}
-		prof = buildLabelProfile(rows, cat, name)
-		cat.labelsCache[name] = prof
-		cat.mu.Unlock()
 	}
-	sort.Slice(prof.labels, func(i, j int) bool {
-		return prof.labels[i].Key < prof.labels[j].Key
-	})
 	md := cat.metadata[name]
 	return DescribeResult{
 		Name:             name,
 		Type:             md.Type,
 		Help:             md.Help,
 		Unit:             md.Unit,
-		Labels:           prof.labels,
+		Labels:           append([]labelInfo(nil), prof.labels...), // copy so callers can't mutate the cached entry
 		Related:          prof.relatedMetrics,
 		CardinalityTotal: prof.totalCardinality,
 	}, nil
 }
 
 func catalogHas(cat *catalog, name string) bool {
-	for _, n := range cat.names {
-		if n == name {
-			return true
-		}
-	}
-	return false
+	i := sort.SearchStrings(cat.names, name)
+	return i < len(cat.names) && cat.names[i] == name
 }
