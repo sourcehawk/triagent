@@ -41,6 +41,10 @@ func initFixtureRepo(t *testing.T, owner, name string) (cacheDir, repoDir string
 	run("init", "-q", "--initial-branch=main")
 	run("config", "commit.gpgsign", "false")
 	run("config", "tag.gpgsign", "false")
+	// Prevent background gc / maintenance workers from writing to .git/objects
+	// after the test logic completes, which races with t.TempDir's RemoveAll.
+	run("config", "--local", "gc.auto", "0")
+	run("config", "--local", "maintenance.auto", "false")
 
 	writeFile("README.md", "hello\n")
 	run("add", "README.md")
@@ -178,6 +182,10 @@ func TestLatestTags_FiltersPrereleasesByDefault(t *testing.T) {
 	run("init", "-q", "--initial-branch=main")
 	run("config", "commit.gpgsign", "false")
 	run("config", "tag.gpgsign", "false")
+	// Prevent background gc / maintenance workers from writing to .git/objects
+	// after the test logic completes, which races with t.TempDir's RemoveAll.
+	run("config", "--local", "gc.auto", "0")
+	run("config", "--local", "maintenance.auto", "false")
 	write("README.md", "a\n")
 	run("add", "README.md")
 	run("commit", "-q", "-m", "release 1.2.3")

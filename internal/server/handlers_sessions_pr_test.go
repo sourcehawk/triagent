@@ -129,10 +129,19 @@ func TestHandlePushSessionPR_AfterArchiveDoesNotPanic(t *testing.T) {
 	}
 	_, clone := initBareAndClone(t)
 	sessionDir := t.TempDir()
+	ctx, cancel := context.WithCancel(context.Background())
 	a := &apiHandlers{
-		manager:        NewManager(context.Background(), t.TempDir()),
+		manager:        NewManager(ctx, t.TempDir()),
 		sessionDrafter: blockUntilCancelledDrafter(t),
 	}
+	// Cleanup ordering matters: this t.Cleanup runs FIRST (LIFO) so the
+	// push goroutine's drafter ctx fires and the goroutine can exit before
+	// the tempdir destruction. We then poll PushInProgress to actually
+	// wait for the goroutine to finish.
+	t.Cleanup(func() {
+		cancel()
+		waitForPushDone(t, a.manager)
+	})
 	t.Cleanup(a.manager.Shutdown)
 	a.opts.SessionsPath = clone
 	a.opts.SessionsCloneRoot = clone
@@ -186,10 +195,17 @@ func TestHandlePushSessionPR_ConcurrentKickoffReturns409(t *testing.T) {
 	}
 	_, clone := initBareAndClone(t)
 	sessionDir := t.TempDir()
+	ctx, cancel := context.WithCancel(context.Background())
 	a := &apiHandlers{
-		manager:        NewManager(context.Background(), t.TempDir()),
+		manager:        NewManager(ctx, t.TempDir()),
 		sessionDrafter: blockUntilCancelledDrafter(t),
 	}
+	// Cancel the parent ctx first (LIFO) so the push goroutine's drafter
+	// unblocks, then wait for it to actually finish before tempdir teardown.
+	t.Cleanup(func() {
+		cancel()
+		waitForPushDone(t, a.manager)
+	})
 	t.Cleanup(a.manager.Shutdown)
 	a.opts.SessionsPath = clone
 	a.opts.SessionsCloneRoot = clone
@@ -219,4 +235,32 @@ func TestHandlePushSessionPR_ConcurrentKickoffReturns409(t *testing.T) {
 	req2.SetPathValue("id", "abc123def456")
 	a.handlePushSessionPR(rr2, req2)
 	assert.Equal(t, http.StatusConflict, rr2.Code, "second call got %d, want 409", rr2.Code)
+}
+
+// waitForPushDone polls every Investigation's PushInProgress flag until they
+// all transition to false. Used by tests that kick off a push goroutine and
+// want to guarantee the goroutine exits before t.TempDir destruction runs.
+func waitForPushDone(t *testing.T, mgr *Manager) {
+	t.Helper()
+	deadline := time.After(2 * time.Second)
+	tick := time.NewTicker(5 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		allDone := true
+		for _, inv := range mgr.List() {
+			if inv.PushInProgress {
+				allDone = false
+				break
+			}
+		}
+		if allDone {
+			return
+		}
+		select {
+		case <-deadline:
+			t.Log("waitForPushDone: timeout — push goroutine did not exit within 2s")
+			return
+		case <-tick.C:
+		}
+	}
 }
