@@ -2,6 +2,7 @@
 bin/
 /triagent
 /triagent-mcp
+dist
 
 # Frontend build outputs. frontend/ has its own .gitignore for node_modules
 # and .next; this rule keeps the copied static export under the embed
@@ -10,6 +11,7 @@ bin/
 # `make frontend` populates the directory).
 internal/web/dist/*
 !internal/web/dist/.gitkeep
+
 
 # Local go workspace files — gitignored so you can opt into SDK co-dev
 # without affecting teammates.

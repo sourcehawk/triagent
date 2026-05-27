@@ -1,11 +1,8 @@
+@AGENTS.md
+
 # triagent — contributor guidelines
 
-Durable rules, conventions, and rationale. Code is the source of truth for "what"; this file is the source of truth for "why" and "don't". Lead with the rule, follow with rationale where non-obvious.
-
-## Repo shape
-
-- **Single Go module + one frontend.** One module at `github.com/sourcehawk/triagent` with two binaries: `triagent` (launcher) and `triagent-mcp` (MCP multiplexer). The Next.js frontend lives at `frontend/` and is embedded in the launcher binary.
-- **Specs vs plans.** `docs/superpowers/specs/*.md` are durable ADRs and are referenced from code — never delete or rewrite history-style. Plans (`docs/superpowers/plans/*.md`) are scratch and get deleted once their plan ships.
+Durable rules, conventions, and rationale. Code is the source of truth for "what"; `AGENTS.md` is the source of truth for "where"; this file is the source of truth for "why" and "don't". Lead with the rule, follow with rationale where non-obvious.
 
 ## MCP plugins
 
@@ -104,8 +101,25 @@ Durable rules, conventions, and rationale. Code is the source of truth for "what
 - **`view` state as a single discriminator in `app/page.tsx`.** See Frontend.
 - **Synthetic first-user messages for agent flow control.** Use system-prompt augmentation (closing block) instead — no race, no new endpoint, agent acts on its very first turn.
 
+## GitHub & external mutations
+
+- **No GitHub mutation without a fresh confirmation against the specific body about to land.** Generic earlier intent ("yes please open an issue") ≠ standing consent for the body now. Paste the full proposed body inline in chat, name the target (`<org>/<repo>` or `#<num>`), and wait for an explicit "yes" before `gh issue create|edit` / `gh pr create|edit`. Absence of objection is not a yes — wait for the affirmative.
+- **PR titles outlive the state that named them.** Don't suffix with `wip`, `draft`, `plan`, `scaffolding`, etc. — GitHub's draft/ready chip carries the lifecycle state. A single title from open through merge avoids renames and stale wording in the merged record.
+
+## Writing style
+
+- **When refining a file in response to feedback, the result reads as if it had always been that way.** No "we used to do X," "this no longer includes Y," or "do not do Z" tails for things no longer in play. Re-read the changed section cold; cut anything that only makes sense knowing what just changed. Refinement context belongs in the commit message, not the file.
+- **Lead with the rule, follow with the _why_** in CLAUDE.md and any contributor-facing prose. Don't pad with examples that restate the rule; one idea per paragraph.
+- **Don't introduce a residue category in code either.** No `_legacy` / `_old` / `_v2` sibling files left dangling, no `// removed because X` comments where the deletion would suffice, no renamed-but-unused `_var` shims. If a thing is unused, delete it; if it's load-bearing, keep it under its real name.
+
+## Editing local skills
+
+- **No `.claude/skills/` directory exists today.** If/when one is added, invoke `superpowers:writing-skills` before creating or modifying any skill in it, and follow its RED → GREEN → REFACTOR loop. The methodology (test-driven, anti-patterns named, rationalizations closed in prose) is what makes a skill survive pressure; skipping it produces skills that look fine in review and fail on the next pushback turn.
+- **Skill `description:` is "Use when..." triggers only, never a workflow summary.** Agents read the description to decide whether to load the skill; a workflow summary becomes a shortcut they take instead of reading the body.
+- **Name rationalizations explicitly in discipline content.** Pressure-induced shortcuts (gate skipping, premature completion claims, "I already confirmed earlier") belong in an anti-patterns or red-flag table with the correct counter-action. For schema content (template fields, section lists), the inverse: list only what's included and let absence speak — "no X field" tails are noise in a schema, not safety.
+
 ## When in doubt
 
-- **Read the spec, not the plan.** Specs are the durable ADR; plans are scratch. If a spec says X and code does Y, raise it — don't quietly rewrite either.
+- **Read the spec, not the plan.** Specs in `docs/superpowers/specs/` are durable ADRs, referenced from code, and never deleted or rewritten history-style. Plans in `docs/superpowers/plans/` are scratch and get deleted once the plan ships. If a spec says X and code does Y, raise it — don't quietly rewrite either.
 - **Prefer extracting a shared helper to copy-pasting a second consumer.** The sub-agent runner, the citation runner, the FilterableList, the diff helper, the proposal-projection helper — all live in shared modules because the second consumer paid the extraction cost.
 - **One commit per task; keep the build green between commits.** Migrations land alongside their callers (or behind a flag); never check in a `_legacy` file and a `_new` file in the same commit unless the second consumer is migrated in the same commit.
