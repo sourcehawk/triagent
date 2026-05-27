@@ -449,3 +449,137 @@ func TestQueryRange_ClampsMaxPointsToCeiling(t *testing.T) {
 	// 3600s / (200-1) = ceiling division: (3600 + 199 - 2) / 199 = 3797/199 = 19s (floor).
 	require.Equal(t, "19s", seenStep)
 }
+
+// Regression: NaN and ±Inf are valid Prometheus sample values, but
+// encoding/json returns an UnsupportedValueError for them. Without an
+// explicit filter the whole MCP tool response would fail to serialize.
+// runInstantQuery surfaces a clear error for scalar NaN and skips
+// non-finite rows from a vector result so the JSON shape stays valid.
+func TestQuery_ScalarNonFiniteReturnsError(t *testing.T) {
+	t.Parallel()
+	stub := newStubProm(t, stubHandlers{
+		query: func(w http.ResponseWriter, r *http.Request) {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"status": "success",
+				"data":   map[string]any{"resultType": "scalar", "result": []any{1700000000, "NaN"}},
+			})
+		},
+	})
+	cat := cardCatalog("up", 12)
+	snap := &snapshot{client: newPromClient(stub.URL, "", "", http.DefaultClient), catalog: cat}
+	_, err := runInstantQuery(context.Background(), snap, "up", "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "non-finite")
+}
+
+func TestQuery_VectorDropsNonFiniteRows(t *testing.T) {
+	t.Parallel()
+	stub := newStubProm(t, stubHandlers{
+		query: func(w http.ResponseWriter, r *http.Request) {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"status": "success",
+				"data": map[string]any{
+					"resultType": "vector",
+					"result": []map[string]any{
+						{"metric": map[string]string{"pod": "a"}, "value": []any{1700000000, "0.5"}},
+						{"metric": map[string]string{"pod": "b"}, "value": []any{1700000000, "NaN"}},
+						{"metric": map[string]string{"pod": "c"}, "value": []any{1700000000, "+Inf"}},
+						{"metric": map[string]string{"pod": "d"}, "value": []any{1700000000, "1.5"}},
+					},
+				},
+			})
+		},
+	})
+	cat := cardCatalog("ratio", 5)
+	snap := &snapshot{client: newPromClient(stub.URL, "", "", http.DefaultClient), catalog: cat}
+	res, err := runInstantQuery(context.Background(), snap, "ratio", "")
+	require.NoError(t, err)
+	require.Len(t, res.Samples, 2, "non-finite rows must be dropped before JSON encoding")
+	// Output must round-trip through encoding/json without UnsupportedValueError.
+	_, marshalErr := json.Marshal(res)
+	require.NoError(t, marshalErr)
+}
+
+func TestRecentValue_NonFiniteReturnsError(t *testing.T) {
+	t.Parallel()
+	stub := newStubProm(t, stubHandlers{
+		query: func(w http.ResponseWriter, r *http.Request) {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"status": "success",
+				"data": map[string]any{
+					"resultType": "vector",
+					"result": []map[string]any{
+						{"metric": map[string]string{"pod": "a"}, "value": []any{1700000000, "+Inf"}},
+					},
+				},
+			})
+		},
+	})
+	cat := cardCatalog("ratio", 5)
+	snap := &snapshot{client: newPromClient(stub.URL, "", "", http.DefaultClient), catalog: cat}
+	_, err := runRecentValue(context.Background(), snap, "ratio", map[string]string{"pod": "a"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "non-finite")
+}
+
+func TestQueryRange_RawDropsNonFinitePoints(t *testing.T) {
+	t.Parallel()
+	stub := newStubProm(t, stubHandlers{
+		queryRange: func(w http.ResponseWriter, r *http.Request) {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"status": "success",
+				"data": map[string]any{
+					"resultType": "matrix",
+					"result": []map[string]any{
+						{"metric": map[string]string{"pod": "a", "namespace": "x"}, "values": []any{
+							[]any{1700000000, "0.1"},
+							[]any{1700000060, "NaN"},
+							[]any{1700000120, "-Inf"},
+							[]any{1700000180, "0.2"},
+						}},
+					},
+				},
+			})
+		},
+	})
+	cat := cardCatalog("noisy", 5)
+	snap := &snapshot{client: newPromClient(stub.URL, "", "", http.DefaultClient), catalog: cat}
+	res, err := runRangeQuery(context.Background(), snap, `noisy{namespace="x"}`, "15m", "", 10, 100, true)
+	require.NoError(t, err)
+	require.Len(t, res.Series, 1)
+	require.Len(t, res.Series[0].Points, 2, "non-finite points must be skipped")
+	_, marshalErr := json.Marshal(res)
+	require.NoError(t, marshalErr)
+}
+
+func TestQueryRange_SummarySkipsNonFiniteSamples(t *testing.T) {
+	t.Parallel()
+	stub := newStubProm(t, stubHandlers{
+		queryRange: func(w http.ResponseWriter, r *http.Request) {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"status": "success",
+				"data": map[string]any{
+					"resultType": "matrix",
+					"result": []map[string]any{
+						{"metric": map[string]string{"pod": "a", "namespace": "x"}, "values": []any{
+							[]any{1700000000, "1"},
+							[]any{1700000060, "NaN"},
+							[]any{1700000120, "+Inf"},
+							[]any{1700000180, "3"},
+						}},
+					},
+				},
+			})
+		},
+	})
+	cat := cardCatalog("noisy", 5)
+	snap := &snapshot{client: newPromClient(stub.URL, "", "", http.DefaultClient), catalog: cat}
+	res, err := runRangeQuery(context.Background(), snap, `noisy{namespace="x"}`, "15m", "", 10, 100, false)
+	require.NoError(t, err)
+	require.Len(t, res.Series, 1)
+	require.NotNil(t, res.Series[0].Stats)
+	// Stats must reflect only the finite samples {1, 3} → mean 2.
+	assert.InDelta(t, 2.0, res.Series[0].Stats.Mean, 0.001)
+	_, marshalErr := json.Marshal(res)
+	require.NoError(t, marshalErr)
+}

@@ -42,6 +42,9 @@ func runInstantQuery(ctx context.Context, snap *snapshot, expr, atTime string) (
 		if err != nil {
 			return QueryResult{}, err
 		}
+		if !isFiniteSample(v) {
+			return QueryResult{}, fmt.Errorf("scalar result was non-finite (NaN or ±Inf) — the expression produced an undefined value; refine the query")
+		}
 		return QueryResult{ResultType: "scalar", ScalarValue: &v, Timestamp: ts}, nil
 	case "string":
 		// Prom shape: result = [timestamp, "stringValue"]; we surface
@@ -64,6 +67,12 @@ func runInstantQuery(ctx context.Context, snap *snapshot, expr, atTime string) (
 			if err != nil {
 				return QueryResult{}, err
 			}
+			if !isFiniteSample(v) {
+				// Drop the row — encoding/json would reject the whole
+				// response otherwise. Agents see a shorter samples list
+				// and can re-run with a sharper expression if needed.
+				continue
+			}
 			samples = append(samples, Sample{Labels: r.Metric, Value: v, Timestamp: ts})
 		}
 		return QueryResult{ResultType: res.ResultType, Samples: samples}, nil
@@ -81,7 +90,9 @@ func runInstantQuery(ctx context.Context, snap *snapshot, expr, atTime string) (
 // shape. Shared by runInstantQuery, runRecentValue (Task 12) and
 // runRangeQuery (Task 14). Returns the parsed value, the RFC3339-Nano
 // formatted UTC timestamp (sub-second precision preserved), and any
-// parse error.
+// parse error. NaN/+Inf/-Inf are valid Prometheus sample values but
+// encoding/json cannot marshal them, so callers must filter via
+// isFiniteSample before they reach a JSON-bound struct.
 func parseSamplePair(pair []any) (float64, string, error) {
 	if len(pair) != 2 {
 		return 0, "", fmt.Errorf("invalid sample pair: len=%d", len(pair))
@@ -102,6 +113,14 @@ func parseSamplePair(pair []any) (float64, string, error) {
 	nsec := int64((tsFloat - float64(sec)) * 1e9)
 	ts := time.Unix(sec, nsec).UTC().Format(time.RFC3339Nano)
 	return v, ts, nil
+}
+
+// isFiniteSample reports whether v is a regular floating-point number
+// suitable for inclusion in a JSON-bound struct. NaN and ±Inf are
+// excluded because encoding/json returns an UnsupportedValueError for
+// them, which would fail the whole MCP tool response.
+func isFiniteSample(v float64) bool {
+	return !math.IsNaN(v) && !math.IsInf(v, 0)
 }
 
 // ValueResult is the JSON shape returned by prom_recent_value.
@@ -135,6 +154,9 @@ func runRecentValue(ctx context.Context, snap *snapshot, metric string, labels m
 		v, ts, err := parseSamplePair(res.Result[0].Value)
 		if err != nil {
 			return ValueResult{}, err
+		}
+		if !isFiniteSample(v) {
+			return ValueResult{}, fmt.Errorf("matched series has a non-finite value (NaN or ±Inf) at %s — refine the labels or use a different metric", ts)
 		}
 		return ValueResult{Value: v, Timestamp: ts}, nil
 	default:
@@ -292,6 +314,9 @@ func runRangeQuery(ctx context.Context, snap *snapshot, expr, rangeStr, endStr s
 				if perr != nil {
 					return RangeResult{}, perr
 				}
+				if !isFiniteSample(v) {
+					continue
+				}
 				points = append(points, RangePoint{Timestamp: ts, Value: v})
 			}
 			if len(points) > maxPoints {
@@ -304,6 +329,9 @@ func runRangeQuery(ctx context.Context, snap *snapshot, expr, rangeStr, endStr s
 				v, _, perr := parseSamplePair(pair)
 				if perr != nil {
 					return RangeResult{}, perr
+				}
+				if !isFiniteSample(v) {
+					continue
 				}
 				values = append(values, v)
 			}

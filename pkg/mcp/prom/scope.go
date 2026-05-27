@@ -134,26 +134,17 @@ func hasNonNameMatcher(q string, after int) bool {
 	if i >= len(q) || q[i] != '{' {
 		return false
 	}
-	end := strings.IndexByte(q[i:], '}')
+	end := findClosingBrace(q, i+1)
 	if end < 0 {
 		return false
 	}
-	body := q[i+1 : i+end]
-	// Split on commas at the top level (Prom label values are quoted
-	// strings — commas inside quotes don't break us in practice; we
-	// keep it simple and rely on whether any segment passes the test).
-	for _, seg := range strings.Split(body, ",") {
+	body := q[i+1 : end]
+	for _, seg := range splitMatchersQuoteAware(body) {
 		seg = strings.TrimSpace(seg)
 		if seg == "" {
 			continue
 		}
-		key := strings.FieldsFunc(seg, func(r rune) bool {
-			return r == '=' || r == '!' || r == '~'
-		})
-		if len(key) == 0 {
-			continue
-		}
-		k := strings.TrimSpace(key[0])
+		k := strings.TrimSpace(matcherKey(seg))
 		if k != "" && k != "__name__" {
 			return true
 		}
@@ -179,28 +170,22 @@ func formatCard(est int) string {
 func hasUnscopedNameMatcher(q string) bool {
 	i := 0
 	for {
-		open := indexByteFrom(q, '{', i)
+		open := indexByteFromQuoteAware(q, '{', i)
 		if open < 0 {
 			return false
 		}
-		close := indexByteFrom(q, '}', open)
-		if close < 0 {
+		end := findClosingBrace(q, open+1)
+		if end < 0 {
 			return false
 		}
-		body := q[open+1 : close]
+		body := q[open+1 : end]
 		hasName, hasOther := false, false
-		for _, seg := range strings.Split(body, ",") {
+		for _, seg := range splitMatchersQuoteAware(body) {
 			seg = strings.TrimSpace(seg)
 			if seg == "" {
 				continue
 			}
-			key := strings.FieldsFunc(seg, func(r rune) bool {
-				return r == '=' || r == '!' || r == '~'
-			})
-			if len(key) == 0 {
-				continue
-			}
-			k := strings.TrimSpace(key[0])
+			k := strings.TrimSpace(matcherKey(seg))
 			if k == "" {
 				continue
 			}
@@ -213,19 +198,119 @@ func hasUnscopedNameMatcher(q string) bool {
 		if hasName && !hasOther {
 			return true
 		}
-		i = close + 1
+		i = end + 1
 	}
 }
 
-// indexByteFrom is strings.IndexByte starting at offset from. Returns
-// an absolute index, or -1.
-func indexByteFrom(s string, c byte, from int) int {
-	if from >= len(s) {
-		return -1
+// findClosingBrace returns the absolute index of the first `}` at or
+// after `from` in s that is not inside a double-quoted Prometheus label
+// value. Returns -1 if no such brace exists. Recognises backslash
+// escapes inside quotes so a literal `\"` does not terminate the run.
+func findClosingBrace(s string, from int) int {
+	inQuote := false
+	for i := from; i < len(s); i++ {
+		c := s[i]
+		if inQuote {
+			if c == '\\' && i+1 < len(s) {
+				i++
+				continue
+			}
+			if c == '"' {
+				inQuote = false
+			}
+			continue
+		}
+		if c == '"' {
+			inQuote = true
+			continue
+		}
+		if c == '}' {
+			return i
+		}
 	}
-	rel := strings.IndexByte(s[from:], c)
-	if rel < 0 {
-		return -1
+	return -1
+}
+
+// indexByteFromQuoteAware returns the absolute index of the first
+// occurrence of c at or after `from` in s that is not inside a
+// double-quoted Prometheus label value. Returns -1 if none.
+func indexByteFromQuoteAware(s string, c byte, from int) int {
+	inQuote := false
+	for i := from; i < len(s); i++ {
+		ch := s[i]
+		if inQuote {
+			if ch == '\\' && i+1 < len(s) {
+				i++
+				continue
+			}
+			if ch == '"' {
+				inQuote = false
+			}
+			continue
+		}
+		if ch == '"' {
+			inQuote = true
+			continue
+		}
+		if ch == c {
+			return i
+		}
 	}
-	return from + rel
+	return -1
+}
+
+// splitMatchersQuoteAware splits a label-matcher block body on commas
+// at the top level — commas inside double-quoted label values are
+// preserved as literals so a selector like
+// `{__name__=~"container_.*,kube_.*"}` is treated as a single matcher
+// rather than two. Recognises backslash escapes inside quotes.
+func splitMatchersQuoteAware(body string) []string {
+	var out []string
+	var sb strings.Builder
+	inQuote := false
+	for i := 0; i < len(body); i++ {
+		c := body[i]
+		if inQuote {
+			if c == '\\' && i+1 < len(body) {
+				sb.WriteByte(c)
+				sb.WriteByte(body[i+1])
+				i++
+				continue
+			}
+			if c == '"' {
+				inQuote = false
+			}
+			sb.WriteByte(c)
+			continue
+		}
+		if c == '"' {
+			inQuote = true
+			sb.WriteByte(c)
+			continue
+		}
+		if c == ',' {
+			out = append(out, sb.String())
+			sb.Reset()
+			continue
+		}
+		sb.WriteByte(c)
+	}
+	out = append(out, sb.String())
+	return out
+}
+
+// matcherKey extracts the label name from a single matcher segment like
+// `key="value"`, `key=~"v"`, `key!="v"`, or `key!~"v"`. Returns the
+// substring up to the first matcher-operator byte (`=`, `!`, `~`) that
+// is not inside a double-quoted value. Operator-like bytes inside the
+// quoted value never appear before the opening quote, so a simple
+// pre-quote scan is sufficient.
+func matcherKey(seg string) string {
+	for i := 0; i < len(seg); i++ {
+		c := seg[i]
+		if c == '=' || c == '!' || c == '~' || c == '"' {
+			return seg[:i]
+		}
+	}
+	return seg
 }

@@ -160,3 +160,38 @@ func TestScope_RejectsWildcardNameMatcher(t *testing.T) {
 	err := checkScope(context.Background(), nil, cat, `{__name__=~".*"}`)
 	require.Error(t, err)
 }
+
+// Regression: a comma inside a quoted __name__ regex used to fool the
+// matcher splitter into treating `kube_.*"` as a second non-__name__
+// matcher, letting `{__name__=~"container_.*,kube_.*"}` bypass the
+// scope guard entirely.
+func TestScope_RejectsNameRegexWithCommaInValue(t *testing.T) {
+	t.Parallel()
+	cat := cardCatalog("container_cpu_usage", 500)
+	err := checkScope(context.Background(), nil, cat, `{__name__=~"container_.*,kube_.*"}`)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "scope required")
+	assert.Contains(t, err.Error(), "__name__")
+}
+
+// Regression: a literal comma inside a label value must not be counted
+// as a matcher separator. With a real second matcher present, the
+// selector is scoped and should pass.
+func TestScope_AllowsCommaInsideLabelValue(t *testing.T) {
+	t.Parallel()
+	cat := emptyCatalog()
+	err := checkScope(context.Background(), nil, cat,
+		`{__name__="container_cpu_usage",pod=~"a,b"}`)
+	require.NoError(t, err)
+}
+
+// Regression: the unscoped-name-matcher guard must also see through
+// quoted braces. A `}` inside a quoted regex value should not be
+// mistaken for the end of the matcher block.
+func TestScope_RejectsNameRegexWithBraceInValue(t *testing.T) {
+	t.Parallel()
+	cat := cardCatalog("container_cpu_usage", 500)
+	err := checkScope(context.Background(), nil, cat, `{__name__=~"foo}bar"}`)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "scope required")
+}
