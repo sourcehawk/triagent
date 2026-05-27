@@ -1,0 +1,16 @@
+{
+  "kinds": [
+    { "group": "",      "version": "v1", "kind": "Pod",                   "description": "Workload pods. Start here for any crashloop/OOM/backoff investigation." },
+    { "group": "",      "version": "v1", "kind": "Service",               "description": "In-cluster services. Check endpoints when a component is reachable from one pod but not another." },
+    { "group": "",      "version": "v1", "kind": "ConfigMap",             "description": "Operator-rendered or hand-applied configuration. Values redacted when they look like credentials.", "redact": true },
+    { "group": "",      "version": "v1", "kind": "PersistentVolumeClaim", "description": "Persistent storage claims. Pending PVCs are a common cause of stuck deploys." },
+    { "group": "",      "version": "v1", "kind": "Endpoints",             "description": "Resolved backends behind a Service. Empty Endpoints explain 'connection refused' from callers." },
+    { "group": "apps",  "version": "v1", "kind": "Deployment",            "description": "Stateless workloads." },
+    { "group": "apps",  "version": "v1", "kind": "StatefulSet",           "description": "Stateful workloads. Ready-replica drift is the canonical 'cluster is degraded' signal." },
+    { "group": "apps",  "version": "v1", "kind": "ReplicaSet",            "description": "Deployment-owned ReplicaSets; useful only when diagnosing rollout churn." },
+    { "group": "apps",  "version": "v1", "kind": "DaemonSet",             "description": "Per-node workloads (usually monitoring/sidecar agents)." },
+    { "group": "batch", "version": "v1", "kind": "Job",                   "description": "Batch jobs (backups, migrations, one-shots)." },
+    { "group": "batch", "version": "v1", "kind": "CronJob",               "description": "Scheduled batch jobs." },
+    { "group": "networking.k8s.io", "version": "v1", "kind": "Ingress",   "description": "Ingress routes for cluster-external traffic. Check when external clients can't reach a service." }
+  ]
+}

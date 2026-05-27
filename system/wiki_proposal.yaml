@@ -1,0 +1,218 @@
+id: wiki_proposal
+version: v1
+schema_version: 1
+dispatch: subagent
+type: general
+symptom: "An investigation has produced a useful finding worth capturing in the wiki — promote it via propose_wiki_draft"
+description: |
+  Meta-playbook the agent walks when the operator says "promote this to wiki" or
+  similar (the SessionView "promote to wiki" / "edit wiki" buttons send a canned
+  prompt that triggers this). Produces a wiki entry via the triagent-wiki MCP,
+  surfaces it as a WikiProposalCard, and the operator approves → PR opens
+  against the wiki repo.
+
+  Two entry modes:
+    - **promote (new)**: operator pressed "promote to wiki" — first time the
+      session has produced a draft. Default flow: read entities, check the
+      vault for an existing wiki entry (it almost always isn't there yet),
+      draft from scratch.
+    - **edit (iterate)**: operator pressed "edit wiki" — a draft already
+      exists this session (approved or declined). The intent is to revise
+      the existing wiki entry with what we've learned since. Same tool, but
+      we skip past "should I draft at all" deliberation and go straight to
+      loading the existing entry so the sub-agent revises rather than
+      drafts from scratch.
+
+  Mirrors the playbook_proposal meta-playbook in shape: walk the agent through
+  the prerequisite reads, then the proposal call, then hand off the review to
+  the UI.
+entrypoint: gather_inputs
+
+nodes:
+  gather_inputs:
+    description: |
+      Confirm we have the inputs propose_wiki_draft needs. Specifically:
+        - slug — the orchestrator derives a default `inv-<investigation-label>`
+          from the investigation; the operator can override at promote time.
+          Validator regex: `^[a-z0-9][a-z0-9-]*$`. Prefer `inc-` when there's
+          an incident.io ticket, `inv-` for investigation-only, `alert-` for
+          alert/Slack-message contexts.
+        - The current session's most recent summary (the eligibility gate
+          guarantees one exists when this playbook runs).
+        - Optional links: investigation launcher URL (auto-derived from the
+          current session), incident.io URL, Slack channel URL, Slack message
+          URL — the agent passes whichever the operator shared.
+
+      Also classify the operator's intent. The canned trigger messages tell
+      you which mode this is:
+        - "Please write this investigation up as a wiki entry" → new draft
+        - "Please iterate on the existing wiki entry" → edit mode
+      A free-form operator message ("update the wiki for this incident",
+      "let's edit the wiki entry") also counts as edit mode.
+    expected_findings:
+      - slug
+      - summary_available
+      - mode  # "new" or "edit"
+    next:
+      - condition: "operator explicitly asked to EDIT / iterate on an existing wiki entry AND we have a valid slug"
+        goto: load_existing_for_edit
+      - condition: "we have a valid slug and at least one summary (default new-draft path)"
+        goto: find_similar_entries
+
+  find_similar_entries:
+    description: |
+      Before searching, recall that the wiki vault canonicalises service /
+      error / symptom names. As you draft, reuse existing entity names
+      rather than coining new ones — `propose_wiki_draft` rejects unknown
+      entity references on submit. Better to align upfront than retry
+      then. Call `wiki_list_entities` (no filter) to enumerate the
+      canonical set; briefly note which names from the investigation map
+      to existing entries and flag any genuinely new ones the draft will
+      introduce.
+
+      Look for similar prior wiki entries to model the new draft after.
+      Use `wiki_search` (the curation-side tool — wiki_correlate is the
+      investigation-side counterpart, wrong audience here) with:
+
+        - free-text `query`: a distinctive phrase from the investigation
+          summary (the failing component + symptom is usually right —
+          "broker oom", "shard rebalance", "iam stuck"). Skip generic
+          tokens like "error" or "fail" that match every incident.
+        - optional `filters` on the canonical service / error / symptom
+          names you mapped in the previous step — narrows results to
+          incidents touching the same domain.
+
+      Why this step matters: wiki entries follow a tight
+      structure (`## Summary` / `## Root cause` / `## Fix` are the
+      validate_wiki-required headers; `## Lessons` is optional but
+      encouraged). The *prose density* and *cross-link pattern* drift
+      over time. Reading 1-2 similar entries before drafting keeps the
+      new entry consistent with house style — not just schema-correct.
+
+      Read the response's `resolution` field same as anywhere else: if
+      a filter input didn't exact-match, the near-suggestions tell you
+      which canonical name to use.
+
+      If search returns nothing, that's signal too: this finding may
+      be genuinely novel, and the draft can lean shorter than usual.
+    suggested_calls:
+      - tool: triagent-wiki/wiki_list_entities
+      - tool: triagent-wiki/wiki_search
+    expected_findings:
+      - canonical_entities
+      - new_entities_to_introduce
+      - similar_entries
+    next:
+      - condition: "always proceed — the goal is to inform the draft, not gate on it"
+        goto: check_for_existing_entry
+
+  check_for_existing_entry:
+    description: |
+      Check whether a wiki entry with this slug already exists —
+      if so the proposal becomes an UPDATE. Call `wiki_get` with
+      `entries/<slug>.md`. If it returns NotFound, treat as new.
+      If it exists, the propose_wiki_draft tool will surface base_md and the
+      sub-agent will revise rather than rewrite.
+    suggested_calls:
+      - tool: triagent-wiki/wiki_get
+        args:
+          path: entries/${slug}.md
+    next:
+      - condition: "always proceed (existence handled inside the tool)"
+        goto: draft
+
+  load_existing_for_edit:
+    description: |
+      Before loading, recall that the wiki vault canonicalises service /
+      error / symptom names. As you revise, reuse existing entity names
+      rather than coining new ones — `propose_wiki_draft` rejects unknown
+      entity references on submit. Call `wiki_list_entities` (no filter)
+      so you have the canonical set in hand before drafting any new
+      wikilinks.
+
+      Fetch the current wiki entry so you understand what's already
+      captured before drafting the revision. Call `wiki_get` with
+      `entries/<slug>.md`. Read the full file — frontmatter
+      AND body — so you know:
+        - what's already in `## Summary`, `## Root cause`, `## Fix`
+          (and `## Lessons` if present; it's optional) — avoid
+          redundant rewrites; the sub-agent can extend or correct
+          what's there
+        - which entities are already linked in frontmatter
+          (services / errors / symptoms arrays) — preserving those
+          arrays through the revision is important; they're how the
+          MCP search and entity backlinks work
+        - the existing `links` block — preserve any links we don't
+          have a fresh value for
+
+      If `wiki_get` returns NotFound, the entry was deleted or never
+      promoted (e.g. the previous draft was declined and never made
+      it into the vault). Fall back to the new-draft path: report
+      the situation in chat and goto check_for_existing_entry.
+    suggested_calls:
+      - tool: triagent-wiki/wiki_list_entities
+      - tool: triagent-wiki/wiki_get
+        args:
+          path: entries/${slug}.md
+    expected_findings:
+      - canonical_entities
+      - existing_wiki_loaded
+    next:
+      - condition: "existing entry loaded — proceed to draft (the propose tool will pass base_md to the sub-agent)"
+        goto: draft
+      - condition: "wiki_get returned NotFound — fall back to new-draft path"
+        goto: check_for_existing_entry
+
+  draft:
+    description: |
+      Call `propose_wiki_draft`. The tool spawns a sub-agent to write the
+      markdown — we don't compose it ourselves. Required inputs:
+        - slug (from gather_inputs)
+        - summary (the most recent investigation summary text)
+        - status (REQUIRED): one of `resolved` | `open` | `wontfix`.
+        - severity (OPTIONAL): one of `sev1` | `sev2` | `sev3`.
+        - additional_context (OPTIONAL): any specific tool results or findings worth highlighting.
+        - investigation_url (OPTIONAL): the launcher URL for this investigation.
+        - incidentio_url (OPTIONAL): if the operator shared one.
+        - slack_channel_url (OPTIONAL): if the operator shared a channel.
+        - slack_message_url (OPTIONAL): if the operator shared a message permalink.
+
+      The tool returns a proposal payload. The launcher's UI will render it
+      as a WikiProposalCard and surface approve/decline controls to the
+      operator. Do NOT prompt the operator yourself for approval — the UI
+      owns that surface.
+    suggested_calls:
+      - tool: triagent-wiki/propose_wiki_draft
+        args:
+          slug: ${slug}
+    expected_findings:
+      - proposal_id
+    next:
+      - condition: "tool returned ok with a proposal_id"
+        goto: handoff_to_ui
+      - condition: "tool returned validation errors"
+        goto: surface_validation_errors
+
+  surface_validation_errors:
+    description: |
+      The sub-agent's draft failed schema validation. Read the errors out
+      of the tool response and tell the operator concisely what went wrong
+      and what's needed to retry (usually: a missing field that requires
+      operator input, or an entity name that needs disambiguation).
+    terminal_advice: |
+      Surface the errors to the operator. If the operator wants to retry
+      with refinement notes, re-call propose_wiki_draft with
+      `additional_context` containing the operator's clarifications.
+
+  handoff_to_ui:
+    description: |
+      Proposal is staged. The launcher's UI (WikiProposalCard) is now
+      showing the markdown preview and approve/decline controls to the
+      operator. Nothing more for the agent to do unless the operator
+      declines with refinement notes.
+    terminal_advice: |
+      Wiki draft staged. The operator reviews and approves/declines in the
+      chat panel; on approve the launcher opens a PR against the upstream
+      wiki repo. If the operator declines with refinement notes, those
+      notes return as a new chat message — re-enter `draft` with the notes
+      in `additional_context`.

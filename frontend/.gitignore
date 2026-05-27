@@ -1,0 +1,11 @@
+node_modules
+.next
+out
+*.tsbuildinfo
+.env*.local
+
+# Generated at build time from docs/content/. Source of truth lives at
+# the repo root; scripts/sync-docs.mjs mirrors them here so the embedded
+# launcher SPA can serve them as static assets.
+public/docs/*.md
+

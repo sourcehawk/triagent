@@ -1,0 +1,270 @@
+id: investigation
+schema_version: 1
+symptom: "Default entry point for any operator-reported incident."
+description: |
+  Master playbook for every fresh investigation session. Confirms the
+  operator gave enough context, walks the gather sub-flows
+  (gather_incidentio_context, wiki_recall, gather_slack_context) when
+  their MCPs are wired, forms a hypothesis from the combined evidence,
+  classifies whether the symptom is in-scope for the available domain
+  playbooks, and either routes to a matching playbook or hands off to
+  ad-hoc investigation.
+
+  Code orientation (`git_inspect`) is NOT walked up front — most
+  incidents are operational and don't need it. Domain playbooks that
+  genuinely need code-level context delegate to `git_inspect`
+  themselves; the system tier keeps the capability available without
+  forcing every investigation to pay for it.
+
+  Domain playbooks are reached via handoff from this one — never
+  invoked directly.
+
+  Follow-up turns (post-conclusion) use followup_conversation directly,
+  not this playbook.
+
+entrypoint: confirm_context
+
+nodes:
+  confirm_context:
+    description: |
+      Read the operator's notes from the session context AND scan
+      the Environment block for incident-source MCPs
+      (`mcp__triagent-incidentio__*`, `mcp__triagent-slack__*`).
+
+      If notes are empty/vague AND no source MCPs are wired, ask
+      ONE concise clarifying question — *what alert, symptom, or
+      behaviour brought you here?* — and STOP. There is no
+      "wait" node; just don't advance until the operator's reply
+      arrives. When it does, re-evaluate this node.
+
+      Only advance when EITHER notes carry concrete signal (component
+      name, condition string, alert title, or a specific observation)
+      OR an incident-source MCP is wired. The gather sub-flows can
+      supply hypothesis-forming signal even if notes are empty —
+      that's why the source MCPs count as signal here.
+    next:
+      - condition: notes carry concrete signal OR incident-source MCP wired
+        goto: walk_incidentio
+
+  walk_incidentio:
+    description: |
+      Sub-flow: read incident.io context for this incident before
+      hypothesizing. The gather playbook itself bails into
+      terminal_skipped when triagent-incidentio isn't wired, so this
+      delegation is safe to walk unconditionally.
+    delegate_to: gather_incidentio_context
+    next:
+      - condition: "always — gather_incidentio_context returned (or skipped)"
+        goto: walk_wiki_recall
+
+  walk_wiki_recall:
+    description: |
+      Sub-flow: correlate against the investigations wiki before
+      hypothesizing. Runs after incidentio so any
+      `incidentio_affected_service` finding is available as a
+      canonical-name input; runs before slack so wiki citations can
+      shape what we look for in the channel context.
+
+      The wiki_recall playbook encodes the canonical-entity-name
+      handling that's easy to fumble by hand (exact-match on
+      services / errors / symptoms; resolution.near suggestions on
+      misses). Walk it unconditionally — when triagent-wiki isn't wired it
+      bails on its own.
+    delegate_to: wiki_recall
+    next:
+      - condition: "always — wiki_recall returned (or skipped)"
+        goto: walk_slack
+
+  walk_slack:
+    description: |
+      Sub-flow: read Slack channel context for this incident before
+      hypothesizing. The gather playbook itself bails into
+      terminal_skipped when triagent-slack isn't wired, so this delegation
+      is safe to walk unconditionally.
+    delegate_to: gather_slack_context
+    next:
+      - condition: "always — gather_slack_context returned (or skipped)"
+        goto: hypothesize
+
+  hypothesize:
+    description: |
+      Form a working hypothesis from the operator's notes AND any
+      `incidentio_*` / `slack_*` findings recorded by the gather
+      sub-flows AND any wiki correlations (`correlations`,
+      `refined_correlations`, `keyword_hits`) surfaced by
+      wiki_recall: what kind of failure does this read like —
+      control-plane, data-plane, network, saturation, a specific
+      component, a platform-level dependency — and what symptoms
+      support that read?
+
+      External-source findings often privilege a specific component
+      or incident.io affected-service field; weight them alongside
+      operator notes rather than treating either as the sole
+      authority. Prior-incident citations from wiki_recall are
+      especially load-bearing when they show overlap on the same
+      entities the current symptom names — that's "we've seen this
+      before" with a pointer to the resolution.
+
+      Read the cluster-resource-namespace parameter from the Environment
+      block (the profile names the actual key). If it is set, every k8s
+      tool call defaults `namespace` to it. If it is `<unset>`, call
+      `list_namespaces` with a substring filter from the operator's
+      notes — or pass the appropriate namespace directly when known.
+
+      Call step_complete with findings=[{key: "initial_hypothesis", value: "<your hypothesis>"}]
+      and goto="classify_scope" so the audit trail starts with stated intent.
+    expected_findings:
+      - initial_hypothesis
+    next:
+      - condition: hypothesis recorded — proceed to scope classification
+        goto: classify_scope
+
+  classify_scope:
+    description: |
+      Classify whether a domain playbook in the library matches this
+      symptom. Two outcomes:
+
+        - **in-scope**: a domain playbook clearly covers the symptom
+          (component, condition, signal). Proceed to `route` to pick it.
+        - **out-of-scope**: no playbook fits — generic infrastructure
+          issue, unrelated workload, or genuinely novel symptom.
+          Go straight to ad-hoc investigation.
+
+      Use the operator's notes + the hypothesis you just recorded.
+      When in doubt between in-scope and out-of-scope, prefer in-scope
+      and let `route` confirm by listing the available playbooks; if
+      none match, you'll end up at `terminal_novel_case` anyway.
+
+      Call step_complete with findings=[{key: "investigation_scope", value: "<in_scope|out_of_scope + reason>"}]
+      and the matching goto so the audit trail captures why we either routed or went ad-hoc.
+    expected_findings:
+      - investigation_scope
+    next:
+      - condition: scope=in_scope — proceed to domain-playbook routing
+        goto: route
+      - condition: scope=out_of_scope — no playbook will fit, go ad-hoc
+        goto: terminal_novel_case
+
+  route:
+    description: |
+      Pick the domain playbook whose entity tags best match the
+      symptom + findings. Three-step:
+
+      1. **Canonicalize first**: call playbook_resolve_entities with
+         the raw candidate keywords from your findings (the same
+         services / errors / symptoms used for wiki recall — pass
+         them as you have them, fuzzy or not). It returns one
+         `resolution` per (field, input) telling you which keywords
+         are exact-match against any loaded playbook's tags and which
+         have near-canonical alternatives. Use `near[0]` as the
+         canonical name for any non-exact input — playbook_correlate
+         is exact-match and silently misses fuzzy guesses.
+
+      2. **Then correlate**: call playbook_correlate with the
+         canonical names from step 1. The top match is almost always
+         your candidate — its match_path shows you *why* it matched
+         (direct entity hits vs lifted from a child via
+         delegate_to / handoff). A direct hit beats a pure-gateway
+         lift; trust the score.
+
+      3. **If correlate returns no matches** (or you genuinely
+         want to scan the full library to confirm nothing else
+         fits), fall back to list_playbooks with type=investigation
+         and pick by reading the symptom prose. Untagged playbooks
+         are only discoverable this way until they're tagged, so
+         the fallback stays load-bearing.
+
+      Picking heuristics for the fallback list:
+        - Prefer the more *specific* playbook when two look
+          applicable.
+        - If a playbook's symptom names a specific component / CRD
+          / condition string that appears in the operator's notes
+          OR an incidentio_affected_service finding, that's almost
+          always the right pick.
+        - Don't open a playbook whose symptom is only tangentially
+          related.
+
+      Call step_complete with findings=[{key: "chosen_playbook", value: "<id + one-line why, citing correlate match_path if applicable>"}]
+      and the appropriate goto.
+    suggested_calls:
+      - tool: triagent-strategies/playbook_resolve_entities
+      - tool: triagent-strategies/playbook_correlate
+        args:
+          type: investigation
+      - tool: triagent-strategies/list_playbooks
+        args:
+          type: investigation
+    expected_findings:
+      - candidate_playbooks
+      - chosen_playbook
+    next:
+      - condition: a single playbook clearly matches the symptom
+        goto: terminal_handoff_domain
+      - condition: no playbook in the library matches — this is a genuinely novel case
+        goto: terminal_novel_case
+
+  terminal_handoff_domain:
+    description: |
+      Hand off to the chosen domain playbook. The chain is what
+      actually runs the investigation; this master playbook just
+      decided which one (with help from the gather sub-flows).
+    terminal_advice: |
+      Call walk_playbook with the chosen domain playbook id,
+      passing parent_session_id set to THIS session's id so the
+      loop guard rejects circular handoffs and the chain shows up
+      linked in the activity panel.
+
+        mcp__triagent-strategies__walk_playbook {
+          playbook_id: "<picked id from route>",
+          cluster_id: "<value from the cluster-id parameter in the Environment block, or empty string if unset>",
+          namespace: "<value from the cluster-resource-namespace parameter in the Environment block, or empty string if unset>",
+          parent_session_id: "<this session id>",
+          notes: "<operator notes + any clarification + key external findings>"
+        }
+
+      The domain playbook's terminal node is where you'll call
+      summarize. Don't summarize at the end of THIS master playbook
+      — wait until the domain chain reaches its own terminal.
+
+      After summarize, walk the `suggested-closing-playbook` from
+      the Environment parameter block (`capture_offer`) to offer
+      the operator both capture paths.
+
+  terminal_novel_case:
+    description: |
+      Ad-hoc investigation. Reached when no domain playbook in the
+      library fits the symptom. Investigate from raw evidence and
+      summarize.
+    terminal_advice: |
+      Investigate ad-hoc using whatever evidence is available — k8s
+      tools for cluster state, prom for saturation signals (when
+      wired), the docs MCP (or any extra MCPs in the Environment
+      block) for product behaviour, linked-repo MCPs for source-of-
+      truth controller code, and any `incidentio_*` / `slack_*`
+      findings the gather sub-flows captured. Form a conclusion the
+      same way a domain playbook would, then call summarize.
+
+      Lean on the generic k8s surface (Pods / Deployments /
+      StatefulSets / Services / Ingresses / Events) and the relevant
+      platform component's logs. Don't force-fit a domain framing onto
+      an unrelated workload.
+
+      After summarize, walk the `suggested-closing-playbook` from the
+      Environment parameter block (`capture_offer`). Novel cases are
+      the highest-value input the knowledge base can receive.
+    handoff:
+      - capture_offer
+    next:
+      - condition: "get_logs output was truncated and the relevant signal wasn't found in the captured tail"
+        goto: extract_more_logs
+
+  extract_more_logs:
+    description: |
+      Use the strategic_log_extraction playbook to capture a larger log
+      window and filter it. Walk this branch at most once per investigation;
+      if the stream search is also insufficient, return findings to the
+      ad-hoc investigation and proceed to summarize.
+    delegate_to: strategic_log_extraction
+    next:
+      - condition: "always — strategic_log_extraction returned; continue ad-hoc investigation with the extracted findings"
+        goto: terminal_novel_case

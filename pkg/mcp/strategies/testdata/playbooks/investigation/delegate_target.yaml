@@ -1,0 +1,18 @@
+id: delegate_target
+schema_version: 1
+symptom: "Test fixture: delegate target"
+description: |
+  Sub-flow used by walker delegate_to tests. Two-node walk that
+  records a finding and reaches terminal_done.
+entrypoint: do_thing
+nodes:
+  do_thing:
+    description: "Pretend to look something up."
+    expected_findings:
+      - target_finding
+    next:
+      - condition: "always"
+        goto: terminal_done
+  terminal_done:
+    description: "Sub-flow complete."
+    terminal_advice: "Returning to parent."

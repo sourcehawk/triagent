@@ -1,0 +1,237 @@
+id: wiki_backfill_ingestion
+version: v1
+schema_version: 1
+type: general
+symptom: "Operator opened the New Wiki Entry modal with sources attached — backfill the resolved incident's wiki entry end-to-end without operator dialogue"
+description: |
+  Meta-playbook the wiki editor agent walks when a session was created
+  from the homepage's *New Wiki Entry* modal. The wiki
+  editor's system prompt drives the agent into this playbook on the
+  first turn when the subject is a wiki entry slug, no existing
+  markdown is loaded, and at least one source (incident.io URL, Slack
+  channel, or investigation) was attached.
+
+  The launcher's frontend gates submit on at least one source, so
+  reaching this playbook with no scope attached is a defensive edge
+  case (curl, programmatic invocation, future flow). The leading
+  `verify_scope` node catches that case and asks the operator instead
+  of silently drafting from operator notes alone.
+
+  Distinct from wiki_proposal: that runs in an investigation session
+  and delegates drafting to a sub-agent via propose_wiki_draft. This
+  runs in the wiki editor session, where the agent IS the drafter —
+  it composes the markdown inline, validates, and only then calls
+  propose_wiki_draft to surface the WikiProposalCard.
+
+  Linear flow with one branch (validate-loop on schema failure). No
+  operator dialogue between gather and propose; the modal already
+  collected the operator's input.
+
+entrypoint: verify_scope
+
+nodes:
+  verify_scope:
+    description: |
+      Read the system prompt's "Sources" / "Identifiers"
+      section. Check whether at least one of session-default
+      `channel_id` (Slack), session-default `incident_id`
+      (incident.io), or `investigation_events_path` (an investigation
+      transcript) is named there. The frontend usually requires
+      one before opening this session, but a programmatic invocation
+      (curl, future flow) can land here with neither attached. In
+      that case halt and ask — backfilling on operator notes alone
+      produces a thin draft that wastes the operator's review cycle.
+
+      Inputs the launcher's prompt env block exposes for this slug:
+        - slug (the wiki entry slug, validator regex `^[a-z0-9][a-z0-9-]*$`).
+          Prefer `inc-` when there's an incident.io ticket, `inv-` for
+          investigation-only, `alert-` for alert/Slack-message contexts.
+        - investigation_events_path (OPTIONAL): when the operator picked an
+          investigation in the New Wiki Entry modal, the launcher exposes
+          the path to that investigation's events.jsonl in the prompt
+          environment block. Read it with the Read tool before drafting —
+          it's the primary evidence trail.
+    next:
+      - condition: "at least one of session_channel_id / session_incident_id / investigation_events_path is set"
+        goto: walk_incidentio
+      - condition: "none are set — halt and ask the operator for a source"
+        goto: terminal_no_sources
+
+  walk_incidentio:
+    description: |
+      Sub-flow: pull incident.io context for the session-scoped
+      incident before drafting. The gather playbook skips into
+      terminal_skipped when no incident scope is attached, so this
+      delegation is safe to walk unconditionally once verify_scope
+      has confirmed at least one source is present.
+    delegate_to: gather_incidentio_context
+    next:
+      - condition: "always — gather_incidentio_context returned (or skipped)"
+        goto: walk_slack
+
+  walk_slack:
+    description: |
+      Sub-flow: pull Slack channel context for the session-scoped
+      channel before drafting. The gather playbook skips into
+      terminal_skipped when no channel scope is attached, so this
+      delegation is safe to walk unconditionally once verify_scope
+      has confirmed at least one source is present.
+    delegate_to: gather_slack_context
+    next:
+      - condition: "always — gather_slack_context returned (or skipped)"
+        goto: ground_in_entities
+
+  ground_in_entities:
+    description: |
+      Pull the canonical entity list before drafting. Two reasons:
+        1. Frontmatter `services` / `errors` / `symptoms` arrays must
+           use canonical names, exact-match. Enumerating up front
+           puts the canonical set in context.
+        2. Wikilinks inside the body should reuse existing entity
+           pages where one exists; this list is how you know.
+
+      Briefly note which services / errors / symptoms from the
+      gathered context map to existing entity names; flag any new
+      ones the draft will introduce.
+    suggested_calls:
+      - tool: triagent-wiki/wiki_list_entities
+    expected_findings:
+      - canonical_entities
+      - new_entities_to_introduce
+    next:
+      - condition: "always proceed once entity list is in hand"
+        goto: find_similar
+
+  find_similar:
+    description: |
+      Look for similar prior wiki entries to model the new draft
+      after. Use `wiki_search` (the curation-side tool) with:
+
+        - free-text `query`: a distinctive phrase from the gathered
+          context (failing component + symptom is usually right —
+          "broker oom", "shard rebalance", "iam stuck"). Skip
+          generic tokens like "error" or "fail".
+        - optional `filters` on the canonical service / error /
+          symptom names mapped in the previous step.
+
+      Why: wiki entries follow a tight structure (## Summary
+      / ## Root cause / ## Fix / ## Lessons), but prose density and
+      cross-link style drift over time. Reading 1–2 similar entries
+      keeps the draft consistent with house style.
+
+      Read `resolution` on the response: if a filter input didn't
+      exact-match, near-suggestions tell you which canonical name
+      to use.
+    suggested_calls:
+      - tool: triagent-wiki/wiki_search
+    expected_findings:
+      - similar_entries
+    next:
+      - condition: "always proceed — the goal is to inform the draft, not gate on it"
+        goto: draft
+
+  draft:
+    description: |
+      Compose the entry inline in the chat. Required headers (per
+      validate_wiki are the first three; `## Lessons` is optional
+      but encouraged):
+
+        ## Summary
+        ## Root cause
+        ## Fix
+        ## Lessons
+
+      Source-first: quote incident.io / Slack passages verbatim with
+      timestamps. Don't synthesize causal claims the sources don't
+      support.
+
+      In `## Lessons`, capture both operator-facing takeaways (what
+      to watch for next time, runbook gaps) AND agent-workflow
+      retrospective prose — which tool sequences paid off, which
+      playbook branches mismatched the real failure mode, which
+      signals were misleading, dead ends a future agent investigation
+      should skip. Keep it short and concrete; the wiki is a learning
+      surface for future investigators (human and agent), not a
+      diary.
+
+      Frontmatter: use canonical entity names from
+      ground_in_entities for `services` / `errors` / `symptoms`. Set
+      `slug`, `severity`, `status`, `created_at`, `resolved_at`
+      from incident.io findings where available.
+
+      verify_scope guarantees at least one source was attached, so a
+      gather sub-flow always returned content on at least one side.
+      If only one side returned (e.g. Slack attached, incident.io
+      not), draft from what's available and call out the absent side
+      in the body so the PR reviewer knows.
+    expected_findings:
+      - draft_markdown
+    next:
+      - condition: "draft is coherent and the four required headers are present"
+        goto: validate
+
+  validate:
+    description: |
+      Schema-check the draft. Pass the full markdown (frontmatter +
+      body) as the `markdown` arg. The tool returns `ok: bool` plus
+      a list of issues when not ok.
+    suggested_calls:
+      - tool: triagent-wiki/validate_wiki
+    expected_findings:
+      - validation_result
+    next:
+      - condition: "ok=true"
+        goto: propose
+      - condition: "validation errors returned — read each, correct the draft, re-walk"
+        goto: draft
+
+  propose:
+    description: |
+      Stage the draft for operator review. Call `propose_wiki_draft`
+      with:
+        - slug (from the session's wiki entry subject)
+        - markdown (the validated draft)
+        - investigation_url (optional — the investigation launcher URL
+          if the operator picked an investigation in the modal)
+        - incidentio_url (optional — the incident.io URL if attached)
+        - slack_channel_url (optional — the channel URL if the operator
+          attached a Slack channel)
+        - slack_message_url (optional — a Slack message permalink if
+          the operator attached one)
+        - investigation_events_path (optional — when an investigation
+          was attached, the launcher exposes its events.jsonl path in
+          the prompt environment)
+
+      The launcher's UI renders the response as a WikiProposalCard
+      with approve/decline controls.
+    suggested_calls:
+      - tool: triagent-wiki/propose_wiki_draft
+        args:
+          slug: ${slug}
+          # (status, severity, investigation_url, incidentio_url, slack_channel_url,
+          #  slack_message_url, investigation_events_path are optional and passed
+          #  when known)
+    expected_findings:
+      - proposal_id
+    terminal_advice: |
+      Proposal staged. The operator reviews and approves/declines via
+      the WikiProposalCard. On approve the launcher opens a PR
+      against the wiki repo. If the operator declines with refinement
+      notes, those notes return as a chat message — re-enter `draft`
+      with the notes in the next iteration's body.
+
+  terminal_no_sources:
+    description: "no sources attached to this session — backfill needs at least one"
+    terminal_advice: |
+      This session was opened without an incident.io URL, a Slack
+      channel, or an investigation attached. Backfilling on operator
+      notes alone produces a thin draft. Reply to the operator asking
+      which source to use:
+
+        > I don't have an incident.io URL, a Slack channel, or an
+        > investigation attached to this session. Paste an incident.io
+        > URL, give me a Slack channel name (I'll resolve it via
+        > slack_get_channel_id), point me at an investigation, or tell
+        > me which thread to look at — and I'll draft from there.
+
+      Don't draft until they reply with a source.

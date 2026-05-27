@@ -1,0 +1,78 @@
+name: Docs
+
+# Builds the static docs site at docs/site/ and deploys it to
+# GitHub Pages. Triggers on changes to the markdown sources, the
+# site builder, or this workflow itself; manual runs via workflow_dispatch
+# let us re-deploy without a code push.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/content/**'
+      - 'docs/site/**'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Pages deploys are exclusive: a queued run waits for an in-flight one
+# to finish rather than racing it.
+concurrency:
+  group: 'pages'
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.tool-versions'
+          cache: 'npm'
+          cache-dependency-path: docs/site/package-lock.json
+
+      - name: Install
+        working-directory: docs/site
+        run: npm ci
+
+      - name: Build
+        working-directory: docs/site
+        env:
+          # Repo is sourcehawk/triagent → Pages serves at
+          # sourcehawk.github.io/triagent/. basePath must match the
+          # sub-path or every internal link 404s.
+          DOCS_BASE_PATH: /triagent
+        run: npm run build
+
+      - name: Disable Jekyll
+        # By default GitHub Pages runs Jekyll, which strips _next/-style
+        # directories (Jekyll treats _ as "private"). The marker file
+        # opts the upload out of Jekyll entirely.
+        run: touch docs/site/out/.nojekyll
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/site/out
+
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

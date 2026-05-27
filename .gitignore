@@ -1,0 +1,36 @@
+# Build artifacts
+bin/
+/triagent
+/triagent-mcp
+
+# Frontend build outputs. frontend/ has its own .gitignore for node_modules
+# and .next; this rule keeps the copied static export under the embed
+# package out of git, while preserving the tracked .gitkeep that gives
+# //go:embed at least one file to match on a fresh checkout (before
+# `make frontend` populates the directory).
+internal/web/dist/*
+!internal/web/dist/.gitkeep
+
+# Local go workspace files — gitignored so you can opt into SDK co-dev
+# without affecting teammates.
+go.work
+go.work.sum
+
+# Vendored dependencies — we don't vendor.
+vendor/
+
+# IDE directories
+.idea
+.vscode
+
+# Node modules (each frontend has its own .gitignore too)
+node_modules
+
+# Local-only superpowers / claude harness state
+.worktrees/
+.docs/superpowers
+.claude/
+.claire
+
+# Local testing profile
+test-profile

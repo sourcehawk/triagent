@@ -1,0 +1,264 @@
+# triagent default profile — runnable as-is, and the recommended
+# `base:` for org-specific forks. Customize either by editing this
+# file in place, or by creating a sibling profile.yaml that points
+# back with `base: default` and overrides only the fields it cares
+# about. Pass `--profile <name>` (for embedded profiles) or
+# `--profile <path>` (for on-disk profiles); paths may point at a
+# directory containing `profile.yaml` or directly at a yaml file
+# of any name.
+
+# Human-readable identifier. Shown in the profile picker and used
+# in `--profile <name>` / TRIAGENT_PROFILE.
+name: default
+
+# Free-form description shown in the setup wizard and profile picker.
+description: |
+  Runnable starter profile. Uses your local kubeconfig for cluster access.
+  Ships generic prompts that work out of the box on any Kubernetes cluster.
+
+  Recommended: create a sibling profile with `base: default` and override
+  `architecture.md` with your platform's specifics — top-level CRDs,
+  namespace conventions, dependency direction, version-pivot gotchas. The
+  other prompts (system / strategies / editor / wiki_editor) are
+  platform-neutral and rarely need overriding; touch them when you want
+  to tighten tone, add house rules, or pin extra tools. See the
+  `prompt_files` example below for how to declare prompt overrides
+  inline.
+
+# Authentication for cluster access.
+#   kubeconfig — read from $KUBECONFIG / ~/.kube/config. No setup.
+#   teleport   — SSO via `tsh login`. Requires the `teleport` block.
+auth:
+  kind: kubeconfig
+  # Uncomment when kind: teleport.
+  # teleport:
+  #   proxy: example.teleport.sh
+  #   auth_connector: okta
+
+# Walker entry and exit playbook IDs. The strategies MCP starts at
+# `entrypoint` for every new investigation; `closing` is the terminal
+# step the walker prefers when there is nothing else to suggest.
+playbooks:
+  entrypoint: investigation
+  closing: capture_offer
+
+defaults:
+  # Upstream git repo for the playbooks set. `owner/name` (GitHub).
+  # Empty = local-only mode: the launcher boots fine, reads
+  # paths.user_playbooks_dir and the embedded system playbooks, and
+  # `git init`s the upstream dir so user edits still land as local
+  # commits — but Sync-from-upstream and Push-as-PR surfaces stay
+  # disabled until a repo is set.
+  playbooks_repo: ""
+  # Subdir inside the upstream playbooks repo where the
+  # `<type>/<id>.yaml` tree lives. "" = repo root (legacy flat
+  # layout). The convention here lets one shared upstream host
+  # playbooks, wikis, and sessions side by side under distinct
+  # top-level subdirs.
+  #
+  # NOTE on `base:` merging: a child profile cannot use literal ""
+  # to clear this field — empty values are treated as "field absent"
+  # and fall back to the base's value. Use `/` (the "use repo
+  # root" sentinel) instead. The loader normalizes `/` to "" after
+  # the merge, so runtime sees an ordinary empty string. Same
+  # applies to `wiki_path` and `sessions_path`.
+  playbooks_path: playbooks
+
+  # Upstream git repo for the wiki. `owner/name`. Empty = local-only
+  # mode: the launcher boots, the wiki UI works, edits land as local
+  # commits, but Promote-to-wiki / Sync-from-upstream stay disabled
+  # until a repo is set.
+  wiki_repo: ""
+  # Subdir inside the upstream wiki repo where `entries/` and
+  # `entities/` live. "" = repo root; use `/` from a child profile
+  # (see `playbooks_path` note above).
+  wiki_path: wikis
+
+  # Upstream git repo for committed investigation sessions.
+  # `owner/name`. Empty = local-only mode: the launcher boots, drafts
+  # land as local commits, but Push-session-as-PR and the
+  # peer-sessions catalog stay disabled until a repo is set.
+  sessions_repo: ""
+  # Subdir inside the upstream sessions repo where per-investigation
+  # `<slug>/session.md` dirs are pushed. "" = repo root; use `/`
+  # from a child profile.
+  sessions_path: sessions
+
+  # In-cluster Prometheus coordinates. Reserved for the prom MCP —
+  # parsed today but not yet consumed by the launcher. Set when
+  # you fork so the values are available to future Prom-aware MCPs
+  # without another profile change.
+  prometheus:
+    service: ""
+    namespace: ""
+    port: 9090
+
+  # Default new investigations to operator-agent (auto) mode. The
+  # per-investigation toggle in the preflight form still wins.
+  auto: false
+  # Skip boot-time `git clone` of the upstream repos (air-gapped
+  # envs). Existing checkouts still load; missing-or-empty dirs
+  # fail fast with a clear error so the operator can pre-seed
+  # them manually.
+  offline: false
+
+# Per-machine filesystem layout. Templated (${XDG_CONFIG_HOME},
+# ${XDG_CACHE_HOME}, ${HOME}, ${PROFILE_NAME} are expanded). Override
+# the whole block — or individual fields — in a forked profile to
+# relocate state. Empty fields disable the corresponding feature.
+#
+# Every dir below bakes in ${PROFILE_NAME} so that switching profiles
+# never mixes state: upstream clones, session transcripts, user-edited
+# playbooks, and the linked-repos list are isolated per profile. Drop
+# the segment in your fork if you genuinely want shared state across
+# profiles — but be aware the preflight clones don't validate remotes.
+paths:
+  # Launcher's clone of the upstream playbooks repo. Strategies MCP
+  # loads YAML from here as the "plugin" set; push-as-PR commits +
+  # pushes from it.
+  upstream_playbooks_dir: ${XDG_CONFIG_HOME}/triagent/${PROFILE_NAME}/upstream-playbooks
+  # Where the launcher materialises its embedded system playbooks
+  # at startup. Re-extracted every boot.
+  system_playbooks_dir: ${XDG_CONFIG_HOME}/triagent/${PROFILE_NAME}/system-playbooks
+  # Operator-customized playbooks the editor writes to. Layered on
+  # top of the system + plugin sets at load time.
+  user_playbooks_dir: ${XDG_CONFIG_HOME}/triagent/${PROFILE_NAME}/playbooks
+  # Launcher's clone of the upstream wiki repo. "Promote to wiki"
+  # commits + pushes from here.
+  wiki_dir: ${XDG_CONFIG_HOME}/triagent/${PROFILE_NAME}/wiki
+  # Parent dir under which per-investigation session dirs are
+  # created (transcripts, mcp.json, etc.).
+  sessions_root: ${XDG_CONFIG_HOME}/triagent/${PROFILE_NAME}/sessions
+  # Launcher's clone of the upstream investigation-sessions repo.
+  # Empty disables the sessions feature.
+  upstream_sessions_dir: ${XDG_CONFIG_HOME}/triagent/${PROFILE_NAME}/upstream-sessions
+  # Where `session.md` drafts land before they're pushed.
+  sessions_proposals_dir: ${XDG_CONFIG_HOME}/triagent/${PROFILE_NAME}/session-proposals
+  # Codefix proposal payloads and the discard-ledger.
+  codefix_proposals_dir: ${XDG_CONFIG_HOME}/triagent/${PROFILE_NAME}/codefix-proposals
+  # In-flight wiki drafts shared between the MCP wiki server and
+  # the launcher backend.
+  wiki_proposals_dir: ${XDG_CONFIG_HOME}/triagent/${PROFILE_NAME}/wiki-proposals
+  # Per-repo clones used by the triagent-git MCPs for architecture
+  # summaries and `draft_pr` flows.
+  git_cache_dir: ${XDG_CACHE_HOME}/triagent-mcp/${PROFILE_NAME}/git
+  # Per-machine yaml the manage-repos UI writes additions to. Read
+  # at startup to reconstruct the linked-repos list.
+  user_repos_file: ${XDG_CONFIG_HOME}/triagent/${PROFILE_NAME}/user_repos.yaml
+
+slack:
+  # Filter applied to the Slack channel picker. e.g. "inc-" hides
+  # every channel that isn't an incident channel. Empty = show all.
+  channel_prefix: ""
+
+# Repos to spin up per-repo MCPs for. Each entry becomes a
+# `triagent-git-<alias>` MCP exposing `search_issues`, `draft_pr`,
+# `create_github_issue`, etc. The `description` is what the agent
+# reads to decide which repo to consult.
+# Example:
+#   - owner: my-org
+#     name: my-service
+#     alias: my-service
+#     description: >
+#       What lives here and when the agent should reach for it.
+linked_repos: []
+
+# Additional MCPs to attach to investigations. Two modes:
+#   reference — `alias` + `description` only. MCP is provided
+#               externally (Claude Code plugin, hosted tooling, …);
+#               the agent learns about it from the description.
+#   spawn     — also set `command`/`args`/`env`. The launcher
+#               spawns the process and wires it into mcp.json.
+# `${env:NAME}` interpolation in `env` reads the launcher's
+# environment; missing vars are a hard error at preflight.
+# Example:
+#   - alias: org-docs
+#     description: Org-internal docs MCP, hosted via Claude Code.
+#   - alias: prom-bridge
+#     description: Custom Prometheus bridge.
+#     command: prom-bridge
+#     args: [serve]
+#     env:
+#       PROM_URL: "${env:PROM_URL}"
+#     allowed_tools: [mcp__prom-bridge__query]
+extra_mcps: []
+
+# Inline prompt overrides. Map of <prompt filename> → <path
+# relative to this profile.yaml>. Lets you keep a flat profile
+# dir instead of nesting under `prompts/`. The conventional
+# `prompts/<name>.md` layout still works when present;
+# declarations override on name collision; unspecified prompts
+# fall back to the base profile's content.
+#
+# Valid filenames (each is shipped by this profile — fork the
+# corresponding file to override):
+#   system.md       — top-of-prompt persona / framing for the
+#                     investigation agent.
+#   architecture.md — what the cluster looks like: top-level CRDs,
+#                     namespace conventions, dependency direction.
+#                     The #1 file to override per deployment.
+#   strategies.md   — how the agent should use the strategies MCP
+#                     (walker, suggested steps, evidence-led flow).
+#   editor.md       — system prompt for the playbook editor
+#                     assistant.
+#   wiki_editor.md  — system prompt for the wiki authoring
+#                     assistant.
+#
+# Originals live at:
+#   https://github.com/sourcehawk/triagent/tree/main/internal/profile/profiles/default/prompts
+# Example:
+#   prompt_files:
+#     architecture.md: architecture.md
+
+# Inline `kinds.json` override for the k8s MCP. Path relative to
+# this profile.yaml. Takes precedence over the conventional
+# `k8s/kinds.json` location. Missing-file is a hard error so
+# typos surface at load time rather than silently falling back.
+#
+# The file shape is `{"kinds": [{group, version, kind, description,
+# redact?}, …]}`. Each entry is a GVK the k8s MCP exposes to
+# `list_resources` / `get_resource` with the description the agent
+# reads to decide when to fetch it. Set `"redact": true` on kinds
+# whose values look like credentials (ConfigMaps, Secrets).
+#
+# Default (used when no override): `pkg/mcp/k8s/default_kinds.json`
+# in the triagent repo — a platform-neutral baseline of Pod /
+# Service / Deployment / StatefulSet / Ingress / etc. Fork it as a
+# starting point and add your platform's CRDs.
+# Example:
+#   kinds_file: kinds.json
+
+# Preflight form fields. Each input renders a UI control on the
+# new-investigation page and maps into the agent's prompt
+# parameter block via `prompt_keys`. Supported types:
+#   text | url | textarea | cluster_id | slack_channel
+# `prompt_keys` entries are Go text/templates:
+#   key   — emitted name in the rendered parameter block.
+#   value — template; available ctx vars depend on the input
+#           type. For text / url / textarea / cluster_id: `.value`.
+#           For slack_channel: `.id`, `.name`, `.url`.
+#   if    — optional guard; the line is skipped when this
+#           template renders to empty or "false".
+investigation_inputs:
+  - id: notes
+    label: Notes
+    type: textarea
+    optional: true
+    placeholder: "Symptoms, alerts, what you've seen…"
+    prompt_keys:
+      - { key: operator-notes, value: "{{.value}}", if: '{{ne .value ""}}' }
+  - id: incident_url
+    label: Incident URL
+    type: url
+    optional: true
+    hint: "Optional URL to the incident or ticket page for this investigation."
+    prompt_keys:
+      - { key: incident-url, value: "{{.value}}", if: '{{ne .value ""}}' }
+  - id: slack_channel
+    label: Slack channel
+    type: slack_channel
+    optional: true
+    prompt_keys:
+      - { key: slack-channel-id, value: "{{.id}}", if: '{{ne .id ""}}' }
+      - { key: slack-channel-name, value: "{{.name}}", if: '{{ne .name ""}}' }
+      - { key: slack-channel-url, value: "{{.url}}", if: '{{and (eq .id "") (ne .url "")}}' }

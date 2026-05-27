@@ -1,0 +1,22 @@
+id: delegate_parent
+schema_version: 1
+symptom: "Test fixture: delegate parent"
+description: |
+  Walker fixture: a parent that delegates to delegate_target,
+  then continues to a terminal node.
+entrypoint: start
+nodes:
+  start:
+    description: "Decide to delegate."
+    next:
+      - condition: "always — delegate"
+        goto: walk_target
+  walk_target:
+    description: "Walk delegate_target, then resume."
+    delegate_to: delegate_target
+    next:
+      - condition: "always — resume after delegate"
+        goto: terminal_done
+  terminal_done:
+    description: "Parent done."
+    terminal_advice: "All done."

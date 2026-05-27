@@ -1,0 +1,363 @@
+id: pr_proposal
+version: v1
+schema_version: 1
+type: general
+symptom: "After delivering an investigation summary, file an issue + draft PR for any code/config/alert/docs change the investigation revealed"
+description: |
+  Meta-playbook the agent walks when the operator asks for a codefix
+  (button click, capture_offer's `codefix`/`all` route, or chat
+  request like "draft a fix"). Walks: warrant → affected repos → first
+  repo → search for duplicates → file issue → draft PR → continue.
+
+  Underlying capability is general (fixes, alert rules, dashboards,
+  docs gaps) — the playbook id is `pr_proposal` to reflect that.
+  The button is labelled "request codefix" because fix is the
+  dominant case.
+
+  Two entry modes:
+    - **request (default):** first time this session, or operator
+      explicitly retriggered.
+    - **edit:** a CodefixProposalCard already exists this session —
+      iterate on the existing draft PR (apply review comments, refine
+      scope). Skip warrant assessment.
+entrypoint: classify_entry_mode
+
+nodes:
+  classify_entry_mode:
+    description: |
+      Read the operator's most recent message. The canned trigger
+      strings tell you which mode this is:
+        - "Please walk the pr_proposal meta-playbook now and..." → request
+        - "Please address the review comments on the open codefix PR..."
+          OR free-form variants ("the reviewer wants X", "iterate on
+          the codefix") → edit
+      Anything else (chat-initiated, no canned message) → request.
+    expected_findings:
+      - entry_mode  # "request" | "edit"
+    next:
+      - condition: "edit mode — refine the open draft PR"
+        goto: edit_mode_refine
+      - condition: "request mode (default)"
+        goto: assess_warrantedness
+
+  assess_warrantedness:
+    description: |
+      Three criteria, ALL must hold to proceed. If any fail, advance
+      to terminal_no_codefix; do not propose noise.
+
+        a. The investigation produced a concrete, bounded change
+           opportunity — a root cause to fix, an alert rule that
+           would have caught this, a docs gap that contributed to
+           the symptom. Not "we should improve X someday".
+        b. The change lives in a linked repo (code, config, alerts,
+           dashboards, docs — anything tracked in git).
+        c. The change is **scoped** — a discrete edit or addition the
+           agent can plausibly land in one sub-agent run. Bar is
+           "not a refactor of the world." If the proposed scope reads
+           like "redesign the partition leader-election algorithm,"
+           terminate.
+
+      Call step_complete with findings=[{key: "warrant_assessment", value: "<verdict + reason>"}] and the matching goto.
+    expected_findings:
+      - warrant_assessment
+    next:
+      - condition: "all three criteria hold — proceed"
+        goto: identify_affected_repos
+      - condition: "any criterion fails — do not propose"
+        goto: terminal_no_codefix
+
+  identify_affected_repos:
+    description: |
+      List the linked repos surfaced in the **Linked repositories**
+      section of this session's environment block. For each, classify
+      `affected` / `not-affected` with a one-line reason. Call step_complete with
+      findings=[{key: "affected_repos", value: "<list of {repo, reason}>"}] and the matching goto.
+
+      A repo is `affected` if a change in it would address the issue
+      OR if it's a peer artefact that should land in the same change
+      set (e.g. an alerts repo where a rule should be added that
+      would have caught the symptom).
+    expected_findings:
+      - affected_repos  # list of {repo, reason}
+    next:
+      - condition: "at least one repo is affected"
+        goto: pick_first_repo
+      - condition: "no repos are affected — terminate"
+        goto: terminal_no_codefix
+
+  pick_first_repo:
+    description: |
+      Among the affected repos, pick the one whose triagent-git MCP we'll
+      call first. Heuristic: the repo where the symptom surfaces, not
+      necessarily where the fix lands.
+
+      Capture the chosen repo's MCP alias (`triagent-git-<alias>`) so all
+      subsequent tool calls in this iteration target the right server.
+    expected_findings:
+      - current_repo  # {repo, mcp_alias}
+    next:
+      - condition: "first repo selected"
+        goto: search_for_duplicates
+
+  search_for_duplicates:
+    description: |
+      Call `triagent-git-<alias>/search_issues` with the symptom keywords
+      (typically the failing component + the symptom verb — e.g.
+      "shard rebalance timeout"). Skip generic tokens like "error".
+
+      If a strong match exists (open issue, similar title/body), pick
+      one of:
+        - **use_existing** — the existing issue already captures this
+          finding cleanly. Skip filing and route straight to drafting
+          the PR against the existing issue. **This is the right path
+          on a retry** (operator says "retry the codefix, issue
+          already exists" or the prior draft_pr errored). Capture the
+          existing `{repo, number, url}` as `filed_issue` so
+          `implement_fix` can use it.
+        - **file_new** — file a fresh issue (rare; only when the
+          existing one is stale, wrong-scoped, or closed-and-stale).
+        - **comment_on** — operator chose to add a comment instead;
+          terminate without filing.
+        - **abandon** — terminate for this repo (move to next).
+
+      If no match: proceed to drafting.
+
+      **Also probe issue types now** — call `triagent-git-<alias>/list_issue_types`
+      so you know what `issue_type` to pass to `create_github_issue`
+      in the next step (skip when `use_existing`). The tool queries
+      the repo's owning org (Issue Types are org-defined; every repo
+      in the same org sees the same set). When `enabled=false` either
+      the owner is a user account or the org hasn't enabled Issue
+      Types; skip the `issue_type` field entirely. When
+      `enabled=true`, pick the type that best matches the finding —
+      `Bug` for a regression, `Feature` for a missing capability,
+      `Task` for a docs/config tightening, etc. Use the `description`
+      field on each type to disambiguate when names alone aren't
+      clear.
+    suggested_calls:
+      - tool: triagent-git-alias/search_issues
+      - tool: triagent-git-alias/list_issue_types
+    expected_findings:
+      - dedupe_decision  # "use_existing" | "file_new" | "comment_on" | "abandon"
+      - issue_type       # name from list_issue_types OR empty when disabled / use_existing
+      - filed_issue      # {url, number} — populated when use_existing
+    next:
+      - condition: "dedupe_decision = use_existing — existing issue covers it, draft PR directly"
+        goto: implement_fix
+      - condition: "dedupe_decision = file_new OR no duplicates found"
+        goto: draft_issue
+      - condition: "dedupe_decision = comment_on — operator chose to add to existing"
+        goto: terminal_commented_on_existing
+      - condition: "dedupe_decision = abandon for this repo"
+        goto: continue_or_stop
+
+  draft_issue:
+    description: |
+      Compose the issue title (concise, actionable, ≤80 chars) and
+      body markdown.
+
+      **Audience is the human reviewer + sibling-repo authors — not
+      the codefix sub-agent.** The body is a well-composed engineering
+      issue: factual, citation-rich, with engineering rationale where
+      a design choice needs to be documented. It is NOT a brief to the
+      next codefix run. Do not include scope-narrowing directives
+      ("don't bundle X", "scope tightly to file Y", "don't touch repo
+      Z"); those belong in `extra_prompt` on the `draft_pr` call, and
+      cross-repo "don'ts" are unnecessary even there since each
+      `triagent-git-<alias>` MCP is scoped to a single repo and the sub-agent
+      can't reach siblings regardless.
+
+      Body MUST include:
+        - **Summary** — what the bug/gap/improvement is, and why it
+          matters. Engineering rationale ("why split, not raise the
+          threshold") belongs here when a non-obvious design choice
+          needs to be justified for human reviewers.
+        - **Detected via** — link to the wiki incident entry, the
+          slack thread, the incident.io ticket, or the investigation
+          session URL.
+        - **Evidence** — citations from the investigation, rendered
+          as `[short-sha](https://github.com/<o>/<n>/commit/<sha>)`,
+          file links, PR links. Reuse what the summary already
+          contains. **If the proposed change depends on a fact in a
+          sibling repo** (a metric label exposed by service X, an API
+          contract in repo Y, a deployed config in repo Z), look it
+          up NOW via that sibling's `triagent-git-<alias>` tools
+          (`analyze_change`, `commit_summary`, `search_log`,
+          `correlate_with_findings`) and bake the *verified fact* into
+          Evidence with a citation. The codefix sub-agent has no
+          access to sibling repos, so a "verify this by reading
+          X/Y/main.go" instruction in the issue (or extra_prompt)
+          fails silently.
+        - **Proposed change** — the concrete change. Code structure,
+          field names, the shape the reviewer would want to see. If
+          the change is contingent on a sibling-repo fact, encode the
+          *resolved* contingency here (e.g. "If the metric exposes a
+          `result` label → use this expr; the metric DOES expose it,
+          verified at <citation>" — not "verify the label and decide").
+        - **Affected repos** — when more than one is in scope, list
+          the others (they'll be cross-linked via cross_repo_refs when
+          their issues are filed). Each affected repo gets its own
+          iteration of this playbook against its own `triagent-git-<alias>`
+          MCP — do not write the sibling's work into THIS repo's
+          issue body or extra_prompt. Note: a "sibling repo" in the
+          Evidence-lookup sense (read-only fact source) is different
+          from an "affected repo" (needs its own change) — both
+          situations use the linked repos' MCPs but only the latter
+          gets a sibling issue + PR.
+
+      Then call `triagent-git-<alias>/create_github_issue`. Pass the
+      `issue_type` you picked from the previous step (omit when
+      `list_issue_types` reported `enabled=false`). Receive
+      `{repo, number, url}`. Call step_complete with findings=[{key: "filed_issue", value: "{url, number}"}]
+      and goto="implement_fix".
+    suggested_calls:
+      - tool: triagent-git-alias/create_github_issue
+    expected_findings:
+      - filed_issue  # {url, number}
+    next:
+      - condition: "issue filed successfully"
+        goto: implement_fix
+
+  implement_fix:
+    description: |
+      Call `triagent-git-<alias>/draft_pr` with `filed_issue.url` and an
+      optional `extra_prompt`. The sub-agent will: read the issue
+      via `gh issue view`, make the change in a fresh worktree, run
+      TDD if applicable, commit; the host will push + open the draft
+      PR.
+
+      **The sub-agent's sandbox is a fresh worktree of THIS repo
+      only.** It cannot read files in any other repo, cannot run
+      commands against another repo, cannot resolve "verify this by
+      reading X/Y in <sibling>" — and on a failed verification it
+      will bail silently without committing, which surfaces as
+      "sub-agent terminated without making any file changes". Never
+      instruct the sub-agent to touch, read, or check anything
+      outside this repo. If a change depends on a sibling-repo fact,
+      you (the investigation agent) should already have looked it up
+      via the sibling's `triagent-git-<alias>` tools during `draft_issue`
+      and recorded the *verified fact* in Evidence — pass it to the
+      sub-agent through the issue body, not as a lookup instruction
+      in `extra_prompt`. If a sibling-repo *change* is also required
+      (not just a fact lookup), file it as a separate issue against
+      that sibling's `triagent-git-<alias>` MCP via the `continue_or_stop`
+      loop; cross_repo_refs links the issues.
+
+      **`extra_prompt` should typically be empty or 1–2 sentences.**
+      The sub-agent already reads the full issue body via
+      `gh issue view` — it has the Summary, Evidence, and Proposed
+      change. Restating the body in `extra_prompt` wastes context
+      and is a recurring symptom that the issue's Proposed change
+      section is under-specified (compose the issue body better
+      instead of compensating with a huge extra_prompt). Legitimate
+      uses for `extra_prompt`:
+        - Narrowing scope below what the issue suggests
+          (e.g. "only the BPMN parser, not DMN").
+        - Retry-specific context ("previous draft_pr errored on the
+          host side; re-execute step-by-step from the issue body").
+        - Operator clarification that arrived after the issue was
+          filed.
+
+      The git MCP is **single-repo**: no cross-repo guardrails
+      ("don't touch the runbook in example-org/runbook") in
+      `extra_prompt` — they're redundant. Sibling-repo work is
+      handled by the `continue_or_stop` loop dispatching to the
+      next repo's own `triagent-git-<alias>` MCP.
+
+      The tool result is a CodefixProposalPayload — the launcher's
+      UI renders a CodefixProposalCard automatically. Don't ask the
+      operator to confirm; the card IS the surface.
+    suggested_calls:
+      - tool: triagent-git-alias/draft_pr
+    expected_findings:
+      - draft_pr_result  # {pr_url, branch_name, summary}
+    next:
+      - condition: "draft PR opened successfully"
+        goto: continue_or_stop
+      - condition: "draft_pr returned an error (no commit, push failed, etc.) — surface in chat and terminate"
+        goto: terminal_error
+
+  continue_or_stop:
+    description: |
+      If more affected repos remain (from `affected_repos` minus
+      `current_repo`), the default is to **proceed directly** to the
+      next repo — do not pause and ask. Each repo has its own
+      well-scoped change (per `identify_affected_repos`); both pieces
+      of work need to land, and the operator gating each one between
+      filings is more friction than value.
+
+      Pick the next repo (heuristic same as `pick_first_repo`) and
+      route back to `search_for_duplicates` with `current_repo`
+      updated AND `cross_repo_refs` containing the URLs of the issues
+      filed so far. Each iteration uses its own `triagent-git-<alias>` MCP;
+      the prior repo's draft PR is unaffected.
+
+      Only **pause and ask** if filing the first repo's issue revealed
+      something that changes the framing for the next repo (e.g. the
+      first investigation surfaced a problem that's actually a
+      duplicate of an existing issue in the next repo). Then ask:
+      "Repo A done — proceed to repo B as planned, or re-scope?"
+
+      If no more repos remain: terminate.
+    expected_findings:
+      - continue_decision  # "next_repo" (default) | "stop" (rare)
+    next:
+      - condition: "more repos remain — proceed to next repo (default)"
+        goto: search_for_duplicates
+      - condition: "no more repos remain"
+        goto: terminal_awaiting_review
+
+  edit_mode_refine:
+    description: |
+      A CodefixProposalCard already exists this session — recover the
+      most recent one's `pr_url` from the transcript. Then:
+        1. `gh pr view <pr-url> --json reviews,comments` to fetch
+           open review comments.
+        2. `gh pr diff <pr-url>` to see the current diff.
+        3. Call `triagent-git-<alias>/draft_pr` with `extra_prompt` set to
+           the operator's refinement + the serialized review comments
+           + diff. The host re-creates a worktree on the existing
+           branch, sub-agent edits, commits, host force-pushes.
+
+      The card refreshes via SSE.
+    suggested_calls:
+      - tool: triagent-git-alias/draft_pr
+    expected_findings:
+      - edit_result
+    next:
+      - condition: "refinement landed"
+        goto: terminal_awaiting_review
+      - condition: "draft_pr error — surface and terminate"
+        goto: terminal_error
+
+  terminal_no_codefix:
+    description: "Bar not met — do not propose."
+    terminal_advice: |
+      The investigation didn't surface a concrete, bounded change
+      opportunity, OR the change is too tenant-specific or too large
+      to fit a single sub-agent run. Optionally call step_complete with
+      findings=[{key: "conclusion", value: "<reason no codefix was warranted>"}]
+      so a future investigator doesn't redo the assessment for the same symptom.
+
+  terminal_commented_on_existing:
+    description: "Operator chose to comment on the existing issue rather than file fresh."
+    terminal_advice: |
+      Acknowledge briefly. The operator may follow up by adding a
+      comment manually, or asking the agent to draft one — that's
+      a follow-up turn, not part of pr_proposal.
+
+  terminal_awaiting_review:
+    description: "One or more draft PRs open. Operator reviews on GitHub."
+    terminal_advice: |
+      Each CodefixProposalCard renders the lifecycle (draft → open →
+      merged / closed). Operators review on GitHub directly; if they
+      want to apply review comments, the next chat message routes
+      back through this playbook in edit mode.
+
+  terminal_error:
+    description: "draft_pr failed — surface the reason and stop."
+    terminal_advice: |
+      The sub-agent timed out, didn't commit, or the host couldn't
+      push or open the PR. The error message has the specifics; the
+      worktree was cleaned up. Operator can re-invoke after fixing
+      the underlying issue (auth, scope, etc.).

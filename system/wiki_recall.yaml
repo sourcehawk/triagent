@@ -1,0 +1,192 @@
+id: wiki_recall
+version: v1
+schema_version: 1
+type: general
+symptom: "Need to recall prior incidents from the investigations wiki that overlap with the current investigation — use this as the consistent recall strategy"
+description: |
+  Meta-playbook the agent walks whenever it wants to query the wiki —
+  either at the start of a fresh investigation (the master playbook
+  recommends correlating early) or when something the operator
+  mentioned ("we hit this last quarter — anything in the wiki?")
+  warrants a lookup mid-flow.
+
+  The triagent-wiki MCP's `wiki_search` and `wiki_correlate` tools are
+  EXACT-MATCH on entity names (services / errors / symptoms). The
+  vault stores canonical lowercase-with-hyphens names like
+  `control-plane`, `oom-kill`, `stuck-reconciliation`. Free-form
+  guesses ("Control Plane", "control plane", "OOM kill", "stuck reconcile")
+  silently return zero hits — and the agent reads zero hits as
+  "nothing in the wiki", which is the wrong conclusion.
+
+  This playbook codifies one strategy:
+
+    1. **Enumerate canonical names first** so the model sees them.
+    2. **Map the raw observation set onto canonical names** before
+       calling either search tool. Don't pass raw keywords; pass
+       canonical entity names.
+    3. **Read the `resolution` field on the response.** When an
+       input didn't exact-match, the tool surfaces close canonical
+       names — adopt one and retry rather than concluding "no
+       prior incidents".
+    4. Free-text `wiki_search` (against incident bodies / titles)
+       is the fallback when nothing maps to a canonical entity.
+
+  Use this as a sub-flow: walk it, get a citable answer ("INC-42,
+  scored 3 — overlaps on `control-plane` + `oom-kill`"), then return
+  to the parent investigation. NOT for promoting a finding into the
+  wiki — that's `wiki_proposal`.
+
+entrypoint: resolve_candidates
+
+nodes:
+  resolve_candidates:
+    description: |
+      Canonicalise your candidate keywords against the wiki's known
+      entity names BEFORE calling wiki_correlate / wiki_search —
+      those tools are exact-match and silently miss "Zeebe Broker"
+      / "broker" / "zeebe_broker" guesses.
+
+      Pass the raw observations / findings keywords as you have them
+      — `wiki_resolve_entities` does NOT validate input shape, so
+      mixed-case, spaces, and underscores are fine. It returns one
+      `resolution[]` per (field, input) entry with:
+        - `exact: true` — the input is already canonical, use as-is.
+        - `exact: false, near: [...]` — pass `near[0]` (closest by
+          edit distance / substring) into wiki_correlate as the
+          canonical name.
+        - `exact: false, near: []` — the wiki has nothing close;
+          treat the input as unmapped and skip it (or pivot to
+          free-text wiki_search later in this flow).
+
+      Rules of thumb:
+        - Distinguish service / error / symptom by the resolved
+          entity's vault type, not by intuition. `oom-kill` might
+          read as a "symptom" colloquially but lives under
+          `errors/` — pass it in the `errors` field.
+        - Don't invent canonical names. If `near` is empty, the
+          vault genuinely doesn't have a match — that's signal.
+
+      Call step_complete with findings=[{key: "mapped_keywords", value: "<mapping JSON, e.g. {raw: 'Control Plane', canonical: 'control-plane', field: 'services'}>"}]
+      and the appropriate goto so the audit trail shows what was queried.
+
+      If you arrived here with NO candidate keywords at all (the
+      operator gave only a free-text symptom), fall back to
+      `wiki_list_entities` (the broader enumeration tool) — but
+      that's slower; prefer this targeted resolve when you have
+      anything to search on.
+    suggested_calls:
+      - tool: triagent-wiki/wiki_resolve_entities
+    expected_findings:
+      - mapped_keywords
+      - unmapped_keywords
+    next:
+      - condition: "have at least one canonical service / error / symptom name to query"
+        goto: correlate
+      - condition: "nothing resolved — every observation is novel — skip correlate, go straight to free-text search"
+        goto: keyword_search
+
+  correlate:
+    description: |
+      Call `wiki_correlate` with your mapped canonical names. It
+      returns the top-N past incidents ranked by entity-overlap
+      with what you passed.
+
+      **Read the response's `resolution` field** before deciding
+      what to do next. Each entry tells you whether your input was
+      an exact match (`exact: true`) or a guess (`exact: false`).
+      For guesses, `near` lists up to 5 canonical names close by
+      edit distance / substring match. Treat that as the tool
+      saying "you probably meant one of these — retry".
+
+      Don't conclude "no prior incidents" from a zero-correlation
+      response when `resolution` shows non-exact inputs with
+      non-empty near-lists. That's the most common failure mode
+      this playbook is here to prevent.
+    suggested_calls:
+      - tool: triagent-wiki/wiki_correlate
+    expected_findings:
+      - correlations
+      - resolution_summary
+    next:
+      - condition: "got useful correlations AND every input was an exact match — done"
+        goto: terminal_done
+      - condition: "resolution.near surfaced canonical names worth retrying with — refine the keyword set"
+        goto: refine_and_retry
+      - condition: "zero correlations and every input was already exact — fall back to free-text wiki_search across body / title"
+        goto: keyword_search
+      - condition: "got correlations but want broader recall (e.g. an unusual symptom phrase the operator mentioned that isn't an entity)"
+        goto: keyword_search
+
+  refine_and_retry:
+    description: |
+      Adopt the canonical names suggested in `resolution.near` and
+      re-call `wiki_correlate`. Pick at most one near-match per
+      original input — the goal is one tightened retry, not a
+      combinatorial explosion. If the suggestion isn't obviously
+      right, prefer the original guess + a free-text search over
+      a wrong canonical name.
+
+      Call step_complete with findings=[{key: "refined_correlations", value: "<adopted canonical names + rationale>"}]
+      and the appropriate goto so the audit trail shows why the second call differed.
+    suggested_calls:
+      - tool: triagent-wiki/wiki_correlate
+    expected_findings:
+      - refined_correlations
+    next:
+      - condition: "always proceed — refinement done, optionally widen with free-text search"
+        goto: terminal_done
+      - condition: "still empty — widen with free-text wiki_search"
+        goto: keyword_search
+
+  keyword_search:
+    description: |
+      Free-text fallback: call `wiki_search` with the operator's
+      most distinctive phrase (or the most distinctive findings
+      keyword) as the `query`. Optionally combine with frontmatter
+      filters if any of those did exact-match (severity / status
+      ranges count too — they're enums, not entity names, so they
+      don't trip the canonical-name rule).
+
+      `wiki_search`'s `query` is case-insensitive substring match
+      against incident title + body. Good for keywords that didn't
+      land as entity names ("rebalancing", "shard", "iam"); bad
+      for short ambiguous tokens ("error", "fail") — those'll
+      match every incident.
+
+      Read `resolution` on the response same as wiki_correlate —
+      malformed entity-name filters surface here too.
+    suggested_calls:
+      - tool: triagent-wiki/wiki_search
+    expected_findings:
+      - keyword_hits
+    next:
+      - condition: "always proceed — search exhausted"
+        goto: terminal_done
+
+  terminal_done:
+    description: "Search complete. Surface findings to the parent investigation flow."
+    terminal_advice: |
+      Hand the prior-incident citations back to the parent
+      investigation. Format each as a short bullet:
+
+        - INC-1234-control-plane-oom (resolved, sev1) — overlaps on
+          `control-plane`, `oom-kill`. Fix: bumped heap / disabled
+          reconciler for 5min.
+
+      Two failure shapes worth naming explicitly to the operator
+      rather than dropping silently:
+
+        - **Zero hits and every input exact-matched.** "No prior
+          wiki entries cite these entities." Don't pretend recall
+          was ambiguous; the wiki genuinely doesn't have it yet.
+          A wiki_proposal at the end of THIS investigation may be
+          warranted.
+        - **Zero hits but inputs had near-matches we didn't try.**
+          "I didn't find a match for `<original>` — the wiki has
+          `<near>` which may or may not be related; let me know
+          if you want me to read it." Trust the operator to
+          adjudicate the canonical-name choice.
+
+      This playbook does NOT call summarize — it's a sub-flow.
+      The parent investigation reaches summarize on its own
+      terminal.

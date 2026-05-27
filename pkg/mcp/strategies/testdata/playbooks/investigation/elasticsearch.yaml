@@ -1,0 +1,11 @@
+id: elasticsearch
+schema_version: 1
+symptom: "Elasticsearch unhealthy"
+description: |
+  Tiny fixture used by tests that exercise multi-playbook handoff
+  chains (cluster_health → elasticsearch → connectivity).
+entrypoint: start
+nodes:
+  start:
+    description: "Inspect ES status."
+    terminal_advice: "Operator-side ES triage required."

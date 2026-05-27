@@ -1,0 +1,264 @@
+id: bug_report_proposal
+version: v1
+schema_version: 1
+type: general
+symptom: "After delivering an investigation summary, file an issue (bug, gap, missing capability) against the affected linked repo(s) without drafting a fix"
+description: |
+  Meta-playbook the agent walks when the operator asks for a bug
+  report (button click, capture_offer's `bug` route, or chat request
+  like "file an issue", "report this to repo X"). Walks: warrant →
+  affected repos → first repo → search for duplicates → file issue →
+  continue.
+
+  Sibling of `pr_proposal`, but stops at issue filing — no
+  `draft_pr`. Use this when the investigation surfaced something the
+  maintainer should know about, but writing the fix isn't the
+  operator's job: cross-team bug, missing capability tracked for
+  triage, docs gap that needs product-owner input, or any change too
+  large / contentious / cross-cutting for a single sub-agent run.
+
+  No edit mode: filing the same investigation as a fresh issue twice
+  is rare and intentional, so each button click walks `request` mode.
+  To iterate on an existing issue (add a comment, reopen, re-scope),
+  ask the agent in chat — that's a follow-up turn, not part of this
+  playbook.
+
+entrypoint: assess_warrantedness
+
+nodes:
+  assess_warrantedness:
+    description: |
+      Three criteria, ALL must hold to proceed. If any fail, advance
+      to terminal_no_bug_report; do not file noise.
+
+        a. The investigation surfaced a concrete, bounded problem
+           worth tracking — a reproducible bug, a missing capability,
+           an alert that should exist, a docs gap that contributed to
+           the symptom. Not "we should improve X someday".
+        b. The problem lives in a linked repo (code, config, alerts,
+           dashboards, docs — anything tracked in git).
+        c. The framing is **issue-shaped**: a maintainer reading the
+           issue body would understand the problem and could decide
+           on a fix without rediscovering the investigation. A
+           shapeless "look at this cluster" is not a bug report.
+
+      Call step_complete with findings=[{key: "warrant_assessment", value: "<verdict + reason>"}] and the matching goto.
+
+      Note: unlike `pr_proposal`, "scoped to one sub-agent run" is
+      NOT a criterion here — filing an issue for a large/cross-team
+      change is exactly the use case that distinguishes bug_report
+      from codefix.
+    expected_findings:
+      - warrant_assessment
+    next:
+      - condition: "all three criteria hold — proceed"
+        goto: identify_affected_repos
+      - condition: "any criterion fails — do not file"
+        goto: terminal_no_bug_report
+
+  identify_affected_repos:
+    description: |
+      List the linked repos surfaced in the **Linked repositories**
+      section of this session's environment block. For each, classify
+      `affected` / `not-affected` with a one-line reason. Call step_complete with
+      findings=[{key: "affected_repos", value: "<list of {repo, reason}>"}] and the matching goto.
+
+      A repo is `affected` if the problem lives in it OR if it's a
+      peer artefact that should be tracked in the same change set
+      (e.g. an alerts repo where a rule should be added that would
+      have caught the symptom).
+    expected_findings:
+      - affected_repos  # list of {repo, reason}
+    next:
+      - condition: "at least one repo is affected"
+        goto: pick_first_repo
+      - condition: "no repos are affected — terminate"
+        goto: terminal_no_bug_report
+
+  pick_first_repo:
+    description: |
+      Among the affected repos, pick the one whose triagent-git MCP we'll
+      call first. Heuristic: the repo where the symptom surfaces, not
+      necessarily where the deepest fix lands.
+
+      Capture the chosen repo's MCP alias (`triagent-git-<alias>`) so all
+      subsequent tool calls in this iteration target the right server.
+    expected_findings:
+      - current_repo  # {repo, mcp_alias}
+    next:
+      - condition: "first repo selected"
+        goto: search_for_duplicates
+
+  search_for_duplicates:
+    description: |
+      Call `triagent-git-<alias>/search_issues` with the symptom keywords
+      (typically the failing component + the symptom verb — e.g.
+      "shard rebalance timeout"). Skip generic tokens like "error".
+
+      If a strong match exists (open issue, similar title/body), pick
+      one of:
+        - **use_existing** — the existing issue already captures this
+          finding cleanly. Surface the link to the operator and
+          terminate for this repo (no fresh filing). Capture the
+          existing `{repo, number, url}` as `existing_issue` for the
+          terminal summary.
+        - **file_new** — file a fresh issue (rare; only when the
+          existing one is stale, wrong-scoped, or closed-and-stale).
+        - **comment_on** — operator chose to add a comment instead;
+          terminate without filing.
+        - **abandon** — terminate for this repo (move to next).
+
+      If no match: proceed to drafting.
+
+      **Also probe issue types now** — call `triagent-git-<alias>/list_issue_types`
+      so you know what `issue_type` to pass to `create_github_issue`
+      in the next step (skip when `use_existing` / `abandon` /
+      `comment_on`). The tool queries the repo's owning org (Issue
+      Types are org-defined; every repo in the same org sees the same
+      set). When `enabled=false` either the owner is a user account
+      or the org hasn't enabled Issue Types; skip the `issue_type`
+      field entirely. When `enabled=true`, pick the type that best
+      matches the finding — `Bug` for a regression, `Feature` for a
+      missing capability, `Task` for a docs/config tightening, etc.
+      Use the `description` field on each type to disambiguate when
+      names alone aren't clear.
+    suggested_calls:
+      - tool: triagent-git-alias/search_issues
+      - tool: triagent-git-alias/list_issue_types
+    expected_findings:
+      - dedupe_decision  # "use_existing" | "file_new" | "comment_on" | "abandon"
+      - issue_type       # name from list_issue_types OR empty when disabled / use_existing
+      - existing_issue   # {url, number} — populated when use_existing
+    next:
+      - condition: "dedupe_decision = use_existing — surface link and move on"
+        goto: terminal_use_existing
+      - condition: "dedupe_decision = file_new OR no duplicates found"
+        goto: draft_issue
+      - condition: "dedupe_decision = comment_on — operator chose to add to existing"
+        goto: terminal_commented_on_existing
+      - condition: "dedupe_decision = abandon for this repo"
+        goto: continue_or_stop
+
+  draft_issue:
+    description: |
+      Compose the issue title (concise, actionable, ≤80 chars) and
+      body markdown.
+
+      **Audience is the human maintainer.** The body is a
+      well-composed engineering issue: factual, citation-rich, with
+      enough context that the reader can decide on a fix without
+      re-running the investigation.
+
+      Body MUST include:
+        - **Summary** — what the bug/gap/issue is, and why it
+          matters. Engineering rationale ("why this rule needs to
+          split, not raise the threshold") belongs here when a
+          non-obvious design choice needs to be flagged for the
+          maintainer.
+        - **Detected via** — link to the wiki incident entry, the
+          slack thread, the incident.io ticket, or the investigation
+          session URL.
+        - **Evidence** — citations from the investigation, rendered
+          as `[short-sha](https://github.com/<o>/<n>/commit/<sha>)`,
+          file links, PR links. Reuse what the summary already
+          contains. **If the framing depends on a fact in a sibling
+          repo** (a metric label exposed by service X, an API
+          contract in repo Y, a deployed config in repo Z), look it
+          up NOW via that sibling's `triagent-git-<alias>` tools
+          (`analyze_change`, `commit_summary`, `search_log`,
+          `correlate_with_findings`) and bake the *verified fact*
+          into Evidence with a citation.
+        - **Suggested direction** — sketch the change the maintainer
+          might consider (code area, alert rule shape, docs section).
+          Optional but valuable; less prescriptive than `pr_proposal`'s
+          "Proposed change" because here we're not committing to draft
+          the fix.
+        - **Affected repos** — when more than one is in scope, list
+          the others (they'll be cross-linked via cross_repo_refs
+          when their issues are filed). Each affected repo gets its
+          own iteration of this playbook against its own
+          `triagent-git-<alias>` MCP.
+
+      Then call `triagent-git-<alias>/create_github_issue`. Pass the
+      `issue_type` you picked from the previous step (omit when
+      `list_issue_types` reported `enabled=false`). Receive
+      `{repo, number, url}`. Call step_complete with findings=[{key: "filed_issue", value: "{url, number}"}]
+      and goto="continue_or_stop".
+    suggested_calls:
+      - tool: triagent-git-alias/create_github_issue
+    expected_findings:
+      - filed_issue  # {url, number}
+    next:
+      - condition: "issue filed successfully"
+        goto: continue_or_stop
+      - condition: "create_github_issue returned an error — surface in chat and terminate"
+        goto: terminal_error
+
+  continue_or_stop:
+    description: |
+      If more affected repos remain (from `affected_repos` minus
+      `current_repo`), the default is to **proceed directly** to the
+      next repo — do not pause and ask. Each repo has its own
+      well-scoped issue (per `identify_affected_repos`); both need to
+      land, and the operator gating each filing is more friction than
+      value.
+
+      Pick the next repo (heuristic same as `pick_first_repo`) and
+      route back to `search_for_duplicates` with `current_repo`
+      updated AND `cross_repo_refs` containing the URLs of the issues
+      filed so far so the next issue body can cross-link them.
+
+      Only **pause and ask** if filing the first repo's issue
+      revealed something that changes the framing for the next repo
+      (e.g. the first investigation surfaced a problem that's
+      actually a duplicate of an existing issue in the next repo).
+      Then ask: "Repo A filed — proceed to repo B as planned, or
+      re-scope?"
+
+      If no more repos remain: terminate.
+    expected_findings:
+      - continue_decision  # "next_repo" (default) | "stop" (rare)
+    next:
+      - condition: "more repos remain — proceed to next repo (default)"
+        goto: search_for_duplicates
+      - condition: "no more repos remain"
+        goto: terminal_filed
+
+  terminal_no_bug_report:
+    description: "Bar not met — do not file."
+    terminal_advice: |
+      The investigation didn't surface a concrete, bounded problem
+      worth tracking, OR no linked repo is affected. Optionally call step_complete with
+      findings=[{key: "conclusion", value: "<reason no bug report was warranted>"}]
+      so a future investigator doesn't redo the assessment for the same symptom.
+
+  terminal_use_existing:
+    description: "An existing open issue already captures the finding."
+    terminal_advice: |
+      Surface the existing issue's URL to the operator in chat with a
+      one-line note ("found existing issue covering this — <url>").
+      Do not file a duplicate. If more affected repos remain, the
+      operator can re-trigger the playbook for them; the default is
+      to stop here.
+
+  terminal_commented_on_existing:
+    description: "Operator chose to comment on the existing issue rather than file fresh."
+    terminal_advice: |
+      Acknowledge briefly. The operator may follow up by adding a
+      comment manually, or asking the agent to draft one — that's a
+      follow-up turn, not part of bug_report_proposal.
+
+  terminal_filed:
+    description: "One or more issues filed. Operator follows up on GitHub."
+    terminal_advice: |
+      Summarise the filed issues in a single chat message: one bullet
+      per `filed_issue` with `{repo}#{number}` linked to its URL.
+      Operators triage on GitHub directly; no card surface here
+      (unlike pr_proposal which renders a CodefixProposalCard).
+
+  terminal_error:
+    description: "create_github_issue failed — surface the reason and stop."
+    terminal_advice: |
+      The launcher couldn't file the issue (auth, network, or
+      validation error). The error message has the specifics.
+      Operator can re-invoke after fixing the underlying issue.

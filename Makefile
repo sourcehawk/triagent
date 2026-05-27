@@ -1,0 +1,63 @@
+.PHONY: build build-go build-launcher build-mcp test lint fmt frontend frontend-dev docs docs-dev docs-pages clean
+
+# Build the embedded frontend bundle, then both Go binaries. Order matters:
+# `frontend` syncs into internal/web/dist/, which the launcher embeds via
+# //go:embed at compile time — so the Go build must run after the sync.
+build: frontend build-go
+
+# Go-only build for when internal/web/dist/ is already fresh (or you don't
+# care that the embedded bundle is stale). Skips npm + next.
+build-go: build-launcher build-mcp
+
+build-launcher:
+	go build -o bin/triagent ./cmd/triagent
+
+build-mcp:
+	go build -o bin/triagent-mcp ./cmd/triagent-mcp
+
+test:
+	go test -race -count=1 ./...
+
+lint:
+	golangci-lint run ./...
+
+fmt:
+	gofmt -w .
+
+# Build the embedded frontend bundle and sync it into internal/web/dist/,
+# where //go:embed picks it up at Go-compile time. Next's static export
+# lands in frontend/out/; we mirror that tree into dist/ and restore the
+# tracked .gitkeep so the embed still has at least one match on a fresh
+# `make clean` checkout.
+frontend:
+	cd frontend && npm install && npm run build
+	rm -rf internal/web/dist
+	mkdir -p internal/web/dist
+	cp -a frontend/out/. internal/web/dist/
+	touch internal/web/dist/.gitkeep
+
+# Local frontend dev server (no embedding).
+frontend-dev:
+	cd frontend && npm run dev
+
+# Build the public docs site (consumes docs/content/*.md, emits a static
+# export to docs/site/out/). No basePath — suitable for serving the
+# output locally (e.g. `npx serve docs/site/out`).
+docs:
+	cd docs/site && npm install && npm run build
+
+# Local docs dev server on http://localhost:3030.
+docs-dev:
+	cd docs/site && npm install && npm run dev
+
+# Build the docs site for GitHub Pages deployment. Mirrors what the
+# .github/workflows/docs.yml workflow does — useful for previewing
+# what Pages will actually serve before pushing.
+docs-pages:
+	cd docs/site && npm install && DOCS_BASE_PATH=/triagent npm run build
+	touch docs/site/out/.nojekyll
+
+clean:
+	rm -rf bin internal/web/dist/* internal/web/dist/.gitkeep
+	mkdir -p internal/web/dist
+	touch internal/web/dist/.gitkeep

@@ -1,0 +1,1 @@
+Diagnostic decision trees the agent runs against operator-reported symptoms. Test fixture; mirrors the upstream slot.

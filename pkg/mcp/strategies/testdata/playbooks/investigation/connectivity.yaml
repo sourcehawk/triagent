@@ -1,0 +1,11 @@
+id: connectivity
+schema_version: 1
+symptom: "Clients can't reach the cluster"
+description: |
+  Tiny fixture used by tests that exercise handoff resolution against
+  a target id other than cluster_health.
+entrypoint: start
+nodes:
+  start:
+    description: "Check ingress + service endpoints."
+    terminal_advice: "Operator-side network triage required."

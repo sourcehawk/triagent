@@ -1,0 +1,99 @@
+# GoReleaser v2 config. Triggered by .github/workflows/release.yml on tag
+# push. See docs/superpowers/specs/2026-05-27-public-release-distribution-design.md
+# for the design rationale.
+version: 2
+
+project_name: triagent
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: triagent
+    main: ./cmd/triagent
+    binary: triagent
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ignore:
+      # No Windows on ARM in the first release (see spec § Platform matrix).
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+
+  - id: triagent-mcp
+    main: ./cmd/triagent-mcp
+    binary: triagent-mcp
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+
+archives:
+  - id: default
+    ids: [triagent, triagent-mcp]
+    name_template: "triagent_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    # Default to tar.gz everywhere except Windows, which gets zip.
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+snapshot:
+  # Used by `goreleaser build --snapshot` for local validation.
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "^style:"
+
+homebrew_casks:
+  - name: triagent
+    # Pre-release tags (-rc, -beta) must not clobber the production Cask.
+    # `prerelease: auto` on the release block governs the GitHub Release
+    # marker only; without `skip_upload: auto` on the cask, a pushed
+    # v0.0.0-rc1 would still overwrite Formula/Casks/triagent.rb in the
+    # tap repo and break `brew install` for everyone on the stable tag.
+    skip_upload: "auto"
+    repository:
+      owner: sourcehawk
+      name: homebrew-tap
+      # Fine-grained PAT with contents:write on the tap repo. The default
+      # GITHUB_TOKEN cannot push to a different repo.
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    homepage: https://github.com/sourcehawk/triagent
+    description: Agentic incident investigation driven from your browser.
+    license: Apache-2.0
+    binaries:
+      - triagent
+      - triagent-mcp
+
+release:
+  github:
+    owner: sourcehawk
+    name: triagent
+  # Tags like v0.0.0-rc1 / v0.1.0-beta are auto-marked as pre-releases and
+  # skip updating the "latest" pointer + Homebrew formula.
+  prerelease: auto
+  draft: false

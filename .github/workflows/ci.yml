@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches-ignore: [main]
+    paths-ignore:
+      - '.github/**'
+      - '**.md'
+      - 'Makefile'
+      - '.gitignore'
+      - '.tool-versions'
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - '.github/**'
+      - '**.md'
+      - 'Makefile'
+      - '.gitignore'
+      - '.tool-versions'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Go build
+        run: go build ./...
+
+      - name: Go test
+        run: go test -race -count=1 ./...
+
+      - id: tool-versions
+        run: grep "golangci-lint" ".tool-versions" 2>/dev/null | awk '{ print $1"="$2 }' >> $GITHUB_OUTPUT || echo "golangci-lint=" >> $GITHUB_OUTPUT
+        shell: bash
+
+      - name: Go lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: ${{ steps.tool-versions.outputs.golangci-lint }}
+          args: --timeout 10m
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.tool-versions'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Frontend
+        run: |
+          cd frontend
+          npm install
+          npm run typecheck
+          npm run build
+          npm test -- --run

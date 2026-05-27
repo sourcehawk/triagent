@@ -1,0 +1,44 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  /* --auto-operator is the accent for anything authored by the
+   * AutoOperator: user envelopes the operator submitted via
+   * send_message, the take-over / resume / restart chip, and the
+   * inline state dividers. Pink-500 in Tailwind's palette; declared
+   * as a CSS variable so we have a single tunable point if the
+   * accent shifts. Tailwind `border-pink-500` / `bg-pink-500` are
+   * fine for most callsites — the variable is the fallback when
+   * Tailwind alone doesn't suffice. */
+  --auto-operator: #ec4899;
+}
+
+body {
+  @apply bg-zinc-950 text-zinc-100 antialiased;
+}
+
+/* Playbook graph: lift the node *container* (the element React Flow
+ * positions; we don't control its z-index from inside our custom node
+ * component) when our node card is being hovered, so the expanded card
+ * isn't clipped by neighbours stacked below it in the DOM. Same trick
+ * for edge labels which render under the .react-flow__edgelabel-renderer
+ * portal. :has() is what makes the parent-bump work without JS. */
+.react-flow__node:has(:hover) {
+  z-index: 1000 !important;
+}
+.react-flow__edgelabel-renderer > *:hover {
+  z-index: 1000 !important;
+}
+
+/* Hide scrollbar visually but keep scroll behavior. Used by entity-list
+ * sections in the wiki sidebar where showing all entries isn't feasible
+ * but a visible scrollbar would clutter the dense layout. */
+.scrollbar-hide {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE / legacy Edge */
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none; /* Chromium / Safari */
+}

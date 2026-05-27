@@ -1,0 +1,53 @@
+id: k8s_context
+schema_version: 1
+symptom: "No active kubernetes context is bound to this investigation"
+description: |
+  Establishes a kubeconfig context for the k8s MCP. Idempotent: if the
+  agent has already switched into a context, this short-circuits.
+entrypoint: check
+nodes:
+  check:
+    description: "Find out whether a context is already active."
+    suggested_calls:
+      - tool: triagent-k8s/get_current_context
+    next:
+      - condition: "tool returned an active context"
+        goto: terminal_already_bound
+      - condition: "tool returned 'no active kubernetes context'"
+        goto: pick
+
+  pick:
+    description: |
+      Pick a Teleport cluster and log into it. Prefer the cluster hinted
+      in the investigation briefing; fall back to filtering list_clusters
+      by any customer slug present in the symptom.
+    suggested_calls:
+      - tool: triagent-teleport/list_clusters
+      - tool: triagent-teleport/login
+        args:
+          cluster: "<picked from list_clusters>"
+    expected_findings:
+      - cluster_name_and_context_name
+    next:
+      - condition: "login returned a contextName"
+        goto: bind
+
+  bind:
+    description: "Switch the k8s MCP onto the new context."
+    suggested_calls:
+      - tool: triagent-k8s/switch_context
+        args:
+          name: "<contextName from login>"
+    expected_findings:
+      - active_context_confirmed
+    next:
+      - condition: "switch_context returned the new active context"
+        goto: terminal_bound
+
+  terminal_already_bound:
+    description: "Terminal: context already chosen earlier in the session."
+    terminal_advice: "Resume the calling playbook."
+
+  terminal_bound:
+    description: "Terminal: context successfully bound."
+    terminal_advice: "Resume the calling playbook."

@@ -1,0 +1,147 @@
+id: gather_slack_context
+schema_version: 1
+symptom: "Pull Slack channel context for the session-scoped channel before forming a hypothesis"
+description: |
+  Sub-flow walked from investigation.yaml or wiki_backfill_ingestion.yaml
+  when the operator attached a Slack channel to this session. Captures
+  channel shape, root-cause hypotheses being floated, external links
+  shared, and (when the channel is dedicated) action-takers — branching
+  between an analyze_channel one-shot for incident-dedicated channels
+  and a search-then-summarize sequence for broader team channels.
+  Findings are prefixed `slack_*` so the master playbook's hypothesize
+  node can see them.
+
+  The triagent-slack MCP is wired whenever the operator linked a Slack token
+  — independent of whether *this* session is pinned to a specific
+  channel. So skipping is now driven by scope (did the operator name a
+  channel for this session?), not by MCP wiring. Pass the session
+  default `channel_id` (named in the system prompt) on every call.
+
+entrypoint: check_scope
+
+nodes:
+  check_scope:
+    description: |
+      Read the system prompt's "Sources" / "Incident identifiers"
+      section. If a session default `channel_id` is named there, this
+      sub-flow runs against it. If no channel scope is named, skip —
+      there's nothing to gather. (The token may still be linked, but
+      the agent has no session-scoped channel to read.)
+    next:
+      - condition: "session default channel_id present in the system prompt"
+        goto: overview
+      - condition: "no session-scoped channel — skip"
+        goto: terminal_skipped
+
+  overview:
+    description: |
+      Always the opening move. Pass the session default `channel_id`
+      from the system prompt as the tool's `channel_id` argument.
+      Cheap first-look at the channel: metadata, bookmarks, and a
+      cache peek (parent count, thread density, distinct users,
+      recency window). Use the shape signals to pick the next node:
+
+        - parents_seen ≤ ~50 AND threaded_parents/parents_seen ≥ ~0.6
+          → incident_channel: one analyze_channel call covers it.
+        - more parents OR low thread density → broad_channel:
+          search_messages with symptom keywords first, then
+          summarize_thread on the top hits.
+
+      Bookmarks often link to dashboards / runbooks / status
+      pages worth recording either way.
+    suggested_calls:
+      - tool: triagent-slack/slack_channel_overview
+    expected_findings:
+      - slack_parents_seen
+      - slack_threaded_parents
+      - slack_distinct_users
+      - slack_bookmarks
+      - slack_channel_shape
+    next:
+      - condition: "channel shape = incident_channel (≤ 50 parents AND mostly threaded)"
+        goto: analyze_whole
+      - condition: "channel shape = broad_channel (many parents or low thread density)"
+        goto: search
+
+  analyze_whole:
+    description: |
+      Spawn a focused sub-agent over the whole channel. Pass the
+      session default `channel_id` as the tool's `channel_id`
+      argument; if the system prompt named a `since_unix`, pass that
+      too. Frame desired_findings as concrete, citable items — not
+      "summarize the channel". The sub-agent returns a summary plus
+      citations that are stable links back to specific messages.
+    suggested_calls:
+      - tool: triagent-slack/analyze_channel
+        args:
+          desired_findings: |
+            Concrete, citable: every distinct service / component
+            named as impacted with rough start/end timestamps;
+            root-cause hypotheses being floated and by whom;
+            external links shared (dashboards, runbooks, PRs,
+            status pages); action-takers and what they did; any
+            explicit handoffs or status escalations.
+    expected_findings:
+      - slack_root_cause_hypotheses
+      - slack_external_links
+      - slack_action_summary
+      - slack_citations
+    next:
+      - condition: "always"
+        goto: terminal_done
+
+  search:
+    description: |
+      Pass the session default `channel_id` and use distinctive
+      keywords from operator notes plus any incidentio_* findings
+      already in the session (component names, error strings, service
+      names). Skip short ambiguous tokens ("error", "fail", "down") —
+      they'll match every thread.
+
+      Returns hits with thread_ts so the next step can target.
+    suggested_calls:
+      - tool: triagent-slack/slack_search_messages
+    expected_findings:
+      - slack_search_hits
+      - slack_candidate_threads
+    next:
+      - condition: "got 1–3 promising threads — summarize each"
+        goto: summarize_top
+      - condition: "got many hits clustered in one channel-wide discussion — fall back to analyze_channel"
+        goto: analyze_whole
+      - condition: "zero hits — bookmarks may still be useful, otherwise skip"
+        goto: terminal_done
+
+  summarize_top:
+    description: |
+      Call summarize_thread for each candidate thread. Pass the
+      session default `channel_id` and the candidate thread's
+      `thread_ts`. Cap at 3 threads — each call spawns a sub-agent
+      that reads one thread, so budget grows linearly. Frame
+      desired_findings the same way as analyze_whole, just scoped to
+      one thread.
+    suggested_calls:
+      - tool: triagent-slack/summarize_thread
+    expected_findings:
+      - slack_thread_summaries
+      - slack_root_cause_hypotheses
+      - slack_external_links
+      - slack_citations
+    next:
+      - condition: "always"
+        goto: terminal_done
+
+  terminal_done:
+    description: "Sub-flow complete; return to master."
+    terminal_advice: |
+      Findings flow back to investigation.yaml's hypothesize node.
+      Do NOT call summarize from this sub-flow. Slack URLs cited
+      in the eventual master summarize come from the citations
+      array attached to summarize_thread / analyze_channel — pass
+      them through verbatim.
+
+  terminal_skipped:
+    description: "no Slack scope attached to this session — nothing to gather."
+    terminal_advice: |
+      The operator didn't pin a specific channel to this session.
+      Returning control to the master playbook.

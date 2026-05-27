@@ -1,0 +1,70 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard",
+    ":semanticCommits"
+  ],
+  "schedule": [
+    "* 0-3 1,14 * *"
+  ],
+  "timezone": "UTC",
+  "prHourlyLimit": 0,
+  "prConcurrentLimit": 10,
+  "rangeStrategy": "bump",
+  "labels": ["dependencies"],
+  "postUpdateOptions": [
+    "gomodTidy",
+    "gomodUpdateImportPaths"
+  ],
+  "packageRules": [
+    {
+      "matchManagers": ["npm"],
+      "matchFileNames": ["frontend/**"],
+      "groupName": "frontend dependencies",
+      "commitMessagePrefix": "chore(frontend):",
+      "semanticCommitScope": "frontend"
+    },
+    {
+      "matchManagers": ["gomod"],
+      "groupName": "go dependencies",
+      "commitMessagePrefix": "chore(go):",
+      "semanticCommitScope": "go"
+    },
+    {
+      "matchManagers": ["npm"],
+      "matchPackageNames": [
+        "vitest",
+        "jsdom",
+        "/^@vitest//",
+        "/^@testing-library//",
+        "/^@types//"
+      ],
+      "groupName": "test dependencies",
+      "commitMessagePrefix": "chore(test):",
+      "semanticCommitScope": "test"
+    },
+    {
+      "matchManagers": ["gomod"],
+      "matchPackageNames": [
+        "github.com/stretchr/testify",
+        "github.com/google/go-cmp",
+        "/\\/mock$/",
+        "/\\/testing$/"
+      ],
+      "groupName": "test dependencies",
+      "commitMessagePrefix": "chore(test):",
+      "semanticCommitScope": "test"
+    }
+  ],
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": [
+      "* 0-3 1,14 * *"
+    ]
+  },
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "labels": ["security"]
+  }
+}

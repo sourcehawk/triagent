@@ -1,0 +1,151 @@
+id: followup_conversation
+version: v1
+schema_version: 1
+active: true
+symptom: "The operator sent a message after the formal conclusion was delivered; classify it and pick the right response shape (answered tool, fresh evidence, plain chat) — not every follow-up is a new investigation"
+description: |
+  Walks the agent through every post-conclusion turn so we don't reflexively
+  spin up a new investigation when the operator was just answering a yes/no
+  the agent itself asked, or just chatting. Generalises what used to be the
+  followup_investigation playbook: same evidence-first instinct for genuine
+  questions, but with explicit handling for confirmations and chat that
+  don't warrant a fresh playbook walk at all.
+
+  Five buckets:
+    1. The operator is answering a yes/no the agent already asked
+       (proposal approval, action confirmation) → execute the awaited
+       tool directly, do NOT continue this playbook.
+    2. Clarification of existing findings → answer from transcript.
+    3. Extension into a new dimension → gather fresh MCP evidence, then
+       answer with citations.
+    4. Meta / confidence question → answer from transcript.
+    5. Out-of-scope chat (thanks, rephrase, off-topic) → plain chat.
+
+  Run this on EVERY post-conclusion turn EXCEPT bucket (1) — that one
+  bypasses the playbook entirely (see classify_message's bucket-1
+  branch). For genuine investigation follow-ups, default to bucket (3)
+  when ambiguous; operators who took the time to type usually want
+  fresh signal.
+
+  Call summarize again ONLY when the follow-up materially extends or
+  revises the original conclusion — new evidence shifts the root cause,
+  the operator confirms the action plan, or you've stitched together
+  enough new findings that a fresh audit trail is warranted. Routine
+  clarifications and one-line answers stay as plain chat; re-summarising
+  every follow-up buries the original conclusion in noise.
+entrypoint: classify_message
+
+nodes:
+  classify_message:
+    description: |
+      Read the operator's message. Which bucket does it fall into?
+
+        1. **Confirmation/decline of a pending action.** The agent
+           asked the operator a yes/no in a previous turn (e.g. "Would
+           you like me to persist this playbook?", "Should I run X?")
+           and this message is the answer. **DO NOT continue this
+           playbook.** Go back to the originating context: if approved,
+           call the awaited tool directly (e.g. playbook_proposal); if
+           declined, just acknowledge in chat. Starting an investigation
+           here is wrong — there's no symptom, just a follow-through
+           on something already in flight.
+
+        2. **Clarification of existing findings.** "Can you elaborate
+           on X?" / "Why do you think Y?" — answerable from transcript
+           + recorded findings; no new tool calls needed.
+
+        3. **Extension into a new dimension.** "What about <component>
+           we didn't check?" / "Is the gateway also affected?" — needs
+           fresh evidence; the relevant MCP tools should fire.
+
+        4. **Meta / confidence question.** "How sure are you?" / "What
+           else could it be?" — answerable from transcript; reflect
+           honestly on alternative hypotheses you ruled out (or didn't).
+
+        5. **Out-of-scope chat.** Thanks, rephrase request, off-topic.
+           Just answer in chat without a tool call.
+
+      Default to (3) when ambiguous between an extension and a
+      clarification. Default to (1) when the operator's message is a
+      short affirmative/negative ("yes", "do it", "no thanks") and you
+      previously asked a yes/no — that's almost always a confirmation,
+      not a new investigation.
+    expected_findings:
+      - message_class
+    next:
+      - condition: "(1) confirmation/decline of a pending action — exit this playbook and execute the awaited action"
+        goto: terminal_pending_action
+      - condition: "(3) extension into a new dimension — gather fresh evidence"
+        goto: gather_new_evidence
+      - condition: "(2)/(4)/(5) clarification, meta, or out-of-scope — answer from transcript without new tools"
+        goto: terminal_answer_from_existing
+
+  gather_new_evidence:
+    description: |
+      Identify which MCP tools would answer the new question. Common
+      mappings — pick one (or a few), don't run them all reflexively:
+
+        - "what about <component>" → triagent-k8s/list_resources, get_resource,
+          get_logs scoped to that component
+        - "is X resource saturated" / "is Y hot" → call any registered
+          observability MCP (e.g. prom) for resource pressure metrics
+        - metrics questions → use available observability MCP tools if wired
+        - "what's the cluster id / namespace" — read `cluster-id`
+          and `cluster-resource-namespace` from the Environment
+          parameter block; both may be `<unset>` for scope-unknown
+          sessions, in which case call `list_namespaces` if needed
+        - "what changed recently in <repo>" → triagent-git/* if a repo is linked
+
+      Run the tools. Call step_complete with findings=[{key: "new_evidence", value: "<summary of what you found>", source_tool: "<tool>"}]
+      and the appropriate goto so the audit trail captures them. If the same tool answered earlier in the
+      session and the underlying state hasn't changed, you can skip
+      re-running it; cite the prior call instead.
+    expected_findings:
+      - new_evidence
+    next:
+      - condition: "evidence gathered — answer with citations"
+        goto: terminal_answer_with_new_evidence
+      - condition: "the relevant MCP isn't registered (e.g. prom_mcp_unavailable=true) — answer with the gap noted"
+        goto: terminal_answer_from_existing
+
+  terminal_pending_action:
+    description: "Operator answered a yes/no the agent had asked — execute the awaited action without continuing this playbook."
+    terminal_advice: |
+      The operator's message is a confirmation/decline of something the
+      agent itself asked in a previous turn. Examples:
+        - "yes, persist it" / "go ahead" → call playbook_proposal with
+          the YAML you previously printed.
+        - "no, skip it" / "don't" → acknowledge in chat ("noted, not
+          persisting") and stop. Optionally call step_complete with
+          findings=[{key: "conclusion", value: "<decline reason>"}] if useful for next time.
+        - "yes, run X" → call X.
+
+      DO NOT call summarize, DO NOT start a new investigation, DO NOT
+      treat this as a fresh symptom. The conclusion already lives
+      above; this turn is the follow-through.
+
+  terminal_answer_from_existing:
+    description: "Answer using the existing transcript only."
+    terminal_advice: |
+      Answer the operator's follow-up using the transcript + existing
+      findings. Cite the relevant earlier tool calls or findings so the
+      operator can audit the line of reasoning. Don't run new tools
+      that wouldn't add information; that's noise.
+
+      Default: plain chat answer, no summarize call. Re-summarising on
+      a clarification turn just buries the original conclusion under
+      duplicates.
+
+  terminal_answer_with_new_evidence:
+    description: "Answer with the freshly gathered evidence."
+    terminal_advice: |
+      Answer the operator's follow-up using the new findings. Quote the
+      tool name + a one-line summary of what it returned, so the
+      operator can see exactly which signal you're leaning on.
+
+      If the new evidence MATERIALLY changes or extends the original
+      conclusion — root cause shifted, action plan confirmed, several
+      new findings worth recording — call summarize again. The new
+      audit trail renders inline as a fresh amber block beneath this
+      answer; the original conclusion stays visible above for
+      comparison. Otherwise, plain chat is enough.

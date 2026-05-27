@@ -1,0 +1,125 @@
+id: gather_incidentio_context
+schema_version: 1
+symptom: "Pull incident.io context for the session-scoped incident before forming a hypothesis"
+description: |
+  Sub-flow walked from investigation.yaml or wiki_backfill_ingestion.yaml
+  when the operator attached an incident.io incident to this session.
+  Captures severity / status / affected service / timeline / a
+  postmortem if one exists / related prior incidents. Findings are
+  prefixed `incidentio_*` so the master playbook's hypothesize node can
+  see them.
+
+  Always invoked via delegate_to from the master playbook; the delegate
+  primitive returns control to the master's walk_incidentio.next when
+  this playbook reaches terminal_done or terminal_skipped.
+
+  The triagent-incidentio MCP is wired whenever the operator linked an
+  incident.io token — independent of whether *this* session is pinned
+  to a specific incident. So skipping is now driven by scope (did the
+  operator name an incident for this session?), not by MCP wiring.
+
+entrypoint: check_scope
+
+nodes:
+  check_scope:
+    description: |
+      Read the system prompt's "Sources" / "Incident identifiers"
+      section. If a session default `incident_id` is named there, this
+      sub-flow runs against it. If neither an incident.io URL nor a
+      session default `incident_id` is named, skip — there's nothing
+      to gather. (The token may still be linked, but the agent has no
+      session-scoped incident to read.)
+    next:
+      - condition: "session default incident_id present in the system prompt's Sources / Incident identifiers section"
+        goto: fetch_incident
+      - condition: "no session-scoped incident — skip"
+        goto: terminal_skipped
+
+  fetch_incident:
+    description: |
+      Pull the full incident record. Pass the session default
+      `incident_id` from the system prompt as the tool's `incident_id`
+      argument; the value is the numeric reference (e.g. `5466`) or
+      UUID. Don't fabricate an id from the wiki filename — use what
+      the prompt named.
+    suggested_calls:
+      - tool: triagent-incidentio/incidentio_get_incident
+    expected_findings:
+      - incidentio_severity
+      - incidentio_status
+      - incidentio_summary
+      - incidentio_affected_service
+      - incidentio_custom_field_inventory
+    next:
+      - condition: "incident record captured"
+        goto: fetch_timeline
+
+  fetch_timeline:
+    description: |
+      Merged chronological timeline (incident_updates + actions +
+      follow_ups). Cheap deterministic read. Pass the same session
+      default `incident_id` as the previous call. Capture key state
+      transitions (declared → investigating → identified → resolved)
+      with their timestamps; capture any incident.io action items
+      that were filed. Call step_complete with the timeline findings — capture highlights
+      and cite the URL rather than pasting the entire timeline as a value.
+    suggested_calls:
+      - tool: triagent-incidentio/incidentio_get_timeline
+    expected_findings:
+      - incidentio_started_at
+      - incidentio_key_state_transitions
+      - incidentio_timeline_highlights
+    next:
+      - condition: "incident is post-resolution (status terminal) — postmortem may exist"
+        goto: fetch_postmortem
+      - condition: "incident still open / active — postmortem will be empty, skip"
+        goto: maybe_search_related
+
+  fetch_postmortem:
+    description: |
+      Read the post-incident review document, normalised to markdown.
+      Pass the session default `incident_id`. The tool returns
+      empty=true when none exists — record that and move on. When
+      present, extract the stated root cause and any explicit "what
+      went well / what didn't" observations.
+    suggested_calls:
+      - tool: triagent-incidentio/incidentio_get_postmortem
+    expected_findings:
+      - incidentio_postmortem_present
+      - incidentio_postmortem_root_cause
+    next:
+      - condition: "always"
+        goto: maybe_search_related
+
+  maybe_search_related:
+    description: |
+      If the custom-field inventory captured at fetch_incident
+      named a service / component / affected-product field, call
+      incidentio_search_related on it. Pass the session default
+      `incident_id` as the source incident. Surfaces prior incidents
+      sharing that value — the kind of recall that turns "we've seen
+      something like this before" into a citable list. Skip if no such
+      field exists on this org's incident schema.
+    suggested_calls:
+      - tool: triagent-incidentio/incidentio_search_related
+        args:
+          by: "service"
+    expected_findings:
+      - incidentio_related_incidents
+    next:
+      - condition: "always"
+        goto: terminal_done
+
+  terminal_done:
+    description: "Sub-flow complete; return to master."
+    terminal_advice: |
+      Findings flow back to the master playbook's hypothesize node.
+      Do NOT call summarize from this sub-flow. The master playbook's
+      eventual summarize call will cite the incident URL once with
+      the affected-service field as the join key.
+
+  terminal_skipped:
+    description: "no incident.io scope attached to this session — nothing to gather."
+    terminal_advice: |
+      The operator didn't pin a specific incident to this session.
+      Returning control to the master playbook.

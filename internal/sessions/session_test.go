@@ -1,0 +1,108 @@
+package sessions
+
+import (
+	"os/exec"
+	"strings"
+	"testing"
+
+	"github.com/sourcehawk/triagent/internal/preflight"
+	"github.com/sourcehawk/triagent/internal/profile"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestAllowedTools_IncludesParallel(t *testing.T) {
+	t.Parallel()
+	prof := &profile.Profile{
+		ExtraMCPs: []profile.ExtraMCP{{Alias: "example-docs", Description: "docs"}},
+	}
+	got := allowedTools(prof, nil, false, false)
+	want := "mcp__" + preflight.MCPAliasParallel + "__*"
+	require.Contains(t, got, want)
+}
+
+func TestAllowedTools_AlwaysIncludesCoreServers(t *testing.T) {
+	t.Parallel()
+	got := allowedTools(nil, nil, false, false)
+	for _, alias := range []string{
+		preflight.MCPAliasK8s,
+		preflight.MCPAliasStrategies,
+		preflight.MCPAliasMeta,
+		preflight.MCPAliasParallel,
+		preflight.MCPAliasTeleport,
+		preflight.MCPAliasWiki,
+	} {
+		require.Contains(t, got, "mcp__"+alias+"__*", "missing core server alias %s", alias)
+	}
+}
+
+func TestAllowedTools_IncludesExtraMCPs(t *testing.T) {
+	t.Parallel()
+	prof := &profile.Profile{
+		ExtraMCPs: []profile.ExtraMCP{
+			{Alias: "example-docs", Description: "docs"},
+			{Alias: "other-mcp", Description: "other"},
+			{
+				Alias:        "prom-spawn",
+				AllowedTools: []string{"mcp__prom-spawn__cpu_pressure"},
+			},
+		},
+	}
+	got := allowedTools(prof, nil, false, false)
+	require.Contains(t, got, "mcp__example-docs__*", "expected example-docs in allowed tools")
+	require.Contains(t, got, "mcp__other-mcp__*", "expected other-mcp in allowed tools")
+	require.Contains(t, got, "mcp__prom-spawn__cpu_pressure", "expected narrow tool when AllowedTools set")
+	require.NotContains(t, got, "mcp__prom-spawn__*", "wildcard must be absent when AllowedTools narrows")
+}
+
+func TestRenderSystemPromptAddendum_NoProfileHintAppendsNothingExtra(t *testing.T) {
+	t.Parallel()
+	got := renderSystemPromptAddendum(systemPromptAddendum, profile.NamespaceDerivation{}, nil)
+	assert.Equal(t, systemPromptAddendum, got)
+}
+
+func TestSystemPromptAddendum_NamesTeleportAuthSequence(t *testing.T) {
+	t.Parallel()
+	// Front-loading the auth sequence into the system prompt steers the
+	// agent to do it proactively instead of failing the first k8s call
+	// and reacting. Verify the three tool names are spelled exactly so a
+	// refactor of any one of them surfaces the hint as out-of-date.
+	for _, want := range []string{
+		"triagent-teleport.list_clusters",
+		"triagent-teleport.login",
+		"triagent-k8s.switch_context",
+		"KubeContext",
+	} {
+		assert.Contains(t, systemPromptAddendum, want,
+			"addendum should mention %q so the agent knows the auth recipe up front", want)
+	}
+}
+
+func TestRenderSystemPromptAddendum_TemplateRendersOneHint(t *testing.T) {
+	t.Parallel()
+	cfg := profile.NamespaceDerivation{Template: "${project_id}-zeebe"}
+	fields := map[string]string{"project_id": "saas"}
+	got := renderSystemPromptAddendum(systemPromptAddendum, cfg, fields)
+	assert.True(t, strings.Contains(got, systemPromptAddendum), "must preserve the base addendum")
+	assert.True(t, strings.Contains(got, "Suggested namespace(s): saas-zeebe"), "must append the rendered hint")
+}
+
+func TestRenderSystemPromptAddendum_NoMatchAppendsNothing(t *testing.T) {
+	t.Parallel()
+	cfg := profile.NamespaceDerivation{Template: "${absent}-zeebe"}
+	got := renderSystemPromptAddendum(systemPromptAddendum, cfg, map[string]string{"other": "x"})
+	assert.Equal(t, systemPromptAddendum, got)
+}
+
+func TestNew_ForwardsProfileInvestigationModel(t *testing.T) {
+	t.Parallel()
+	if _, err := exec.LookPath("claude"); err != nil {
+		t.Skip("claude binary not on PATH; skipping")
+	}
+	opts := Options{
+		Profile: &profile.Profile{Models: profile.Models{Investigation: "claude-opus-4-7"}},
+	}
+	sess, err := New(opts)
+	require.NoError(t, err)
+	assert.Equal(t, "claude-opus-4-7", sess.inner.Model())
+}

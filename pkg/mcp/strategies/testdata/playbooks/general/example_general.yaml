@@ -1,0 +1,11 @@
+id: example_general
+schema_version: 1
+symptom: "Test fixture for the 'general' type slot"
+description: |
+  Used by tests that need a non-investigation type to assert
+  type-filter behaviour. Trivial single-node terminal.
+entrypoint: only
+nodes:
+  only:
+    description: "Trivial node."
+    terminal_advice: "Done."

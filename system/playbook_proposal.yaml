@@ -1,0 +1,478 @@
+id: playbook_proposal
+version: v1
+schema_version: 1
+dispatch: subagent
+active: true
+symptom: "After delivering an investigation summary, evaluate whether the session should produce a new or improved strategy playbook"
+description: |
+  Meta-playbook the agent traverses post-summarize. Walks three decisions
+  in order:
+    1. Should I propose at all? (the bar)
+    2. New playbook or new version of an existing one (same id, auto-
+       bumped version)?
+    3. Submit a draft for inline operator review (no chat-side ask).
+
+  Approval lives in the launcher's chat UI: playbook_proposal_draft
+  writes a draft and the chat panel renders a side-by-side diff with
+  Approve / Decline buttons. The agent does NOT ask the operator in
+  prose — that would be redundant and noisy. On approve, the draft is
+  promoted to <id>.<next_version>.yaml and the active pointer
+  auto-bumps; on decline, the operator's follow-up message either
+  gives refinement notes (re-draft → re-submit) or just closes the
+  thread.
+
+  Encoded as a playbook (rather than only prose in the system prompt) so
+  the proposal protocol is visible in the activity panel like any other
+  investigation, and improvements ship as YAML edits — not triagent-mcp
+  rebuilds. Because this IS a playbook, the agent could in principle
+  propose a new version of *this* playbook. Meta.
+
+  Three entry modes:
+    - **reflexive (default)**: agent walks this on its own after
+      summarize. The bar is the bar — terminal_no_proposal if the
+      investigation was routine. Don't invoke this reflexively for
+      every investigation; only when something genuinely novel
+      happened.
+    - **manual (operator pressed "propose playbook")**: operator
+      explicitly asked. Run the assessment honestly — the bar still
+      exists, a noise proposal is still noise. But the operator's
+      ask is signal: lean toward proposing if it's a close call.
+      Surface the verdict either way (a clear "no, here's why" is
+      useful operator feedback).
+    - **edit (operator pressed "edit playbook")**: a draft already
+      exists in this session (approved or declined). The intent is
+      to revise it with what we've learned since. Skip novelty
+      assessment — we already decided there was something worth
+      capturing — and go straight to revising the prior proposal.
+entrypoint: assess_novelty
+
+nodes:
+  assess_novelty:
+    description: |
+      First, classify the entry mode. The operator's last message is
+      the tell:
+        - "Please walk the playbook_proposal meta-playbook now" → manual
+        - "Please revisit the playbook proposal" / "iterate on the prior
+          draft" → edit
+        - Anything else (or no operator nudge — you got here on your
+          own initiative post-summarize) → reflexive
+
+      In edit mode, jump straight to revise_prior_draft — the novelty
+      bar was already cleared the last time we drafted; we're iterating,
+      not deciding from scratch.
+
+      Otherwise (reflexive or manual), test the bar. Three criteria —
+      ALL must hold to proceed past this step. If any fail, advance to
+      terminal_no_proposal — proposing noise is worse than not
+      proposing at all. In manual mode, lean slightly more toward
+      proceeding on close calls (the operator explicitly asked); in
+      reflexive mode, hold the bar firm.
+
+        a. The investigation took a meaningfully different path than any
+           existing playbook. Run list_playbooks and check the symptoms;
+           if a similar one exists, fetch its YAML with get_playbook_raw
+           in the next step to confirm.
+        b. The decision points + tool sequences are reusable across
+           cluster instances, not specific to one tenant or transient bug.
+           A playbook for "the customer at $TENANT had a one-off cloud-resource
+           provisioning hiccup" is not reusable; a playbook for "EncryptedStorage stuck
+           at IAM step on EKS" is.
+        c. Either no existing playbook covers the symptom, OR an existing
+           one is missing a branch / step you had to derive from scratch
+           during this session.
+
+      **Sizing the change.** When you decide a revision is warranted,
+      reach for the smallest viable shape:
+
+        - **Tiny tweak (one node's prose, one extra suggested_call,
+          tightening a condition string):** propose a new version of
+          the existing playbook with the in-place edit.
+        - **A sub-investigation that branches off a terminal:** prefer
+          adding a new dedicated playbook for the sub-investigation
+          and wiring an existing terminal's `handoff: [<new_id>]` to
+          point at it. That keeps the parent playbook readable
+          (don't bloat a 12-node playbook to 18 nodes) and the
+          sub-flow becomes independently runnable when the operator
+          jumps straight to that symptom next time.
+        - **Deep structural change to a large playbook:** flag in
+          your justification that the existing playbook may be due
+          for a split; the operator can decide. Don't unilaterally
+          rewrite a 15-node playbook into a 25-node one.
+
+      Rule of thumb: if your edit adds ≥3 new nodes to a playbook
+      that's already ≥10 nodes, you're probably better off with a
+      new playbook + a handoff edit on one terminal of the parent.
+      The handoff approach also gives the operator a granular
+      enable/disable knob: they can keep the parent active and
+      A/B-test the sub-playbook independently.
+
+      Call step_complete with findings=[{key: "novelty_assessment", value: "<decided: yes/no + reason>"}]
+      and the matching goto so the audit trail captures why you decided either way.
+    suggested_calls:
+      - tool: triagent-strategies/list_playbooks
+    expected_findings:
+      - entry_mode  # "reflexive" | "manual" | "edit"
+      - novelty_assessment  # not required in edit mode
+    next:
+      - condition: "edit mode — a prior draft from this session is being iterated on"
+        goto: revise_prior_draft
+      - condition: "investigation was a routine application of an existing playbook OR the path is too tenant-specific to generalise"
+        goto: terminal_no_proposal
+      - condition: "small in-place revision of an existing playbook (≤2 added nodes, or just edits to existing ones) — propose a new version of it"
+        goto: read_existing_for_revision
+      - condition: "the gap is best filled by a NEW dedicated playbook AND a handoff edit on a parent playbook's terminal pointing at it — split into two proposals"
+        goto: scope_split
+      - condition: "the gap requires changes across multiple playbooks
+          that don't fit the single-sibling-plus-parent-handoff shape —
+          e.g. a new helper several existing playbooks should delegate
+          to, OR peer revisions across N existing playbooks, OR a chain
+          where playbook A handoffs to a new B which itself handoffs to
+          a new C"
+        goto: scope_multi_proposals
+      - condition: "no existing playbook covers this symptom — propose new (no parent edit)"
+        goto: draft_and_validate
+
+  scope_split:
+    description: |
+      You're proposing a NEW playbook for the sub-investigation AND a
+      revision of the parent playbook to add a `handoff` on one of its
+      terminals. Two drafts, submitted in sequence.
+
+      Capture the scope before you start drafting so the steps stay
+      coherent across multiple turns:
+
+        - **new playbook id**: pick a fresh, descriptive snake_case id
+          (e.g. `es_shard_recovery`, `storage_iam_resync`). It must
+          NOT collide with any existing id; list_playbooks confirmed
+          that in assess_novelty.
+        - **parent playbook id**: the existing one you'll add a
+          handoff to (e.g. `cluster_health`, `connectivity`).
+        - **parent terminal node id**: which terminal of the parent
+          should pivot to the new playbook. Read the parent's YAML and
+          identify the right leaf — typically a `terminal_*_pivot`
+          node, or a terminal_app_error / terminal_unresolved that
+          could now route to the new specialist.
+
+      Fetch the parent's raw YAML now so you have it handy when
+      drafting the parent revision later. Call step_complete with findings capturing
+      the three ids so the audit trail is intact.
+    suggested_calls:
+      - tool: triagent-strategies/get_playbook_raw
+        args:
+          id: "<parent-playbook-id>"
+    expected_findings:
+      - new_playbook_id
+      - parent_playbook_id
+      - parent_terminal_node_id
+      - parent_yaml
+    next:
+      - condition: "scope captured — draft the new playbook first"
+        goto: draft_and_validate
+
+  scope_multi_proposals:
+    description: |
+      You're proposing changes to multiple playbooks that don't fit the
+      simple new-sibling-plus-parent-handoff shape. Before drafting,
+      capture the full set and a dependency-sound order:
+
+        1. List every playbook you intend to draft a proposal for. For
+           each:
+             - playbook_id (existing or fresh)
+             - kind: "new" | "revision"
+             - references: ids OF OTHER PROPOSALS IN THIS SET that this
+               one cites via `handoff` or `delegate_to`. Ignore
+               references to playbooks that already exist on disk and
+               aren't being changed — those are stable.
+
+        2. Order the set so dependencies come first:
+             - A "leaf" (no references to other proposals in this set)
+               is drafted first.
+             - A proposal that handoff's/delegate_to's another proposal
+               in the set is drafted AFTER its dependency.
+             - Mutually independent proposals: pick stable insertion
+               order; the operator's tab strip uses submission order.
+
+        3. Watch for cycles. If A → B and B → A across your proposed
+           set, that's a design smell — raise it with the operator
+           before drafting. Approve-time validation won't trip on
+           cross-references (each YAML is parsed in isolation), but a
+           runtime cycle bites the operator on the first walk.
+
+      For each playbook in the set that's a revision, fetch its
+      current YAML now via get_playbook_raw so you have it handy.
+      Call step_complete with findings capturing the proposal set + draft order so the audit trail is
+      intact.
+    suggested_calls:
+      - tool: triagent-strategies/list_playbooks
+    expected_findings:
+      - proposal_set
+      - draft_order
+    next:
+      - condition: "scope captured AND first item in draft_order is a
+          REVISION of an existing playbook (kind=revision in
+          proposal_set) — fetch its current YAML before drafting"
+        goto: read_existing_for_revision
+      - condition: "scope captured AND first item in draft_order is a
+          NEW playbook (kind=new in proposal_set) — proceed to draft"
+        goto: draft_and_validate
+
+  read_existing_for_revision:
+    description: |
+      Fetch the YAML of the existing playbook you'll be revising. Keep
+      the SAME id when you draft your version — the launcher's
+      proposal flow auto-bumps the version field (v1 → v2 → v3 …) on
+      approval and writes <id>.<new_version>.yaml alongside the
+      existing one.
+
+      Don't invent a fresh id like "<original>_v2"; same-id versioning
+      means the operator picks which version is active in one place,
+      and rolling back from v3 → v2 stays one click away.
+    suggested_calls:
+      - tool: triagent-strategies/get_playbook_raw
+        args:
+          id: "<existing-playbook-id>"
+    expected_findings:
+      - existing_yaml
+    next:
+      - condition: "got the existing YAML — proceed to draft"
+        goto: draft_and_validate
+
+  draft_and_validate:
+    description: |
+      Schema reminders the YAML you produce must satisfy:
+        - placeholders ${cluster_id} / ${namespace} in suggested_calls.args
+        - branch conditions are PROSE (the agent reads them; the walker
+          doesn't evaluate them)
+        - terminal nodes carry terminal_advice and have no `next`
+        - cross-playbook handoffs go via the structured `handoff` field
+          on terminal nodes (a list of target playbook ids); the prose
+          in `terminal_advice` carries the *why*
+
+      Draft the playbook YAML. Submit it via playbook_proposal_draft —
+      the tool validates structurally and, on failure, returns
+      validation_errors in the response. If you get validation_errors,
+      fix the YAML and submit again. **Do not** call validate_playbook
+      separately; the proposal tool does it inline.
+
+      Common mistakes the validator catches:
+        - dangling `goto`: branch points at a node id that doesn't exist
+        - missing `entrypoint` — or one that points at a non-existent node
+        - empty descriptions: every node needs prose the operator reads
+        - missing `symptom` — the operator-facing one-line trigger
+    suggested_calls:
+      - tool: triagent-strategies/playbook_proposal_draft
+        args:
+          yaml: "<your-draft-yaml>"
+          why: "<one-sentence justification>"
+    expected_findings:
+      - draft_submitted_or_validation_errors
+    next:
+      - condition: "proposal_draft returned a proposal_id (no validation_errors)"
+        goto: submit_draft
+      - condition: "proposal_draft returned validation_errors — fix the YAML and resubmit"
+        goto: fix_validation_errors
+      - condition: "validation errors are unfixable (e.g. the playbook concept turns out not to fit the schema cleanly)"
+        goto: terminal_no_proposal
+
+  fix_validation_errors:
+    description: |
+      playbook_proposal_draft returned validation_errors. Read the error
+      list carefully, fix the YAML, and resubmit via
+      playbook_proposal_draft. Common fixes:
+        - add missing node that a `goto` points at
+        - add or correct the `entrypoint` field
+        - add `terminal_advice` to terminal nodes (nodes with no `next`)
+        - add the top-level `symptom` field
+      Resubmit until you get a proposal_id back.
+    suggested_calls:
+      - tool: triagent-strategies/playbook_proposal_draft
+        args:
+          yaml: "<fixed-yaml>"
+          why: "<one-sentence justification>"
+    expected_findings:
+      - draft_submitted_or_validation_errors
+    next:
+      - condition: "proposal_draft returned a proposal_id (no validation_errors)"
+        goto: submit_draft
+      - condition: "validation errors are unfixable (e.g. the playbook concept turns out not to fit the schema cleanly)"
+        goto: terminal_no_proposal
+
+  submit_draft:
+    description: |
+      The draft was submitted successfully in draft_and_validate —
+      a proposal_id was returned. The launcher's chat panel now renders
+      a side-by-side diff of the currently-loaded version (or empty for
+      a new id) vs the draft, with Approve / Decline buttons.
+      **Don't ask the operator in chat** — the diff card IS the review
+      surface; asking again in prose is redundant noise.
+
+      Drop a single one-line note in chat for context: "Proposed
+      <id> v<n>: <one sentence justification>."
+
+      Decide which path to take based on the proposal scope from earlier
+      findings (entry_mode, proposal_set, draft_order).
+
+      HARD RULE — what counts as "submitted":
+      The ONLY proof that submission happened is a fresh proposal_id
+      returned by your most recent playbook_proposal_draft call in THIS
+      walk. The auto-loaded "Current proposal state" section in your
+      brief lists existing proposal ids — those belong to prior walks
+      and are NOT yours. A proposal id you read from the brief, from
+      Notes, or from chat history is someone else's id; treating it as
+      your submission is hallucination, not work. If you do not have a
+      proposal_id from your own draft call, you did NOT submit — route
+      to terminal_no_proposal with the reason, do not pretend.
+    expected_findings:
+      - draft_submitted
+    next:
+      - condition: "single-shot proposal (no parent edit) — wait for the operator's review"
+        goto: terminal_awaiting_review
+      - condition: "this was the new-playbook half of a split — continue to the parent revision"
+        goto: draft_parent_handoff
+      - condition: "more proposals remain in draft_order from
+          scope_multi_proposals AND the next one is a NEW playbook
+          (kind=new in proposal_set) — draft the next one"
+        goto: draft_and_validate
+      - condition: "more proposals remain in draft_order from
+          scope_multi_proposals AND the next one is a REVISION
+          (kind=revision in proposal_set) — continue at
+          read_existing_for_revision"
+        goto: read_existing_for_revision
+
+  draft_parent_handoff:
+    description: |
+      Now revise the parent playbook to wire the handoff. The parent
+      YAML is in your `parent_yaml` finding; the target terminal is in
+      `parent_terminal_node_id`. Make the SMALLEST possible change:
+
+        - On the named terminal node, ADD (or extend) the `handoff`
+          field to include the new playbook's id from
+          `new_playbook_id`. If the terminal already has a `handoff`
+          list, append to it; if not, add `handoff: [<new_id>]`.
+        - Optionally tweak the terminal's `terminal_advice` prose to
+          mention the new playbook by name (one or two sentences,
+          consistent with the existing style).
+        - DO NOT touch any other node, branch condition, or
+          description. The diff card should show ONE node's worth of
+          delta — that's what makes the operator's review trivial.
+
+      Keep the SAME id (the parent's id). The launcher's proposal
+      flow auto-bumps the version field; the parent goes from v1 → v2
+      (or whatever's next).
+
+      Submit the parent revision via playbook_proposal_draft — the tool
+      validates inline and returns validation_errors on failure; fix
+      and re-submit if errors appear. The chat panel will show the
+      parent's diff card alongside the new playbook's diff card from
+      the previous step. Operator approves both (typically as a pair)
+      and both land on disk.
+    suggested_calls:
+      - tool: triagent-strategies/playbook_proposal_draft
+        args:
+          yaml: "<parent-revision-yaml>"
+          why: "<one-sentence: 'wire handoff to new <new_id> playbook'>"
+    expected_findings:
+      - parent_revision_submitted
+    next:
+      - condition: "parent revision submitted — both drafts pending review"
+        goto: terminal_awaiting_review
+
+  revise_prior_draft:
+    description: |
+      Edit mode. A playbook_proposal_draft has already landed in this
+      session — find the most recent one in the transcript, recover
+      the playbook id and the YAML you submitted, and revise it with
+      what's been learned since.
+
+      Steps:
+        1. Call list_proposals to see the AUTHORITATIVE state of every
+           known proposal. The brief's "Current proposal state" section
+           is the same data, but list_proposals is what you call when
+           you need a fresh read. Look for the row whose playbook_id
+           matches the prior draft.
+            - status=declined: the operator pushed back. Read the
+              `note` — that's their refinement. Do NOT re-submit the
+              same shape; adjust to the note. The draft file is gone;
+              recover the YAML from the playbook_proposal_draft tool
+              result in the chat transcript.
+            - status=approved: the prior draft is now the active
+              version on disk. Fetch it with get_playbook_raw and
+              iterate on THAT.
+            - status=awaiting_review: the operator hasn't decided yet.
+              You usually do NOT want to stack another draft on top —
+              route to terminal_no_proposal with reason "prior draft
+              still pending review".
+            - no matching row: the master agent was wrong about a
+              "prior draft" — treat this as a fresh proposal and
+              re-enter at assess_novelty.
+        2. Apply the operator's refinements (from list_proposals note
+           and/or their latest chat message) plus any genuinely-new
+           findings from the subsequent investigation. Keep the SAME
+           id — the launcher auto-bumps the version on approval.
+        3. Hand off to the same draft+validate loop the new-proposal
+           path uses.
+    suggested_calls:
+      - tool: triagent-strategies/list_proposals
+        args:
+          playbook_id: "<prior-draft-playbook-id>"
+      - tool: triagent-strategies/get_playbook_raw
+        args:
+          id: "<prior-draft-playbook-id>"
+    expected_findings:
+      - prior_draft_recovered
+      - revision_scope
+    next:
+      - condition: "prior draft was declined — operator note recovered, revise to the note"
+        goto: draft_and_validate
+      - condition: "prior draft was approved — got the new active YAML, iterate on it"
+        goto: draft_and_validate
+      - condition: "prior draft is still awaiting_review — do not stack drafts"
+        goto: terminal_no_proposal
+      - condition: "no matching prior draft in list_proposals — master agent was wrong; restart at assess_novelty"
+        goto: assess_novelty
+
+  terminal_no_proposal:
+    description: "Bar not met — do not propose."
+    terminal_advice: |
+      The investigation was a routine application of an existing
+      playbook (or too tenant-specific to generalise). The existing
+      playbook surface covers this case adequately; adding a new one
+      would be noise.
+
+      Call step_complete with findings=[{key: "conclusion", value: "<reason no proposal was warranted>"}]
+      so a future investigator doesn't redo the assessment for the same symptom.
+
+  terminal_awaiting_review:
+    description: "Draft(s) submitted — operator review happens in the chat UI."
+    terminal_advice: |
+      The draft (or set of drafts, for a split or multi-proposal flow)
+      has been submitted. The launcher's editor renders one tab per
+      draft, in the order you submitted them — leaves first when you
+      ordered by dependency. The operator reviews + decides per-tab.
+
+      For a SPLIT proposal (new playbook + parent handoff edit) or a
+      MULTI proposal (N playbooks via scope_multi_proposals), the
+      operator sees one diff tab per draft. They CAN approve them
+      independently if they want to land one and refine the others;
+      that's fine, the playbooks are structurally valid in either
+      order (a handoff/delegate_to pointing at a not-yet-loaded id is
+      still valid YAML — the validator only catches typos in the
+      launcher's loaded set on the next investigation).
+
+      What happens next is operator-driven and arrives as a regular
+      follow-up message:
+        - **Approved.** The launcher promotes the draft(s) to versioned
+          files and bumps the active pointers. The operator's next
+          message may be a confirmation ("approved as v2"), a question
+          ("should I push as a PR?"), or another investigation. Treat
+          it like any other follow-up: classify via the
+          followup_conversation playbook.
+        - **Declined with refinements.** The operator's next message
+          will say what to change. Treat that as a refinement request:
+          re-draft with the requested edits, validate, and submit a
+          NEW playbook_proposal_draft call for the affected draft. Each
+          draft is independent; declined drafts are dropped
+          automatically. For splits, only re-submit the half the
+          operator asked you to revise.
+        - **Just declined.** Acknowledge and stop. Optionally call step_complete with
+          findings=[{key: "conclusion", value: "<decline reason>"}] if useful for next time.

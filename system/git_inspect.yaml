@@ -1,0 +1,474 @@
+id: git_inspect
+schema_version: 1
+type: general
+symptom: "Need code-level orientation against a linked GitHub repo — walk the cheap-then-expensive ordering instead of jumping straight to sub-agent calls"
+description: |
+  Meta-playbook the agent walks when an investigation touches a linked
+  repository. Codifies the layered orientation the system prompt
+  describes: cached architecture summary first, then the LinkedRepos
+  description fallback, then deterministic git plumbing scoped by
+  failure shape, then sub-agent calls only when cheap layers were
+  insufficient.
+
+  STRONG STANCE: do NOT start here from a cold investigation. Sub-agent
+  reads cost real time and tokens; they're warranted only when the
+  operator has already characterised the failure at the cluster
+  surface. Required inputs (record via step_complete findings before any tool):
+
+    - failure_signature: the specific error message / log line / exit
+      reason / observable behavior. Not "broker is broken" — "broker
+      crashloops with 'Cannot bind property foo.bar.baz'".
+    - affected_component: the specific component or service name from
+      the failing workload (e.g. broker / gateway / operator / console /
+      external-infra).
+    - current_version: image tag or chart version on the failing
+      component. From `kubectl get <CR> -o yaml` or `kubectl describe pod`.
+    - prior_version (when upgrade-related): typically
+      status.observedVersion vs spec.version on the CR.
+    - change_window: when the failure first appeared. Bounds the search.
+
+  Mirrors `wiki_recall` for triagent-wiki — captures the discipline as a
+  walkable playbook so the agent's choice between layers shows up in
+  the audit trail.
+
+entrypoint: assess_relevance
+
+nodes:
+  assess_relevance:
+    description: |
+      Read recorded findings (the `initial_hypothesis` recorded by
+      the master playbook's `hypothesize` node, plus any
+      `incidentio_*` / `slack_*` / `correlations` already gathered)
+      for component names, file paths, or error message tokens that
+      overlap with a linked repo's alias or its connection-time
+      description (visible in the **Linked repositories** section of
+      the system prompt).
+
+      Two gates before going deeper:
+
+        1. Is a linked repo plausibly relevant? If the investigation
+           is purely k8s/prom/wiki-side, or the symptom is
+           platform-level, record `git_inspect_relevance: skipped`
+           and bail to `terminal_skipped`. Don't burn tool calls on
+           a repo that isn't relevant.
+
+        2. Are the required inputs present? `failure_signature` AND
+           `affected_component` AND `current_version` must already
+           be in findings. If any is missing, the operator hasn't
+           characterised the failure yet — bail to
+           `terminal_send_back_to_primary` rather than guessing.
+
+      Component → linked-repo mapping: use the **Linked repositories**
+      section in the system prompt to determine which repo alias covers
+      the affected component. The session operator has already provided
+      this mapping at investigation start — do not assume repo names.
+    expected_findings:
+      - git_inspect_relevance
+      - linked_repos_sufficient
+    next:
+      - condition: "no linked repo is plausibly relevant — skip"
+        goto: terminal_skipped
+      - condition: "missing failure_signature OR affected_component OR current_version — operator hasn't characterised the failure yet"
+        goto: terminal_send_back_to_primary
+      - condition: "no relevant repo linked for affected_component"
+        goto: terminal_insufficient_repos
+      - condition: "at least one linked repo is plausibly relevant — name it in the finding"
+        goto: consult_summary
+
+  consult_summary:
+    description: |
+      For each plausibly-relevant repo from `assess_relevance`, call
+      `mcp__triagent-git-<alias>__get_repo_architecture_summary`. The tool
+      is cheap and deterministic — it reads a cache file written
+      upfront by a sub-agent at connection time.
+
+      Read the response:
+        - `exists=true` → `content` is your primary orientation. Note
+          `generated_at`; if it's months old and your hypothesis
+          involves a recent change, the operator may need to refresh.
+        - `exists=false` → read the `hint`. The connection-time
+          description in the **Linked repositories** section is the
+          fallback layer; auto-gen on connection may still be running.
+
+      Record one `repo_summary_<alias>` finding per repo with the
+      verdict ("present, useful" / "present, stale" / "missing,
+      using fallback description" / "missing, no useful fallback").
+    suggested_calls:
+      - tool: triagent-git/get_repo_architecture_summary
+    expected_findings:
+      - repo_summary_verdicts
+    next:
+      - condition: "at least one repo's summary (or fallback description) answers the orientation question"
+        goto: evaluate_sufficiency
+      - condition: "all relevant repos returned exists=false AND the LinkedRepos descriptions don't address the question"
+        goto: classify_shape
+
+  evaluate_sufficiency:
+    description: |
+      Does the summary + connection-time description answer the
+      question your hypothesis raises? Branch on your read.
+
+      Sufficient — when the summary names the relevant component,
+      describes the dependency direction or invariant the symptom
+      probes, or surfaces a "common breakage pattern" matching the
+      operator's notes. Stop here; report back to the parent
+      investigation with the orientation in hand.
+
+      Insufficient — when the summary is too generic (e.g. only
+      lists top-level packages but the question is about a specific
+      condition string in a reconcile loop). Move to shape
+      classification.
+
+      Record the verdict in `git_inspect_sufficiency` so the audit
+      trail shows why we stopped or escalated.
+    expected_findings:
+      - git_inspect_sufficiency
+    next:
+      - condition: "summary + description answer the question — done"
+        goto: terminal_done
+      - condition: "need more — classify failure shape and pick the right cheap-discovery path"
+        goto: classify_shape
+
+  classify_shape:
+    description: |
+      Pick the cheap-discovery path that matches the failure shape.
+      Each shape has a different right tool — running them all
+      reflexively wastes time.
+
+        - **Upgrade** (have current AND prior versions): the change
+          shipped between two known refs. Use
+          `diff_summary <prior>..<current>` to enumerate exactly
+          what shipped; scan commit subjects for breaking-change
+          markers ("breaking:", "BREAKING CHANGE:", "remove",
+          "rename", "deprecate"). Cheaper and less noisy than
+          search_log because scope is bounded.
+        - **Console / management-UI** symptoms ("console shows the
+          cluster unhealthy but cluster_health says fine"): check
+          the management-app repo for detection logic changes and
+          the operator repo for the emitted state the console
+          reads. Mismatches between the two are a common driver of
+          "console disagrees with reality" symptoms.
+        - **Infra-side** ("worked yesterday, doesn't today, no app
+          deploy"): the change is in deployment infrastructure —
+          helm chart bumps, operator image bumps, ingress /
+          cert-manager / external-secrets churn. Check helm chart
+          and operator repos for latest_tags around `change_window`.
+          Some of this (ingress, cert-manager, external-secrets)
+          isn't in git — pivot to `terminal_pivot_to_infra` if the
+          helm/operator side is clean.
+        - **Default** (known component + version + concrete error):
+          `search_log` the component repo for 2–4 specific keywords
+          drawn from `failure_signature`. Avoid generic words
+          ("error", "timeout") — they match every commit.
+
+      Record the picked shape in `git_inspect_shape` so the audit
+      trail captures the reasoning.
+    expected_findings:
+      - git_inspect_shape
+    next:
+      - condition: "upgrade shape — diff the version range"
+        goto: cheap_discovery_upgrade
+      - condition: "console / management-UI shape"
+        goto: cheap_discovery_console
+      - condition: "infra-side shape"
+        goto: cheap_discovery_infra
+      - condition: "default — search the component repo for the error keywords"
+        goto: cheap_discovery_default
+
+  cheap_discovery_default:
+    description: |
+      Component-repo search with specific keywords from
+      `failure_signature`. Pick 2–4 distinctive tokens — property
+      names, exception class names, config keys, unusual phrases.
+
+      If you don't have specific keywords, `latest_tags` first and
+      inspect each tag's release-notes via `commit_summary` —
+      release notes often surface the breaking change in human prose.
+    suggested_calls:
+      - tool: triagent-git/latest_tags
+      - tool: triagent-git/search_log
+      - tool: triagent-git/commit_summary
+    expected_findings:
+      - candidate_commits
+    next:
+      - condition: "found one or more candidate commits — analyze the strongest match"
+        goto: subagent_inspection
+      - condition: "no candidates in the component repo — check whether the consumer/caller is the gap"
+        goto: check_consumer_handler
+      - condition: "no candidates anywhere — probably not a code-change root cause"
+        goto: terminal_no_correlated_change
+
+  cheap_discovery_upgrade:
+    description: |
+      Upgrade-bounded diff. Use `diff_summary from=<prior_version>
+      to=<current_version>` against the component repo to enumerate
+      exactly what shipped. Scan commit subjects for
+      breaking-change markers ("breaking:", "BREAKING CHANGE:",
+      "remove", "rename", "deprecate", major dependency bumps).
+
+      For each suspicious commit, optionally follow up with
+      `commit_summary` and then `analyze_change` in the most likely
+      candidate.
+    suggested_calls:
+      - tool: triagent-git/diff_summary
+      - tool: triagent-git/search_log
+    expected_findings:
+      - candidate_commits
+      - breaking_change_markers
+    next:
+      - condition: "concrete breaking change matches failure_signature — confirm with analyze_change"
+        goto: subagent_inspection
+      - condition: "breaking changes found but none clearly match — check whether the operator/caller handles them"
+        goto: check_consumer_handler
+      - condition: "no breaking changes in the range — failure is probably not the upgrade itself"
+        goto: terminal_no_correlated_change
+
+  cheap_discovery_console:
+    description: |
+      Console / SaaS control-plane symptom. Two kinds of repo
+      typically matter:
+        - The management-app / console repo — health detection, cluster
+          status rollup, accounts / billing.
+        - The operator repo — source of truth for cluster status /
+          observed state the console reads.
+
+      Grep both repos (identified from the **Linked repositories**
+      section) around `change_window`. Mismatches between
+      operator-emitted state and console detection logic are the
+      common drivers of "console disagrees with reality" symptoms.
+    suggested_calls:
+      - tool: triagent-git/search_log
+    expected_findings:
+      - mgmt_app_change
+      - operator_state_change
+    next:
+      - condition: "management app changed detection logic OR operator changed emitted state around change_window — confirm with analyze_change"
+        goto: subagent_inspection
+      - condition: "no recent change in either repo around the symptom window"
+        goto: cheap_discovery_infra
+
+  cheap_discovery_infra:
+    description: |
+      "Worked recently, doesn't now, no app deploy" — the change is
+      probably in deployment infrastructure rather than the
+      application code. Likely targets:
+        - helm chart bumps in the platform helm repo — image tag or
+          values changes.
+        - operator image bump in the operator repo — controllers
+          changed even though application versions look stable.
+        - cluster-level changes outside the linked repos (ingress /
+          cert-manager / external-secrets / KMS) — the git MCP
+          can't see those; surface that limitation if helm /
+          operator are both clean.
+    suggested_calls:
+      - tool: triagent-git/latest_tags
+      - tool: triagent-git/search_log
+    expected_findings:
+      - infra_change_candidate
+    next:
+      - condition: "found a helm/operator image bump aligned with change_window — confirm with analyze_change"
+        goto: subagent_inspection
+      - condition: "no chart/operator change — pivot to non-code investigation (ingress / dns / identity / quota)"
+        goto: terminal_pivot_to_infra
+
+  check_consumer_handler:
+    description: |
+      Consumer-chain pattern: component A shipped a change in
+      version V; check whether the consumer (operator, gateway,
+      console, helm chart) running against the cluster contains
+      the handler. This is the highest-value resolution this
+      playbook produces — it surfaces compatibility gaps that
+      application teams own, not the cluster operator.
+
+      Common consumer chains to check:
+        - Config schema change in a core component → operator
+          config template
+        - Operator CR field change → console / management-app UI
+        - Operator state-machine change → console health detection
+        - Identity / auth flow change → gateway + frontend callers
+        - HTTP endpoint signature change → consumer frontend
+
+      For the suspected breaking change, search the consumer repo:
+        - The renamed/removed identifier (grep the OLD name first;
+          if the consumer never replaced it, that's the gap).
+        - The version constraint or compatibility matrix
+          referencing the changed component.
+    suggested_calls:
+      - tool: triagent-git/search_log
+    expected_findings:
+      - consumer_handled
+      - consumer_handler_commit
+    next:
+      - condition: "consumer never updated to handle the change — this is the root cause"
+        goto: terminal_handler_missing
+      - condition: "consumer updated but the fix landed AFTER current_version — cluster running old consumer with new component"
+        goto: terminal_handler_missing
+      - condition: "consumer updated and current_version contains the fix — change is unrelated; keep looking"
+        goto: terminal_no_correlated_change
+      - condition: "ambiguous — analyze_change to read the consumer's handler logic"
+        goto: subagent_inspection
+
+  subagent_inspection:
+    description: |
+      Only now: sub-agent calls. Cheap discovery has narrowed the
+      question; you have a specific ref to ask about (or a recorded
+      findings set to correlate). Pick the right tool:
+
+        - `analyze_change <ref>` — focused question about ONE
+          commit or ref. Ideal when cheap discovery surfaced a
+          candidate ("the timeout regression appeared after
+          `<sha>`") and you want to know if that specific change
+          does what the symptom suggests.
+        - `correlate_with_findings` — given a recorded findings
+          set, scan a recent range for changes that match. Ideal
+          when you know the symptom but not the candidate ref.
+
+      Frame the question precisely — sub-agents with sharp
+      questions return citation-backed answers in one round-trip;
+      vague ones burn minutes.
+
+      Examples:
+        - Bad: "What does this commit do?"
+        - Good: "Does this commit rename or remove the
+          configuration property `<name>` that component X uses to
+          bind <subsystem>?"
+        - Bad: "Is this related to the failure?"
+        - Good: "Does the operator config template at
+          <ref> account for the renamed property `<old> → <new>`?
+          If not, what would need to change?"
+    suggested_calls:
+      - tool: triagent-git/analyze_change
+      - tool: triagent-git/correlate_with_findings
+    expected_findings:
+      - subagent_findings
+    next:
+      - condition: "sub-agent confirms the change introduces the failure AND no consumer is involved — internal to the component"
+        goto: terminal_done
+      - condition: "sub-agent confirms the change AND consumer/operator does NOT handle it"
+        goto: terminal_handler_missing
+      - condition: "sub-agent says plausibly related but not conclusive — keep looking"
+        goto: terminal_no_correlated_change
+      - condition: "sub-agent says this change does not explain the failure — stop and pivot"
+        goto: terminal_no_correlated_change
+
+  terminal_done:
+    description: "Repo orientation gathered — return to parent investigation."
+    terminal_advice: |
+      Hand the repo findings back to the parent investigation.
+      Call step_complete with findings=[{key: "conclusion", value: "{repo, ref (when known),
+      one-line summary of the change or the orientation gained, confidence}"}].
+      The parent's `classify_scope` and `route` nodes use these findings to inform routing.
+
+      Note in the finding when the cluster-side symptom is
+      downstream of an identified code change so subsequent
+      investigators don't open independent tickets for the same
+      root cause.
+
+      This sub-flow does NOT call `summarize` — the parent
+      investigation reaches summarize on its own terminal.
+
+  terminal_handler_missing:
+    description: "Upstream change shipped, consumer/operator hasn't updated to handle it."
+    terminal_advice: |
+      Component A introduced a change in version V; the consumer
+      (operator, gateway, console, helm chart, etc.) running
+      against the cluster does NOT yet contain the handler.
+      Call step_complete with findings=[{key: "conclusion", value:
+        "{originating change: repo/ref/what changed;
+          consumer gap: repo/ref of latest version on cluster/what's missing;
+          consumer ref that DOES contain the handler if any}"}].
+
+      Common shapes:
+        - Operator hasn't bumped its config template after a core
+          component renamed a property → operator release with the
+          matching bump is the fix.
+        - Console health detection still references the old CR
+          field → bump the console / management-app deployment.
+        - Helm chart pins an old operator image → bump chart
+          values.
+
+      This is the highest-value resolution this playbook produces:
+      surfaces a compatibility gap that the application teams own,
+      not the cluster operator.
+
+  terminal_no_correlated_change:
+    description: "No plausible code change found."
+    terminal_advice: |
+      Either:
+        1. The cause is in code that isn't in any linked repo
+           (possible — an external controller, a third-party
+           admission webhook, a custom connector). Surface this
+           so the operator can link the
+           missing repo and re-run.
+        2. The cause isn't code at all — it's data, runtime
+           config, or external infra. Pivot to a non-code
+           investigation playbook; this sub-flow has nothing more
+           to give.
+
+      Call step_complete with findings=[{key: "conclusion", value: "<what code was ruled out and why>"}]
+      so subsequent investigators don't redo the work.
+
+  terminal_pivot_to_infra:
+    description: "Pivot to non-code investigation (ingress / TLS / DNS / identity / quota)."
+    terminal_advice: |
+      No app or chart change explains the symptom and the failure
+      shape (sudden breakage with no in-cluster spec change)
+      suggests external infrastructure: ingress / TLS / DNS /
+      identity provider / cloud-provider quotas. The git MCP can't
+      see those.
+
+      Pivot:
+        - Network / TLS / ingress symptoms → connectivity playbook.
+        - Storage / quota / Crossplane resources → crossplane_infra.
+        - Operator stuck reconciling → stuck_reconciliation.
+
+      Call step_complete with findings=[{key: "conclusion", value: "<what infra paths were ruled out>"}]
+      so the next playbook starts with that context, then call
+      `walk_playbook` with the chosen pivot id (the master
+      investigation does NOT auto-route from here; this terminal
+      hands back with a recommendation).
+
+  terminal_skipped:
+    description: "No linked repo was plausibly relevant — return."
+    terminal_advice: |
+      No linked repo's alias or description matched the recorded
+      findings. The parent investigation continues; future agents
+      reading the audit trail can see we considered repo context
+      and explicitly skipped it.
+
+  terminal_send_back_to_primary:
+    description: "Not enough symptom data — go back to a primary playbook first."
+    terminal_advice: |
+      git_inspect is a follow-up. It needs at minimum: a concrete
+      failure_signature (error string, exception, missing property,
+      RBAC denial), a known affected_component, and a version. If
+      the operator can't supply those, the right next move is one
+      of:
+        - cluster_health — for general "something's degraded" with
+          no prior triage.
+        - process_execution — for sporadic workflow slowness /
+          failures where no specific component has been pinpointed.
+        - elasticsearch — for ES-flavoured symptoms.
+        - connectivity — when clients can't reach the gateway.
+        - stuck_reconciliation — when the operator's spec /
+          observed generations have drifted.
+
+      Call step_complete with findings=[{key: "conclusion", value: "git_inspect attempted but lacked inputs: <missing inputs>"}]
+      so the next investigator picks up at the right starting point.
+
+  terminal_insufficient_repos:
+    description: "Relevant repo not linked to this session."
+    terminal_advice: |
+      The component the operator is investigating doesn't have a
+      corresponding linked repo in this session. Without it, the
+      playbook can't grep the source of the change.
+
+      Recommend the operator:
+        1. Open the "linked github projects" panel and add the
+           missing repo (a custom org / fork may need to be added
+           to user_repos).
+        2. Start a new investigation — linked repos are baked at
+           preflight, so the running session won't pick up the new
+           addition.
+        3. Re-run git_inspect with the same failure_signature
+           inputs once the repo is reachable.

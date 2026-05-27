@@ -1,0 +1,35 @@
+id: cluster_health
+schema_version: 1
+symptom: "Cluster appears unhealthy / degraded"
+description: |
+  Test fixture used by the strategies package's loader tests. Mirrors
+  the shape (but not the depth) of the upstream cluster_health
+  playbook so user-override / disable / handoff tests have a real
+  system entry to layer against.
+entrypoint: start
+nodes:
+  start:
+    description: "Inspect the ZeebeCluster CR's status block."
+    suggested_calls:
+      - tool: triagent-k8s/get_resource
+        args:
+          kind: ZeebeCluster
+          name: ${cluster_id}
+    expected_findings:
+      - status_block
+    next:
+      - condition: "subsystem unhealthy"
+        goto: terminal_unhealthy
+      - condition: "all green"
+        goto: terminal_healthy
+
+  terminal_unhealthy:
+    description: "Terminal: a subsystem is reporting unhealthy."
+    terminal_advice: |
+      Hand back to the operator with the failing subsystem named.
+
+  terminal_healthy:
+    description: "Terminal: status looks fine."
+    terminal_advice: |
+      Cluster status is green; the symptom likely lives elsewhere.
+    handoff: [connectivity]

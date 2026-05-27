@@ -1,0 +1,198 @@
+id: capture_offer
+schema_version: 1
+version: v3
+symptom: "After delivering an investigation summary, offer the operator the capture options (wiki / playbook / codefix / bug / all / both / no) and route on their reply"
+description: |
+  Closing meta-playbook for every investigation session. The system
+  gets better only when investigations feed back into the knowledge
+  base — this playbook ensures the question is asked. Surfaces all
+  capture paths to the operator and, on their reply, hands off to
+  the relevant proposal flow.
+
+  Invoked via `walk_playbook` right after `summarize` lands.
+  The launcher names this playbook on the prompt's
+  `suggested-closing-playbook` parameter so the agent can route
+  there structurally rather than from prose rules.
+
+  v2: adds `terminal_codefix` (handoff pr_proposal) and `terminal_all`
+  (wiki → playbook → codefix sequence). `terminal_both` is deprecated
+  in favour of `terminal_all` but retained for in-flight v1 sessions.
+
+  v3: adds `terminal_bug_report` (handoff bug_report_proposal) for
+  the "file the issue but skip the PR" path — used when the change
+  is too large/cross-team/contentious for a single sub-agent run, or
+  when the operator wants to triage rather than fix. The `bug`
+  keyword is a sibling of `codefix`, not part of `all` (which keeps
+  the wiki → playbook → codefix sequence; `all` already files the
+  issue via codefix's first half).
+
+entrypoint: ask
+
+nodes:
+  ask:
+    description: |
+      You — the investigation agent — have all the context. The
+      operator does not. A bare "would you like wiki/playbook/codefix?"
+      menu wastes that context: it forces the operator to imagine
+      what you'd capture, and they almost always default to a single
+      generic wiki entry. **Propose concrete artifacts first, then
+      print the routing menu.**
+
+      Compose ONE chat message in this shape and append it verbatim,
+      then STOP and wait for the operator's reply. Don't pre-emptively
+      run any capture flow.
+
+        > **Proposed captures**
+        >
+        > _Wiki:_
+        > - "<concrete entry title>" — <one-line scope, e.g. "worker-9
+        >   OOM-driven shape" — write what makes THIS narrative
+        >   distinct from anything already in the wiki>
+        > - (additional entries ONLY when the investigation surfaced
+        >   two or more **distinct shapes** that would mislead a
+        >   future reader if collapsed — e.g. the same alert firing
+        >   for two unrelated root causes. If there's only one shape,
+        >   one entry; don't pad.)
+        >
+        > _Playbook:_ <name + scope, e.g. "new
+        >   `operator_continuously_reconciling` playbook
+        >   (alert-driven entry → pod-restart check → conflict-requeue
+        >   check → breaker check)">. Multiple playbook items are
+        >   valid — e.g. one new playbook plus an extension to an
+        >   existing one, when both genuinely apply. If a playbook
+        >   would not help short-circuit a future investigation, say
+        >   so explicitly: "no playbook — the method here was one-off."
+        >
+        > _Codefix:_ <named change, e.g. "split the
+        >   `OperatorContinuouslyReconciling` alert in
+        >   example-org/alerts into sub-rules so symptom and cause stop
+        >   sharing one firing">. Multiple codefix items are valid —
+        >   e.g. an alert split in one repo and a docs section in
+        >   another. If no concrete file/repo/change surfaced, say so
+        >   explicitly: "no codefix — recommendation was a gesture,
+        >   not a named fix." If a concrete change surfaced but
+        >   drafting the fix isn't right (too large / cross-team /
+        >   contentious / outside our remit), call that out and
+        >   recommend `bug` instead — file the issue, let the
+        >   maintainer decide on the fix.
+        >
+        > _Default:_ <which captures you'd run, briefly>.
+        >
+        > Reply with `wiki` / `playbook` / `codefix` / `bug` /
+        > `all` / `no`, or push back on any of the proposals above —
+        > e.g. "split the wiki into two entries", "skip the playbook,
+        > the method was one-off", "the codefix idea isn't real, file
+        > as bug instead". Then the keyword.
+        >
+        > `bug` files just the issue (no draft PR); `codefix` files
+        > the issue AND drafts a PR. `all` keeps the codefix path.
+
+      Bias rules for the proposals you draft:
+      - Name the artifacts. "Wiki entry on the worker-9 OOM shape"
+        beats "wiki on the OOM". The operator can't refine a
+        gesture.
+      - Split distinct shapes. If two unrelated root causes shared
+        one symptom in this investigation, propose two wiki entries
+        and explain why collapsing them would mislead. Most cheap
+        wins for the knowledge base come from this exact move.
+      - Don't pad. If a category genuinely has nothing actionable,
+        say so explicitly ("no playbook — one-off method") rather
+        than inventing a thin proposal.
+      - The codefix scope is "named file or named alert-rule or
+        named docs section, plus the change". Anything vaguer is
+        wiki material, not codefix.
+
+      The operator's answer is a pending-action follow-up — execute
+      the awaited route directly without going through
+      `followup_conversation`. If the operator pushes back on a
+      proposal (e.g. asks for a split, redirects the codefix), thread
+      their refinement into the proposal node of the downstream
+      handoff so the proposal flow consumes the refined shape rather
+      than the original draft.
+    next:
+      - condition: operator answered "wiki" (or "yes please, wiki" / "promote it")
+        goto: terminal_wiki
+      - condition: operator answered "playbook" (or "yes, propose a playbook" / "extend X")
+        goto: terminal_playbook
+      - condition: operator answered "codefix" (or "fix", "draft a PR")
+        goto: terminal_codefix
+      - condition: operator answered "bug" (or "bug report", "file an issue", "report it", "file a ticket")
+        goto: terminal_bug_report
+      - condition: operator answered "all"
+        goto: terminal_all
+      - condition: operator answered "both"
+        goto: terminal_both
+      - condition: operator declined ("no" / "skip" / "not now" / "thanks but no")
+        goto: terminal_declined
+
+  terminal_wiki:
+    description: "Operator chose wiki capture."
+    terminal_advice: |
+      Hand off to `wiki_proposal`. Pass `parent_session_id` set to
+      the master investigation's session id (NOT this
+      `capture_offer` session) so the proposal lives as a sibling
+      of the original investigation in the activity panel.
+    handoff:
+      - wiki_proposal
+
+  terminal_playbook:
+    description: "Operator chose playbook capture."
+    terminal_advice: |
+      Hand off to `playbook_proposal`. Pass `parent_session_id`
+      set to the master investigation's session id (NOT this
+      `capture_offer` session).
+    handoff:
+      - playbook_proposal
+
+  terminal_codefix:
+    description: "Operator chose codefix capture."
+    terminal_advice: |
+      Hand off to `pr_proposal`. Pass `parent_session_id` set to
+      the master investigation's session id (NOT this `capture_offer`
+      session).
+    handoff:
+      - pr_proposal
+
+  terminal_bug_report:
+    description: "Operator chose bug-report capture (issue only, no PR)."
+    terminal_advice: |
+      Hand off to `bug_report_proposal`. Pass `parent_session_id`
+      set to the master investigation's session id (NOT this
+      `capture_offer` session). Unlike `terminal_codefix`, this path
+      stops at issue filing — no `draft_pr` is invoked.
+    handoff:
+      - bug_report_proposal
+
+  terminal_all:
+    description: "Operator chose all three captures."
+    terminal_advice: |
+      Run wiki first, then playbook, then codefix. The codefix
+      issue body can cite the freshly-promoted wiki entry. For each,
+      hand off via `walk_playbook` and pass `parent_session_id`
+      set to the master investigation's session id.
+    handoff:
+      - wiki_proposal
+      - playbook_proposal
+      - pr_proposal
+
+  # terminal_both is deprecated in favour of terminal_all but retained
+  # so that in-flight v1 sessions are not broken by the version bump.
+  terminal_both:
+    description: "Operator chose both."
+    terminal_advice: |
+      Run wiki first, then playbook. Wiki entries cite incident
+      IDs, so the playbook proposal can reference the fresh wiki
+      entry in its description if relevant. For each, hand off via
+      `walk_playbook` and pass `parent_session_id` set to the
+      master investigation's session id (NOT this `capture_offer`
+      session).
+    handoff:
+      - wiki_proposal
+      - playbook_proposal
+
+  terminal_declined:
+    description: "Operator declined capture."
+    terminal_advice: |
+      Acknowledge briefly ("understood, not capturing") and stop.
+      Optionally call step_complete with findings=[{key: "conclusion", value: "<decline reason>"}]
+      if useful for next time.

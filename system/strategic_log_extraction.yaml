@@ -1,0 +1,101 @@
+id: strategic_log_extraction
+schema_version: 1
+type: general
+symptom: "get_logs byte cap reached before the relevant signal appeared; need to capture a larger log window and search it"
+description: |
+  Companion playbook for the triagent-k8s streaming search pair. Delegated from
+  investigation playbooks when the agent needs to find a specific pattern
+  in a log volume larger than get_logs' byte cap. Captures the volume in
+  a per-investigation stream file (no bulk in context) and filters with
+  search_log_stream.
+
+entrypoint: probe_structure
+
+nodes:
+  probe_structure:
+    description: |
+      Pull a tiny sample (tailLines: 5) of the target pod or workload to
+      inspect the log shape. Recognise the format from the sample:
+        - logfmt (one line: `key=value key=value ...`): candidate_kv_keys are
+          the bare identifiers that appear before `=`; candidate_keyword can
+          be a distinctive substring from the value side.
+        - JSON (one line: `{"key":"value",...}`): candidate_kv_keys are the
+          top-level JSON field names; candidate_keyword can be a distinctive
+          substring of a value.
+        - plain-text (no key=value or JSON structure): candidate_kv_keys is
+          empty; candidate_keyword is a distinctive substring from the
+          sample.
+      Record only the findings that apply; leave the rest absent rather than
+      recording placeholder values.
+    suggested_calls:
+      - tool: triagent-k8s/get_logs
+        args:
+          tailLines: 5
+    expected_findings:
+      - log_format
+      - candidate_keyword
+      - candidate_kv_keys
+    next:
+      - condition: "log shape inspected — proceed to capture the volume"
+        goto: stream_capture
+
+  stream_capture:
+    description: |
+      Call stream_log_until using the same selector you used in
+      probe_structure (pod / labelSelector / workload) with the keyword
+      group identified there (when one was found); otherwise rely on the
+      timeout-only stop condition. The keywords argument shape is
+      [[a, b], [c]] meaning (a AND b on one line) OR (c on one line) —
+      terms are case-insensitive substrings. Pass sinceSeconds to cover
+      the relevant window; leave unset to stream from the current tail.
+      Record the returned stream_id and a brief keyword_hits_summary
+      (how many hits triggered the stop, or "timeout" if the keyword
+      group was absent).
+    suggested_calls:
+      - tool: triagent-k8s/stream_log_until
+        args:
+          namespace: ${namespace}
+          # Carry forward whichever selector you used in probe_structure:
+          # pod: <pod-name>  (or)  labelSelector: <selector>  (or)  workload: <Kind/name>
+          # container: <container>  (if multi-container)
+          # keywords: [["term1", "term2"], ["term3"]]   # AND-of-OR; case-insensitive
+          # timeoutSeconds: 60   graceSeconds: 5  (defaults; raise/lower as needed)
+    expected_findings:
+      - stream_id
+      - keyword_hits_summary
+    next:
+      - condition: "stream_id obtained — proceed to filtered search"
+        goto: filtered_search
+
+  filtered_search:
+    description: |
+      Use search_log_stream with progressively tighter grep / kvFilters
+      until the relevant lines fit within the byte cap. Start broad (one
+      keyword), then tighten by adding kv filters or second keywords until
+      the result is actionable. Iterate by tightening filters rather than
+      raising maxBytes. Call step_complete with findings=[{key: "matched_lines_summary",
+      value: "<key excerpts the parent investigation needs>"}] and goto="return_to_parent".
+    suggested_calls:
+      - tool: triagent-k8s/search_log_stream
+        args:
+          # stream_id: <from the stream_capture finding 'stream_id'>
+          # grep: <substring to require, e.g. "exception" — case-sensitive>
+          # kvFilters: [{ "key": "level", "value": "error" }]  (AND-joined)
+          # tailLines: <optional ring-buffer over filtered lines>
+    expected_findings:
+      - matched_lines_summary
+    next:
+      - condition: "relevant lines found or search exhausted — return findings to parent"
+        goto: return_to_parent
+
+  return_to_parent:
+    description: |
+      Findings extracted. Surface the stream_id and the key filters that
+      landed the evidence so the parent investigation can reference them
+      in its summary.
+    terminal_advice: |
+      Return to the parent investigation. Record the matched_lines_summary
+      as evidence (include excerpts from the search hits, not just counts),
+      along with the stream_id and exact filters that landed the evidence,
+      so the parent agent can re-query the same stream with tighter filters
+      if needed. Proceed to summarize once the parent has what it needs.

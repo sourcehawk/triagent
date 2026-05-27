@@ -1,0 +1,20 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* The docs site mirrors the launcher's dark zinc palette so the
+   in-app docs surface and the published site read as the same product.
+   Body sits dark by default; the prose-invert wrapper inside DocsView
+   handles per-element typography. */
+html,
+body {
+  background-color: rgb(9 9 11); /* zinc-950 */
+  color: rgb(228 228 231); /* zinc-200 */
+}
+
+/* Inline anchor links inside headings (the `#` chips DocsView stamps
+   on hover) shouldn't inherit prose-a's underline-on-hover treatment —
+   they're navigation affordances, not body links. */
+.heading-anchor:hover {
+  text-decoration: none !important;
+}

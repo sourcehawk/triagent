@@ -1,0 +1,1 @@
+Meta/workflow playbooks the agent runs for its own behaviour, NOT for triaging a symptom (e.g. playbook_proposal, followup_conversation). Don't surface these to the operator as 'investigations'; the agent invokes them internally when its own flow asks for them.
