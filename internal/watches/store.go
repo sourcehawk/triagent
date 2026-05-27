@@ -56,19 +56,6 @@ func SaveWatches(path string, ws []Watch) error {
 	return os.Rename(tmp, path)
 }
 
-// DefaultUserWatchesPath returns $XDG_CONFIG_HOME/c1/investigate/user_watches.yaml.
-// Mirrors repos.DefaultConfigDir's resolution.
-func DefaultUserWatchesPath() (string, error) {
-	if x := os.Getenv("XDG_CONFIG_HOME"); x != "" {
-		return filepath.Join(x, "triagent", "user_watches.yaml"), nil
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(home, ".config", "triagent", "user_watches.yaml"), nil
-}
-
 // WatchDir returns the per-watch data directory beside user_watches.yaml.
 func WatchDir(userWatchesPath, watchID string) string {
 	root := filepath.Dir(userWatchesPath)

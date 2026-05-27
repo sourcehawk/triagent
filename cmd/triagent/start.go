@@ -15,7 +15,6 @@ import (
 	"github.com/sourcehawk/triagent/internal/preflight"
 	"github.com/sourcehawk/triagent/internal/profile"
 	"github.com/sourcehawk/triagent/internal/server"
-	"github.com/sourcehawk/triagent/internal/watches"
 	"github.com/sourcehawk/triagent/system"
 	"github.com/spf13/cobra"
 )
@@ -222,10 +221,6 @@ func joinSubpath(root, sub string) string {
 // per-investigation contexts so claude CLIs and port-forwards drain
 // cleanly.
 func runWeb(ctx context.Context, mcpBin string, paths profile.Paths, playbooksRepo, wikiRepo, sessionsRepo string, prof *profile.Profile) error {
-	// Resolve the user watches YAML path. Best-effort: an empty path
-	// disables the watches subsystem rather than blocking startup.
-	watchesPath, _ := watches.DefaultUserWatchesPath()
-
 	// Derive the docs server name from the profile's extra_mcps list so the
 	// editor session's prompt still advertises the docs tools bullet.
 	docsServerName := ""
@@ -254,7 +249,7 @@ func runWeb(ctx context.Context, mcpBin string, paths profile.Paths, playbooksRe
 		SessionsRepo:             sessionsRepo,
 		SessionsProposalsPath:    paths.SessionsProposalsDir,
 		CodefixProposalsPath:     paths.CodefixProposalsDir,
-		UserWatchesPath:          watchesPath,
+		UserWatchesPath:          paths.UserWatchesFile,
 		Profile:                  prof,
 	})
 	if err != nil {

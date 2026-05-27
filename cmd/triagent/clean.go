@@ -9,7 +9,6 @@ import (
 
 	"github.com/charmbracelet/log"
 	"github.com/sourcehawk/triagent/internal/profile"
-	"github.com/sourcehawk/triagent/internal/watches"
 	"github.com/spf13/cobra"
 )
 
@@ -276,9 +275,9 @@ func cleanTargets(includeUser bool) ([]cleanTarget, error) {
 	// nuking the operator's watch list — they can re-poll from scratch.
 	// Operators who want to delete watches use the per-watch UI delete
 	// or edit user_watches.yaml directly.
-	if cfg, err := watches.DefaultUserWatchesPath(); err == nil {
+	if paths.UserWatchesFile != "" {
 		out = append(out, cleanTarget{
-			Path:     filepath.Join(filepath.Dir(cfg), "watches"),
+			Path:     filepath.Join(filepath.Dir(paths.UserWatchesFile), "watches"),
 			Label:    "watches ingestion data (items, signals, queue, state per watch — configs preserved)",
 			Category: categoryWatches,
 		})

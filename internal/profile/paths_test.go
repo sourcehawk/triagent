@@ -188,9 +188,28 @@ func TestPathsResolveFillsDefaultsWhenEmpty(t *testing.T) {
 		WikiProposalsDir:     "/cfg/triagent/camunda/wiki-proposals",
 		GitCacheDir:          "/cache/triagent-mcp/camunda/git",
 		UserReposFile:        "/cfg/triagent/camunda/user_repos.yaml",
+		UserWatchesFile:      "/cfg/triagent/camunda/user_watches.yaml",
 	}
 	if out != want {
 		t.Errorf("Resolve filled-defaults mismatch:\n got:  %+v\n want: %+v", out, want)
+	}
+}
+
+// TestPathsResolveUserWatchesFileIsProfileScoped: the signal-watches
+// store has to live under the active profile's dir like every other piece
+// of launcher state, or watches authored under one profile leak into the
+// next one started — the operator's mental model is "this profile's
+// watches", not "this machine's watches".
+func TestPathsResolveUserWatchesFileIsProfileScoped(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "/cfg")
+	t.Setenv("HOME", "/home/me")
+
+	out, err := profile.Paths{}.Resolve("camunda")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if out.UserWatchesFile != "/cfg/triagent/camunda/user_watches.yaml" {
+		t.Errorf("UserWatchesFile=%q, want /cfg/triagent/camunda/user_watches.yaml", out.UserWatchesFile)
 	}
 }
 

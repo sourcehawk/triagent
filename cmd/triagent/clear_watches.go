@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/sourcehawk/triagent/internal/profile"
 	"github.com/sourcehawk/triagent/internal/watches"
 )
 
@@ -17,6 +18,7 @@ import (
 // JSONL files, no manager required. Returns the exit code.
 func ClearWatches(args []string) int {
 	fs := flag.NewFlagSet("clear watches", flag.ContinueOnError)
+	prof := fs.String("profile", "", "profile name or path; defaults to TRIAGENT_PROFILE or 'default'")
 	watch := fs.String("watch", "", "scope to one watch id")
 	items := fs.Bool("items", false, "clear items only")
 	signals := fs.Bool("signals", false, "clear signals only")
@@ -45,11 +47,17 @@ func ClearWatches(args []string) int {
 			return 1
 		}
 	}
-	path, err := watches.DefaultUserWatchesPath()
+	loaded, err := profile.Load(ResolveProfileRef(*prof))
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(os.Stderr, "load profile:", err)
 		return 1
 	}
+	paths, err := loaded.Paths.Resolve(loaded.Name)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "resolve profile paths:", err)
+		return 1
+	}
+	path := paths.UserWatchesFile
 	root := filepath.Dir(path)
 	ws, err := watches.LoadWatches(path)
 	if err != nil {

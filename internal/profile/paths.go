@@ -64,6 +64,11 @@ type Paths struct {
 	// writes additions to. The launcher reads it at startup to
 	// reconstruct the linked-repos list.
 	UserReposFile string `yaml:"user_repos_file"`
+
+	// UserWatchesFile is the per-profile YAML the signal-watches
+	// subsystem reads/writes. Per-watch ingestion data lives in a
+	// `watches/<id>/` sibling of this file.
+	UserWatchesFile string `yaml:"user_watches_file"`
 }
 
 // defaultPathTemplates are the in-code fallbacks applied to any Paths
@@ -87,6 +92,7 @@ var defaultPathTemplates = Paths{
 	WikiProposalsDir:     "${XDG_CONFIG_HOME}/triagent/${PROFILE_NAME}/wiki-proposals",
 	GitCacheDir:          "${XDG_CACHE_HOME}/triagent-mcp/${PROFILE_NAME}/git",
 	UserReposFile:        "${XDG_CONFIG_HOME}/triagent/${PROFILE_NAME}/user_repos.yaml",
+	UserWatchesFile:      "${XDG_CONFIG_HOME}/triagent/${PROFILE_NAME}/user_watches.yaml",
 }
 
 // Resolve returns a new Paths with ${XDG_CONFIG_HOME}, ${XDG_CACHE_HOME},
@@ -122,7 +128,7 @@ func (p Paths) Resolve(profileName string) (Paths, error) {
 		p.UpstreamPlaybooksDir, p.SystemPlaybooksDir, p.UserPlaybooksDir,
 		p.WikiDir, p.SessionsRoot, p.UpstreamSessionsDir,
 		p.SessionsProposalsDir, p.CodefixProposalsDir, p.WikiProposalsDir,
-		p.GitCacheDir, p.UserReposFile,
+		p.GitCacheDir, p.UserReposFile, p.UserWatchesFile,
 	} {
 		if strings.Contains(s, "${PROFILE_NAME}") && profileName == "" {
 			return Paths{}, fmt.Errorf("path %q references ${PROFILE_NAME} but the loaded profile has no name", s)
@@ -147,6 +153,7 @@ func (p Paths) Resolve(profileName string) (Paths, error) {
 		WikiProposalsDir:     expand(p.WikiProposalsDir),
 		GitCacheDir:          expand(p.GitCacheDir),
 		UserReposFile:        expand(p.UserReposFile),
+		UserWatchesFile:      expand(p.UserWatchesFile),
 	}, nil
 }
 
@@ -172,6 +179,7 @@ func mergePaths(base, override Paths) Paths {
 		WikiProposalsDir:     pick(override.WikiProposalsDir, base.WikiProposalsDir),
 		GitCacheDir:          pick(override.GitCacheDir, base.GitCacheDir),
 		UserReposFile:        pick(override.UserReposFile, base.UserReposFile),
+		UserWatchesFile:      pick(override.UserWatchesFile, base.UserWatchesFile),
 	}
 }
 
