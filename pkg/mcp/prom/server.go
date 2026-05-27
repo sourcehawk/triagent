@@ -113,7 +113,9 @@ func (s *Server) refreshCatalog(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	// CAS-style swap: build a new snapshot pointing at the same client.
+	// Build a new snapshot pointing at the same client and store it
+	// wholesale; in-flight tool calls finish against the snapshot they
+	// captured at entry.
 	s.snapshot.Store(&snapshot{
 		endpoint: snap.endpoint,
 		client:   snap.client,

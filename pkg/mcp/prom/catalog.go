@@ -53,9 +53,9 @@ func buildCatalog(ctx context.Context, c *promClient) (*catalog, error) {
 }
 
 // buildPrefixIndex groups metric names by their first underscore-bounded
-// prefix segment (e.g. "zeebe_partition_health" → "zeebe_"). Names
-// without an underscore land in a "" bucket (filtered out by callers
-// that want the top-prefix list).
+// prefix segment (e.g. "zeebe_partition_health" → "zeebe_"). Names with
+// no underscore (or a leading underscore at position 0) are skipped — they
+// have no informative prefix to group by.
 func buildPrefixIndex(names []string) map[string]int {
 	out := map[string]int{}
 	for _, n := range names {
