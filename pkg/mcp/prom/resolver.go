@@ -29,6 +29,16 @@ func (s *Server) currentSnapshot(ctx context.Context) (*snapshot, error) {
 	}
 	cur := s.snapshot.Load()
 	if cur != nil && cur.endpoint == url {
+		if len(cur.catalog.names) == 0 {
+			// Same URL but the catalog is empty — most likely the previous
+			// refresh failed mid-flight. Retry once; the next tool call
+			// surfaces "catalog empty" via the handler if the refresh still
+			// fails (i.e. the catalog truly has no metrics indexed).
+			if err := s.refreshCatalog(ctx); err != nil {
+				_, _ = fmt.Fprintf(stderrWriter, "prom: catalog refresh retry failed: %v\n", err)
+			}
+			return s.snapshot.Load(), nil
+		}
 		return cur, nil
 	}
 	newClient := newPromClient(url, s.bearer, s.basic, s.httpClient)

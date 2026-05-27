@@ -240,7 +240,19 @@ func runRangeQuery(ctx context.Context, snap *snapshot, expr, rangeStr, endStr s
 	}
 	start := end.Add(-dur)
 
-	stepSec := int(dur.Seconds()) / maxPoints
+	// Prom's /api/v1/query_range returns samples inclusive of both start
+	// and end, so the actual count is floor(dur/step) + 1. Compute step
+	// with ceiling division on (maxPoints - 1) so the count stays within
+	// budget without later truncation dropping the most-recent sample.
+	durSeconds := int(dur.Seconds())
+	var stepSec int
+	if maxPoints > 1 {
+		stepSec = (durSeconds + maxPoints - 2) / (maxPoints - 1)
+	} else {
+		// Degenerate: a single-sample request — make step at least the
+		// full duration so Prom returns one sample for end.
+		stepSec = durSeconds
+	}
 	if stepSec < 1 {
 		stepSec = 1
 	}

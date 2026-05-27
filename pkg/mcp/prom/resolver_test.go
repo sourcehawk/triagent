@@ -123,6 +123,40 @@ func TestResolver_SendsBearer(t *testing.T) {
 	require.Equal(t, int32(1), calls.Load())
 }
 
+func TestResolver_RetriesRefreshWhenCachedCatalogIsEmpty(t *testing.T) {
+	t.Parallel()
+	var calls atomic.Int32
+	promStub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/label/__name__/values" {
+			if calls.Add(1) == 1 {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": []string{"resolved_metric"}})
+			return
+		}
+		if r.URL.Path == "/api/v1/metadata" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": map[string]any{}})
+		}
+	}))
+	t.Cleanup(promStub.Close)
+	resolver := resolverStub(t, resolverResponse{URL: promStub.URL}, "tok", nil)
+	srv, err := New(Options{Endpoint: promStub.URL, EndpointResolver: resolver.URL, LauncherToken: "tok"})
+	require.NoError(t, err)
+
+	// First call: resolver returns same URL as initial, catalog refresh
+	// fails → snapshot retains empty catalog.
+	snap, err := srv.currentSnapshot(context.Background())
+	require.NoError(t, err)
+	require.Empty(t, snap.catalog.names)
+
+	// Second call: same URL, but cached catalog is empty → retry refresh,
+	// this time succeeds.
+	snap, err = srv.currentSnapshot(context.Background())
+	require.NoError(t, err)
+	require.Contains(t, snap.catalog.names, "resolved_metric")
+}
+
 func TestNew_AllowsEmptyEndpointWhenResolverSet(t *testing.T) {
 	t.Parallel()
 	srv, err := New(Options{EndpointResolver: "http://127.0.0.1:0", LauncherToken: "tok"})

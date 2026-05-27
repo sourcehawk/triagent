@@ -272,9 +272,10 @@ func TestQueryRange_ComputesStepForPointBudget(t *testing.T) {
 	res, err := runRangeQuery(context.Background(), snap, `noisy{namespace="x"}`, "15m", "", 10, 100, false)
 	require.NoError(t, err)
 	require.Len(t, res.Series, 1)
-	// 15m / 100 points → 9s step
-	assert.Equal(t, "9s", res.Step)
-	assert.Equal(t, "9s", gotStep)
+	// 15m (900s) with maxPoints=100: ceiling-divide on (100-1)=99 →
+	// step = ceil(900/99) = ceil(9.09) = 10s, giving at most 91 samples.
+	assert.Equal(t, "10s", res.Step)
+	assert.Equal(t, "10s", gotStep)
 	assert.NotEmpty(t, res.Series[0].Sparkline)
 	assert.InDelta(t, 0.15, res.Series[0].Stats.Mean, 0.001)
 }
@@ -325,6 +326,33 @@ func TestQueryRange_RejectsOverSeriesCap(t *testing.T) {
 	_, err := runRangeQuery(context.Background(), snap, `noisy{namespace="x"}`, "15m", "", 10, 100, false)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "30 series")
+}
+
+func TestQueryRange_StepRespectsSampleBudget(t *testing.T) {
+	t.Parallel()
+	// 15m duration with maxPoints=100: step must be >= 10s so the
+	// inclusive-endpoint sample count (floor(900/step) + 1) stays <= 100.
+	var seenStep string
+	stub := newStubProm(t, stubHandlers{
+		queryRange: func(w http.ResponseWriter, r *http.Request) {
+			seenStep = r.URL.Query().Get("step")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"status": "success",
+				"data": map[string]any{
+					"resultType": "matrix",
+					"result": []map[string]any{
+						{"metric": map[string]string{"x": "1", "namespace": "x"}, "values": []any{[]any{1700000000, "0"}}},
+					},
+				},
+			})
+		},
+	})
+	cat := cardCatalog("m", 5)
+	snap := &snapshot{client: newPromClient(stub.URL, "", "", http.DefaultClient), catalog: cat}
+	_, err := runRangeQuery(context.Background(), snap, `m{namespace="x"}`, "15m", "", 10, 100, false)
+	require.NoError(t, err)
+	// step >= 10s satisfies the inclusive-endpoint budget.
+	require.Equal(t, "10s", seenStep)
 }
 
 func TestQueryRange_RejectsInvalidEnd(t *testing.T) {

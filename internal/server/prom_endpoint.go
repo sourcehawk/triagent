@@ -45,6 +45,10 @@ func (a *apiHandlers) handlePromEndpoint(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusNotFound, "investigation "+id+" not found")
 		return
 	}
+	if inv.IsArchived() {
+		writeError(w, http.StatusGone, "investigation archived; prom port-forward unavailable")
+		return
+	}
 	if a.promForwarder == nil {
 		writeError(w, http.StatusServiceUnavailable, "prom not configured for this launcher")
 		return

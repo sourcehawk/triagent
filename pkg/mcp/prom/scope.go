@@ -21,6 +21,13 @@ func checkScope(ctx context.Context, c *promClient, cat *catalog, promql string)
 	if q == "" {
 		return fmt.Errorf("promql is required")
 	}
+	// Guard against {__name__=...} selectors that bypass the catalog-
+	// substring scan entirely. A bare __name__ matcher (with no other
+	// label matchers in the same block) can reference arbitrary metrics
+	// via regex and would never appear as a literal substring.
+	if hasUnscopedNameMatcher(q) {
+		return fmt.Errorf("scope required: a {__name__=...} matcher must be paired with at least one non-__name__ label matcher; pure __name__ selectors can target arbitrary metrics and bypass the cardinality gate")
+	}
 	// Walk catalog metric names longest-first so a longer name (e.g.
 	// "http_requests_total") isn't masked by a shorter prefix
 	// ("http_requests") in the substring scan.
@@ -162,4 +169,63 @@ func formatCard(est int) string {
 		return "unknown"
 	}
 	return fmt.Sprintf("≥ %d series", est)
+}
+
+// hasUnscopedNameMatcher returns true if any {...} block in q contains
+// a __name__ matcher (=, =~, !=, !~) without at least one non-__name__
+// matcher in the same block. Used to reject regex-based name selectors
+// like {__name__=~"container_.*"} that would otherwise bypass the
+// catalog-substring scope check.
+func hasUnscopedNameMatcher(q string) bool {
+	i := 0
+	for {
+		open := indexByteFrom(q, '{', i)
+		if open < 0 {
+			return false
+		}
+		close := indexByteFrom(q, '}', open)
+		if close < 0 {
+			return false
+		}
+		body := q[open+1 : close]
+		hasName, hasOther := false, false
+		for _, seg := range strings.Split(body, ",") {
+			seg = strings.TrimSpace(seg)
+			if seg == "" {
+				continue
+			}
+			key := strings.FieldsFunc(seg, func(r rune) bool {
+				return r == '=' || r == '!' || r == '~'
+			})
+			if len(key) == 0 {
+				continue
+			}
+			k := strings.TrimSpace(key[0])
+			if k == "" {
+				continue
+			}
+			if k == "__name__" {
+				hasName = true
+			} else {
+				hasOther = true
+			}
+		}
+		if hasName && !hasOther {
+			return true
+		}
+		i = close + 1
+	}
+}
+
+// indexByteFrom is strings.IndexByte starting at offset from. Returns
+// an absolute index, or -1.
+func indexByteFrom(s string, c byte, from int) int {
+	if from >= len(s) {
+		return -1
+	}
+	rel := strings.IndexByte(s[from:], c)
+	if rel < 0 {
+		return -1
+	}
+	return from + rel
 }

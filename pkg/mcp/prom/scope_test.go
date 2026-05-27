@@ -126,3 +126,37 @@ func TestScope_TwoRefsOneUnscoped(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "high_card_b")
 }
+
+func TestScope_RejectsRegexNameMatcherWithoutScope(t *testing.T) {
+	t.Parallel()
+	cat := cardCatalog("container_cpu_usage", 500)
+	err := checkScope(context.Background(), nil, cat, `{__name__=~"container_.*"}`)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "scope required")
+	assert.Contains(t, err.Error(), "__name__")
+}
+
+func TestScope_RejectsLiteralNameMatcherWithoutScope(t *testing.T) {
+	t.Parallel()
+	cat := cardCatalog("container_cpu_usage", 500)
+	err := checkScope(context.Background(), nil, cat, `{__name__="container_cpu_usage"}`)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "scope required")
+}
+
+func TestScope_AllowsNameMatcherWithScope(t *testing.T) {
+	t.Parallel()
+	// hasUnscopedNameMatcher must not fire when a __name__ matcher is
+	// paired with another label. Use a metric name that isn't in the
+	// catalog so the catalog-substring scan also passes cleanly.
+	cat := emptyCatalog()
+	err := checkScope(context.Background(), nil, cat, `{__name__="container_cpu_usage",namespace="x"}`)
+	require.NoError(t, err)
+}
+
+func TestScope_RejectsWildcardNameMatcher(t *testing.T) {
+	t.Parallel()
+	cat := cardCatalog("container_cpu_usage", 500)
+	err := checkScope(context.Background(), nil, cat, `{__name__=~".*"}`)
+	require.Error(t, err)
+}

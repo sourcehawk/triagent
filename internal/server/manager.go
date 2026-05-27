@@ -406,6 +406,16 @@ func (i *Investigation) Snapshot() InvestigationDTO {
 	}
 }
 
+// IsArchived reports whether the investigation has been archived.
+// Safe to call concurrently. Used by the prom resolver to refuse
+// re-provisioning a port-forward for a session that's already wound
+// down.
+func (i *Investigation) IsArchived() bool {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	return i.archived
+}
+
 // snapshotUsage returns a pointer to a copy of the running usage total
 // when any component is non-zero, or nil otherwise. The pointer keeps
 // the InvestigationDTO JSON compact (omitempty) for sessions that

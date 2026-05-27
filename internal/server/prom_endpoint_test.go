@@ -175,3 +175,28 @@ func TestPromEndpoint_PromDisabledReturns503(t *testing.T) {
 	require.Equal(t, http.StatusServiceUnavailable, w.Code)
 	require.Contains(t, w.Body.String(), "not configured for this investigation")
 }
+
+func TestPromEndpoint_ArchivedInvestigationReturns410(t *testing.T) {
+	t.Parallel()
+	mgr, inv := newTestManagerWithInvestigationForLabel(t)
+	inv.SessionDir = t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(inv.SessionDir, k8smcp.ActiveContextFile), []byte("cluster-a"), 0o600))
+	inv.PromTarget = testPromTarget
+	// Archive the investigation.
+	inv.mu.Lock()
+	inv.archived = true
+	inv.mu.Unlock()
+
+	a := &apiHandlers{
+		manager:        mgr,
+		telemetryToken: "tok",
+		promForwarder:  newTestPromMgr("http://127.0.0.1:60001"),
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/internal/prom/"+inv.ID+"/endpoint", nil)
+	req.Header.Set("Authorization", "Bearer tok")
+	req.SetPathValue("id", inv.ID)
+	w := httptest.NewRecorder()
+	a.handlePromEndpoint(w, req)
+	require.Equal(t, http.StatusGone, w.Code)
+	require.Contains(t, w.Body.String(), "archived")
+}

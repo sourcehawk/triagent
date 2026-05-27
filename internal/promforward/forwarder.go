@@ -13,6 +13,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 )
@@ -46,7 +47,8 @@ type resolveTargetResult struct {
 	podPort      int
 }
 
-// resolveTarget finds a single running pod backing target.Service.
+// resolveTarget finds a single running pod backing target.Service and
+// resolves the actual pod port from the matching ServicePort.TargetPort.
 // client-go's portforward only accepts a pod, so we resolve the service
 // to a pod selector and pick the first running pod.
 func resolveTarget(cs kubernetes.Interface, target Target) (resolveTargetResult, error) {
@@ -57,6 +59,22 @@ func resolveTarget(cs kubernetes.Interface, target Target) (resolveTargetResult,
 	if len(svc.Spec.Selector) == 0 {
 		return resolveTargetResult{}, fmt.Errorf("service %s/%s has no selector", target.Namespace, target.Service)
 	}
+
+	// Find the ServicePort matching target.Port so we can resolve its
+	// TargetPort. Kubernetes lets Services expose port X while routing
+	// to a different numeric or named port on the pod; we can't assume
+	// they're the same.
+	var svcPort *corev1.ServicePort
+	for i := range svc.Spec.Ports {
+		if int(svc.Spec.Ports[i].Port) == target.Port {
+			svcPort = &svc.Spec.Ports[i]
+			break
+		}
+	}
+	if svcPort == nil {
+		return resolveTargetResult{}, fmt.Errorf("service %s/%s has no port matching %d", target.Namespace, target.Service, target.Port)
+	}
+
 	selector := labelSelector(svc.Spec.Selector)
 	pods, err := cs.CoreV1().Pods(target.Namespace).List(context.Background(), metav1.ListOptions{LabelSelector: selector})
 	if err != nil {
@@ -69,13 +87,38 @@ func resolveTarget(cs kubernetes.Interface, target Target) (resolveTargetResult,
 		if p.Status.Phase != corev1.PodRunning {
 			continue
 		}
+		podPort, err := resolvePodPort(&p, svcPort.TargetPort)
+		if err != nil {
+			return resolveTargetResult{}, fmt.Errorf("resolve target port for pod %s: %w", p.Name, err)
+		}
 		return resolveTargetResult{
 			podName:      p.Name,
 			podNamespace: p.Namespace,
-			podPort:      target.Port,
+			podPort:      podPort,
 		}, nil
 	}
 	return resolveTargetResult{}, fmt.Errorf("no running pods for service %s/%s", target.Namespace, target.Service)
+}
+
+// resolvePodPort converts a ServicePort.TargetPort to a numeric pod
+// port. Int values pass through; named string ports get looked up on
+// the pod's container specs.
+func resolvePodPort(pod *corev1.Pod, target intstr.IntOrString) (int, error) {
+	switch target.Type {
+	case intstr.Int:
+		return int(target.IntVal), nil
+	case intstr.String:
+		for _, c := range pod.Spec.Containers {
+			for _, port := range c.Ports {
+				if port.Name == target.StrVal {
+					return int(port.ContainerPort), nil
+				}
+			}
+		}
+		return 0, fmt.Errorf("named port %q not found on pod containers", target.StrVal)
+	default:
+		return 0, fmt.Errorf("unknown TargetPort type %v", target.Type)
+	}
 }
 
 func labelSelector(m map[string]string) string {
