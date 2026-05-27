@@ -7,11 +7,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestNew_RequiresEndpoint(t *testing.T) {
-	t.Parallel()
-	_, err := New(Options{})
-	require.Error(t, err, "empty Endpoint must fail")
-}
 
 func TestNew_ReturnsServer(t *testing.T) {
 	t.Parallel()

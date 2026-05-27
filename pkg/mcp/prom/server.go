@@ -24,8 +24,8 @@ import (
 
 // Options configures the prom MCP server.
 type Options struct {
-	// Endpoint is the Prometheus base URL (no trailing slash, no /api
-	// suffix). Required.
+	// Endpoint is the static Prometheus base URL. Required when
+	// EndpointResolver is empty; optional otherwise.
 	Endpoint string
 	// Bearer is an optional Authorization: Bearer <token>. Mutually
 	// exclusive with BasicAuth.
@@ -34,12 +34,31 @@ type Options struct {
 	BasicAuth string
 	// HTTPClient is optional; defaults to a http.Client with 10s timeout.
 	HTTPClient *http.Client
+
+	// EndpointResolver, when non-empty, is a launcher / orchestrator
+	// URL the MCP POSTs to before every tool call to obtain the
+	// current Prom endpoint. Response shape: {"url": "..."} or
+	// non-2xx with a body describing why no endpoint is available.
+	// When set, the MCP's snapshot is replaced whenever the resolver
+	// returns a URL that differs from the current snapshot's endpoint.
+	EndpointResolver string
+	// LauncherToken, when non-empty, is sent as `Authorization: Bearer
+	// <token>` on resolver requests. Optional — resolvers that don't
+	// require auth simply ignore it.
+	LauncherToken string
 }
 
 // Server is the prom MCP server.
 type Server struct {
 	impl     *mcp.Server
 	snapshot atomic.Pointer[snapshot]
+
+	// resolver machinery (all optional; empty resolverURL → static mode)
+	resolverURL   string
+	launcherToken string
+	httpClient    *http.Client
+	bearer        string
+	basic         string
 }
 
 // snapshot holds the per-binding state. Replaced wholesale on rebind so
@@ -54,8 +73,8 @@ type snapshot struct {
 // in Run, so a misconfigured endpoint fails loudly at startup instead of
 // during the first tool call.
 func New(opts Options) (*Server, error) {
-	if opts.Endpoint == "" {
-		return nil, fmt.Errorf("endpoint is required")
+	if opts.Endpoint == "" && opts.EndpointResolver == "" {
+		return nil, fmt.Errorf("Endpoint or EndpointResolver is required")
 	}
 	if opts.Bearer != "" && opts.BasicAuth != "" {
 		return nil, fmt.Errorf("bearer and BasicAuth are mutually exclusive")
@@ -68,10 +87,21 @@ func New(opts Options) (*Server, error) {
 		Name:    "triagent-mcp-prom",
 		Version: "0.1.0",
 	}, nil)
-	s := &Server{impl: impl}
+	s := &Server{
+		impl:          impl,
+		resolverURL:   opts.EndpointResolver,
+		launcherToken: opts.LauncherToken,
+		httpClient:    httpClient,
+		bearer:        opts.Bearer,
+		basic:         opts.BasicAuth,
+	}
+	endpoint := opts.Endpoint
+	if endpoint == "" {
+		endpoint = "http://127.0.0.1:0" // unreachable placeholder; replaced by first resolver call
+	}
 	s.snapshot.Store(&snapshot{
-		endpoint: opts.Endpoint,
-		client:   newPromClient(opts.Endpoint, opts.Bearer, opts.BasicAuth, httpClient),
+		endpoint: endpoint,
+		client:   newPromClient(endpoint, opts.Bearer, opts.BasicAuth, httpClient),
 		catalog:  emptyCatalog(),
 	})
 	s.register()
@@ -104,7 +134,10 @@ func (s *Server) register() {
 		Description: "Indexed metric namespace summary + tool guidance. Read once at attach to learn what's available before issuing queries.",
 		MIMEType:    "text/plain",
 	}, func(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
-		snap := s.snapshot.Load()
+		snap, err := s.currentSnapshot(ctx)
+		if err != nil {
+			return nil, err
+		}
 		body := renderInfo(snap.catalog)
 		return &mcp.ReadResourceResult{
 			Contents: []*mcp.ResourceContents{
@@ -145,8 +178,11 @@ type listMetricsIn struct {
 }
 
 func (s *Server) handleListMetrics(ctx context.Context, _ *mcp.CallToolRequest, in listMetricsIn) (*mcp.CallToolResult, SearchResult, error) {
-	snap := s.snapshot.Load()
-	if snap == nil || len(snap.catalog.names) == 0 {
+	snap, err := s.currentSnapshot(ctx)
+	if err != nil {
+		return errorResult(err.Error()), SearchResult{Matches: []SearchMatch{}}, nil
+	}
+	if len(snap.catalog.names) == 0 {
 		return errorResult("catalog empty — the endpoint may have no metrics indexed, or it is not yet reachable"), SearchResult{Matches: []SearchMatch{}}, nil
 	}
 	r := searchMetrics(snap.catalog, in.Query, in.Limit)
@@ -184,8 +220,11 @@ type describeMetricIn struct {
 }
 
 func (s *Server) handleDescribeMetric(ctx context.Context, _ *mcp.CallToolRequest, in describeMetricIn) (*mcp.CallToolResult, DescribeResult, error) {
-	snap := s.snapshot.Load()
-	if snap == nil || len(snap.catalog.names) == 0 {
+	snap, err := s.currentSnapshot(ctx)
+	if err != nil {
+		return errorResult(err.Error()), DescribeResult{Labels: []labelInfo{}}, nil
+	}
+	if len(snap.catalog.names) == 0 {
 		return errorResult("catalog empty — the endpoint may have no metrics indexed, or it is not yet reachable"), DescribeResult{Labels: []labelInfo{}}, nil
 	}
 	res, err := describeMetric(ctx, snap.client, snap.catalog, in.Name)
@@ -201,8 +240,11 @@ type promQueryIn struct {
 }
 
 func (s *Server) handleQuery(ctx context.Context, _ *mcp.CallToolRequest, in promQueryIn) (*mcp.CallToolResult, QueryResult, error) {
-	snap := s.snapshot.Load()
-	if snap == nil || len(snap.catalog.names) == 0 {
+	snap, err := s.currentSnapshot(ctx)
+	if err != nil {
+		return errorResult(err.Error()), QueryResult{}, nil
+	}
+	if len(snap.catalog.names) == 0 {
 		return errorResult("catalog empty — the endpoint may have no metrics indexed, or it is not yet reachable"), QueryResult{}, nil
 	}
 	res, err := runInstantQuery(ctx, snap, in.Promql, in.Time)
@@ -218,8 +260,11 @@ type recentValueIn struct {
 }
 
 func (s *Server) handleRecentValue(ctx context.Context, _ *mcp.CallToolRequest, in recentValueIn) (*mcp.CallToolResult, ValueResult, error) {
-	snap := s.snapshot.Load()
-	if snap == nil || len(snap.catalog.names) == 0 {
+	snap, err := s.currentSnapshot(ctx)
+	if err != nil {
+		return errorResult(err.Error()), ValueResult{}, nil
+	}
+	if len(snap.catalog.names) == 0 {
 		return errorResult("catalog empty — the endpoint may have no metrics indexed, or it is not yet reachable"), ValueResult{}, nil
 	}
 	res, err := runRecentValue(ctx, snap, in.Metric, in.Labels)
@@ -239,8 +284,11 @@ type promQueryRangeIn struct {
 }
 
 func (s *Server) handleQueryRange(ctx context.Context, _ *mcp.CallToolRequest, in promQueryRangeIn) (*mcp.CallToolResult, RangeResult, error) {
-	snap := s.snapshot.Load()
-	if snap == nil || len(snap.catalog.names) == 0 {
+	snap, err := s.currentSnapshot(ctx)
+	if err != nil {
+		return errorResult(err.Error()), RangeResult{Series: []RangeSeries{}}, nil
+	}
+	if len(snap.catalog.names) == 0 {
 		return errorResult("catalog empty — the endpoint may have no metrics indexed, or it is not yet reachable"), RangeResult{Series: []RangeSeries{}}, nil
 	}
 	res, err := runRangeQuery(ctx, snap, in.Promql, in.Range, in.End, in.MaxSeries, in.MaxPoints, in.Raw)
