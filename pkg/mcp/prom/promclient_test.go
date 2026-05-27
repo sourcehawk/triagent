@@ -88,17 +88,33 @@ func TestPromClient_Metadata(t *testing.T) {
 
 func TestPromClient_BearerHeader(t *testing.T) {
 	t.Parallel()
-	var seen string
+	seen := make(chan string, 1)
 	stub := newStubProm(t, stubHandlers{
 		labelNames: func(w http.ResponseWriter, r *http.Request) {
-			seen = r.Header.Get("Authorization")
+			seen <- r.Header.Get("Authorization")
 			writeJSON(t, w, map[string]any{"status": "success", "data": []string{}})
 		},
 	})
 	c := newPromClient(stub.URL, "tok", "", http.DefaultClient)
 	_, err := c.labelNames(context.Background())
 	require.NoError(t, err)
-	assert.Equal(t, "Bearer tok", seen)
+	assert.Equal(t, "Bearer tok", <-seen)
+}
+
+func TestPromClient_BasicAuthHeader(t *testing.T) {
+	t.Parallel()
+	seen := make(chan string, 1)
+	stub := newStubProm(t, stubHandlers{
+		labelNames: func(w http.ResponseWriter, r *http.Request) {
+			seen <- r.Header.Get("Authorization")
+			writeJSON(t, w, map[string]any{"status": "success", "data": []string{}})
+		},
+	})
+	c := newPromClient(stub.URL, "", "user:pass", http.DefaultClient)
+	_, err := c.labelNames(context.Background())
+	require.NoError(t, err)
+	// base64("user:pass") == "dXNlcjpwYXNz"
+	assert.Equal(t, "Basic dXNlcjpwYXNz", <-seen)
 }
 
 func TestPromClient_NonSuccess(t *testing.T) {
