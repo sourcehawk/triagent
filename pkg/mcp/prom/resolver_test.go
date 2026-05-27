@@ -134,4 +134,6 @@ func TestNew_RequiresEndpointOrResolver(t *testing.T) {
 	t.Parallel()
 	_, err := New(Options{})
 	require.Error(t, err)
+	require.Contains(t, err.Error(), "Endpoint")
+	require.Contains(t, err.Error(), "EndpointResolver")
 }

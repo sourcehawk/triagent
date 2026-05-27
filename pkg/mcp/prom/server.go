@@ -114,10 +114,16 @@ func New(opts Options) (*Server, error) {
 // logged but does not abort — the catalog stays empty and tools surface
 // "catalog empty" to the agent.
 func (s *Server) Run(ctx context.Context) error {
-	if err := s.refreshCatalog(ctx); err != nil {
-		// Non-fatal: surface to logs via the SDK's stderr; tools will
-		// report "catalog empty" until a rebind succeeds.
-		_, _ = fmt.Fprintf(stderrWriter, "prom: initial catalog fetch failed: %v\n", err)
+	// In static-endpoint mode, prime the catalog up-front so the first
+	// tool call doesn't pay a refresh round-trip. In resolver mode,
+	// skip — the resolver will be asked on the first tool call and
+	// the catalog refresh will land alongside that, against whatever
+	// URL the resolver returns. Refreshing against the placeholder
+	// http://127.0.0.1:0 would just emit a noisy "fetch failed" line.
+	if s.resolverURL == "" {
+		if err := s.refreshCatalog(ctx); err != nil {
+			_, _ = fmt.Fprintf(stderrWriter, "prom: initial catalog fetch failed: %v\n", err)
+		}
 	}
 	return s.impl.Run(ctx, &mcp.StdioTransport{})
 }
