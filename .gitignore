@@ -30,7 +30,9 @@ node_modules
 
 # Local-only superpowers / claude harness state
 .worktrees/
-.docs/superpowers
+.docs/superpowers/plans/*
+.docs/superpowers/spec/*
+.docs/superpowers/design/*
 .claude/
 .claire
 
