@@ -247,3 +247,83 @@ func TestRecentValue_RequiresMetric(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "metric is required")
 }
+
+func TestQueryRange_ComputesStepForPointBudget(t *testing.T) {
+	t.Parallel()
+	var gotStep string
+	stub := newStubProm(t, stubHandlers{
+		queryRange: func(w http.ResponseWriter, r *http.Request) {
+			gotStep = r.URL.Query().Get("step")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"status": "success",
+				"data": map[string]any{
+					"resultType": "matrix",
+					"result": []map[string]any{
+						{"metric": map[string]string{"pod": "a", "namespace": "x"}, "values": []any{
+							[]any{1700000000, "0.1"},
+							[]any{1700000060, "0.2"},
+						}},
+					},
+				},
+			})
+		},
+	})
+	cat := cardCatalog("noisy", 5)
+	snap := &snapshot{client: newPromClient(stub.URL, "", "", http.DefaultClient), catalog: cat}
+	res, err := runRangeQuery(context.Background(), snap, `noisy{namespace="x"}`, "15m", "", 10, 100, false)
+	require.NoError(t, err)
+	require.Len(t, res.Series, 1)
+	// 15m / 100 points → 9s step
+	assert.Equal(t, "9s", res.Step)
+	assert.Equal(t, "9s", gotStep)
+	assert.NotEmpty(t, res.Series[0].Sparkline)
+	assert.InDelta(t, 0.15, res.Series[0].Stats.Mean, 0.001)
+}
+
+func TestQueryRange_RawPointsMode(t *testing.T) {
+	t.Parallel()
+	stub := newStubProm(t, stubHandlers{
+		queryRange: func(w http.ResponseWriter, r *http.Request) {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"status": "success",
+				"data": map[string]any{
+					"resultType": "matrix",
+					"result": []map[string]any{
+						{"metric": map[string]string{"pod": "a", "namespace": "x"}, "values": []any{
+							[]any{1700000000, "0.1"},
+							[]any{1700000060, "0.2"},
+							[]any{1700000120, "0.3"},
+						}},
+					},
+				},
+			})
+		},
+	})
+	cat := cardCatalog("noisy", 5)
+	snap := &snapshot{client: newPromClient(stub.URL, "", "", http.DefaultClient), catalog: cat}
+	res, err := runRangeQuery(context.Background(), snap, `noisy{namespace="x"}`, "15m", "", 10, 100, true)
+	require.NoError(t, err)
+	require.Len(t, res.Series, 1)
+	assert.Len(t, res.Series[0].Points, 3)
+}
+
+func TestQueryRange_RejectsOverSeriesCap(t *testing.T) {
+	t.Parallel()
+	stub := newStubProm(t, stubHandlers{
+		queryRange: func(w http.ResponseWriter, r *http.Request) {
+			var rows []map[string]any
+			for i := 0; i < 30; i++ {
+				rows = append(rows, map[string]any{
+					"metric": map[string]string{"i": strconv.Itoa(i), "namespace": "x"},
+					"values": []any{[]any{1700000000, "1"}},
+				})
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": map[string]any{"resultType": "matrix", "result": rows}})
+		},
+	})
+	cat := cardCatalog("noisy", 5)
+	snap := &snapshot{client: newPromClient(stub.URL, "", "", http.DefaultClient), catalog: cat}
+	_, err := runRangeQuery(context.Background(), snap, `noisy{namespace="x"}`, "15m", "", 10, 100, false)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "30 series")
+}

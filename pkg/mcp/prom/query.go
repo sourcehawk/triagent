@@ -3,6 +3,7 @@ package prom
 import (
 	"context"
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -167,6 +168,167 @@ func escapeMatcherValue(s string) string {
 		out = append(out, c)
 	}
 	return string(out)
+}
+
+const (
+	rangeHardSeriesCap = 25
+	rangeMaxDuration   = 24 * time.Hour
+)
+
+// RangeResult is the JSON shape returned by prom_query_range.
+type RangeResult struct {
+	Step   string        `json:"step"`
+	Series []RangeSeries `json:"series"`
+}
+
+// RangeSeries is one per-series row in a RangeResult.
+type RangeSeries struct {
+	Labels    map[string]string `json:"labels"`
+	Stats     *SeriesStats      `json:"stats,omitempty"`
+	Sparkline string            `json:"sparkline,omitempty"`
+	Points    []RangePoint      `json:"points,omitempty"`
+}
+
+// RangePoint is a single [ts, value] pair in raw mode.
+type RangePoint struct {
+	Timestamp string  `json:"ts"`
+	Value     float64 `json:"v"`
+}
+
+// SeriesStats holds summary statistics for a range series.
+type SeriesStats struct {
+	Min   float64 `json:"min"`
+	Max   float64 `json:"max"`
+	Mean  float64 `json:"mean"`
+	P50   float64 `json:"p50"`
+	P95   float64 `json:"p95"`
+	P99   float64 `json:"p99"`
+	First float64 `json:"first"`
+	Last  float64 `json:"last"`
+}
+
+func runRangeQuery(ctx context.Context, snap *snapshot, expr, rangeStr, endStr string, maxSeries, maxPoints int, raw bool) (RangeResult, error) {
+	if err := checkScope(ctx, snap.client, snap.catalog, expr); err != nil {
+		return RangeResult{}, err
+	}
+	dur, err := time.ParseDuration(rangeStr)
+	if err != nil {
+		return RangeResult{}, fmt.Errorf("invalid range %q: %w", rangeStr, err)
+	}
+	if dur > rangeMaxDuration {
+		return RangeResult{}, fmt.Errorf("range %s exceeds cap of %s", dur, rangeMaxDuration)
+	}
+	if dur <= 0 {
+		return RangeResult{}, fmt.Errorf("range must be positive")
+	}
+	if maxPoints <= 0 {
+		maxPoints = 100
+	}
+	if maxSeries <= 0 {
+		maxSeries = 10
+	}
+	if maxSeries > rangeHardSeriesCap {
+		maxSeries = rangeHardSeriesCap
+	}
+
+	end := time.Now().UTC()
+	if endStr != "" {
+		t, perr := time.Parse(time.RFC3339, endStr)
+		if perr != nil {
+			return RangeResult{}, fmt.Errorf("invalid end %q: %w", endStr, perr)
+		}
+		end = t.UTC()
+	}
+	start := end.Add(-dur)
+
+	stepSec := int(dur.Seconds()) / maxPoints
+	if stepSec < 1 {
+		stepSec = 1
+	}
+	step := fmt.Sprintf("%ds", stepSec)
+
+	res, err := snap.client.queryRange(ctx, expr,
+		strconv.FormatInt(start.Unix(), 10),
+		strconv.FormatInt(end.Unix(), 10),
+		step,
+	)
+	if err != nil {
+		return RangeResult{}, err
+	}
+	if len(res.Result) > maxSeries {
+		return RangeResult{}, fmt.Errorf(
+			"query returned %d series; cap is %d. Wrap in topk(N, ...), aggregate, or add a scope matcher.",
+			len(res.Result), maxSeries,
+		)
+	}
+
+	out := RangeResult{Step: step}
+	for _, sr := range res.Result {
+		values := make([]float64, 0, len(sr.Values))
+		points := make([]RangePoint, 0, len(sr.Values))
+		for _, pair := range sr.Values {
+			v, ts, perr := parseSamplePair(pair)
+			if perr != nil {
+				return RangeResult{}, perr
+			}
+			values = append(values, v)
+			points = append(points, RangePoint{Timestamp: ts, Value: v})
+		}
+		series := RangeSeries{Labels: sr.Metric}
+		if raw {
+			if len(points) > maxPoints {
+				points = points[:maxPoints]
+			}
+			series.Points = points
+		} else {
+			stats := computeStats(values)
+			series.Stats = &stats
+			series.Sparkline = sparkline(values)
+		}
+		out.Series = append(out.Series, series)
+	}
+	return out, nil
+}
+
+// computeStats returns summary statistics over the provided values.
+// Returns a zero-value SeriesStats for an empty slice.
+func computeStats(vals []float64) SeriesStats {
+	if len(vals) == 0 {
+		return SeriesStats{}
+	}
+	sorted := append([]float64(nil), vals...)
+	sort.Float64s(sorted)
+	stats := SeriesStats{
+		Min:   sorted[0],
+		Max:   sorted[len(sorted)-1],
+		First: vals[0],
+		Last:  vals[len(vals)-1],
+		P50:   percentile(sorted, 0.50),
+		P95:   percentile(sorted, 0.95),
+		P99:   percentile(sorted, 0.99),
+	}
+	var sum float64
+	for _, v := range vals {
+		sum += v
+	}
+	stats.Mean = sum / float64(len(vals))
+	return stats
+}
+
+// percentile returns the value at the given percentile p (0–1) from a
+// pre-sorted slice using floor interpolation.
+func percentile(sorted []float64, p float64) float64 {
+	if len(sorted) == 0 {
+		return 0
+	}
+	idx := int(math.Floor(p * float64(len(sorted)-1)))
+	if idx < 0 {
+		idx = 0
+	}
+	if idx >= len(sorted) {
+		idx = len(sorted) - 1
+	}
+	return sorted[idx]
 }
 
 // parseStringPair handles Prom's [timestampSeconds, "value"] shape for

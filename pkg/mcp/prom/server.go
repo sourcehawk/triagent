@@ -132,6 +132,11 @@ func (s *Server) register() {
 		Name:        "prom_recent_value",
 		Description: "Read the current value of `metric` for the exact label set `labels`. Returns a single value or a structured error (no data / multiple-series-matched-narrow-the-label-set). Preferred over composing PromQL when you know the labels.",
 	}, telemetry.Wrap("prom_recent_value", s.handleRecentValue))
+
+	mcp.AddTool(s.impl, &mcp.Tool{
+		Name:        "prom_query_range",
+		Description: "Run a range query when shape-over-time matters. Default response is a per-series summary (min/max/mean/percentiles/first/last + 20-cell sparkline). Step is auto-computed from range / max_points to stay inside the point budget. Series cap is 10 by default, hard ceiling 25. Same scope-enforcement rules as prom_query. Prefer prom_query for scalar/threshold questions; reach for this only when you genuinely need the time-shape.",
+	}, telemetry.Wrap("prom_query_range", s.handleQueryRange))
 }
 
 type listMetricsIn struct {
@@ -220,6 +225,27 @@ func (s *Server) handleRecentValue(ctx context.Context, _ *mcp.CallToolRequest, 
 	res, err := runRecentValue(ctx, snap, in.Metric, in.Labels)
 	if err != nil {
 		return errorResult(err.Error()), ValueResult{}, nil
+	}
+	return nil, res, nil
+}
+
+type promQueryRangeIn struct {
+	Promql    string `json:"promql" jsonschema:"Required. Range PromQL. Prefer prom_query for scalar-or-small-vector questions; reach for prom_query_range only when shape-over-time matters."`
+	Range     string `json:"range" jsonschema:"Required. Duration string (e.g. \"15m\", \"1h\"). Cap 24h."`
+	End       string `json:"end,omitempty" jsonschema:"Optional ISO-8601 end time. Defaults to now."`
+	MaxSeries int    `json:"max_series,omitempty" jsonschema:"Per-call series cap; default 10, hard ceiling 25."`
+	MaxPoints int    `json:"max_points,omitempty" jsonschema:"Points-per-series budget; default 100. Drives the auto-computed step."`
+	Raw       bool   `json:"raw,omitempty" jsonschema:"When true, return raw [ts, value] points (capped to max_points). Default false → per-series summary stats + sparkline."`
+}
+
+func (s *Server) handleQueryRange(ctx context.Context, _ *mcp.CallToolRequest, in promQueryRangeIn) (*mcp.CallToolResult, RangeResult, error) {
+	snap := s.snapshot.Load()
+	if snap == nil || len(snap.catalog.names) == 0 {
+		return errorResult("catalog empty — the endpoint may have no metrics indexed, or it is not yet reachable"), RangeResult{}, nil
+	}
+	res, err := runRangeQuery(ctx, snap, in.Promql, in.Range, in.End, in.MaxSeries, in.MaxPoints, in.Raw)
+	if err != nil {
+		return errorResult(err.Error()), RangeResult{}, nil
 	}
 	return nil, res, nil
 }
