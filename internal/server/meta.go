@@ -10,6 +10,7 @@ import (
 	"github.com/sourcehawk/triagent/pkg/mcp/k8s"
 	mcpmeta "github.com/sourcehawk/triagent/pkg/mcp/meta"
 	"github.com/sourcehawk/triagent/pkg/mcp/parallel"
+	"github.com/sourcehawk/triagent/pkg/mcp/prom"
 	"github.com/sourcehawk/triagent/pkg/mcp/slack"
 	"github.com/sourcehawk/triagent/pkg/mcp/strategies"
 	"github.com/sourcehawk/triagent/pkg/mcp/teleport"
@@ -104,6 +105,7 @@ func toolCatalog() []MetaTool {
 	specs = append(specs, slack.ToolSpecs()...)
 	specs = append(specs, incidentio.ToolSpecs()...)
 	specs = append(specs, parallel.ToolSpecs()...)
+	specs = append(specs, prom.ToolSpecs()...)
 	specs = append(specs, teleport.ToolSpecs()...)
 	out := make([]MetaTool, 0, len(specs))
 	for _, s := range specs {
