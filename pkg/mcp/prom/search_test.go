@@ -73,7 +73,8 @@ func TestSearch_RejectsWildcard(t *testing.T) {
 func TestSearch_FacetFallbackOnOverflow(t *testing.T) {
 	t.Parallel()
 	r := searchMetrics(sampleCatalog(), "zeebe", 3)
-	assert.Nil(t, r.Matches)
+	require.NotNil(t, r.Matches, "Matches must be non-nil even on overflow path so JSON shape stays []")
+	assert.Empty(t, r.Matches)
 	require.NotNil(t, r.Overflow)
 	assert.Equal(t, 8, r.Overflow.Total)
 	require.GreaterOrEqual(t, len(r.Overflow.Facets), 2)
@@ -93,7 +94,8 @@ func TestSearch_HardCapAt50(t *testing.T) {
 	cat.prefixIdx = buildPrefixIndex(cat.names)
 	r := searchMetrics(cat, "match", 100) // ask for more than hard cap
 	// Hard cap is 50; 80 matches → overflow facet fallback.
-	assert.Nil(t, r.Matches)
+	require.NotNil(t, r.Matches, "Matches must be non-nil even on overflow path so JSON shape stays []")
+	assert.Empty(t, r.Matches)
 	require.NotNil(t, r.Overflow)
 	assert.Equal(t, 80, r.Overflow.Total)
 }
@@ -112,6 +114,14 @@ func TestSearch_NoMatches(t *testing.T) {
 	assert.Empty(t, r.Matches)
 	assert.Nil(t, r.Overflow)
 	assert.Empty(t, r.Error)
+}
+
+func TestSearch_OverflowMatchesIsEmptyNotNil(t *testing.T) {
+	t.Parallel()
+	r := searchMetrics(sampleCatalog(), "zeebe", 3)
+	require.NotNil(t, r.Overflow)
+	require.NotNil(t, r.Matches, "Matches must be non-nil even on overflow path so JSON shape stays []")
+	assert.Empty(t, r.Matches)
 }
 
 // itoa avoids importing strconv just for tests; keeps the test file

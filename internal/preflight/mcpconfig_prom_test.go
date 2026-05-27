@@ -99,6 +99,27 @@ func TestWriteMCPConfig_PromSkippedWhenDisabled(t *testing.T) {
 	require.False(t, ok)
 }
 
+func TestWriteMCPConfig_PromSkippedWhenTelemetryDisabled(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	in := mcpConfigInputs{
+		Dir:    dir,
+		MCPBin: "/usr/bin/triagent-mcp",
+		// TelemetryURL deliberately empty.
+		TraceID:    "inv-1",
+		PromTarget: &promforward.Target{Service: "prometheus", Namespace: "monitoring", Port: 9090},
+	}
+	path, err := writeMCPConfig(in)
+	require.NoError(t, err)
+	body, err := os.ReadFile(path)
+	require.NoError(t, err)
+	var cfg map[string]any
+	require.NoError(t, json.Unmarshal(body, &cfg))
+	servers := cfg["mcpServers"].(map[string]any)
+	_, ok := servers[MCPAliasProm]
+	require.False(t, ok, "prom MCP must not be attached when launcher telemetry is disabled — the resolver URL would be missing")
+}
+
 func TestWriteMCPConfig_PromBearerEnvPassthrough(t *testing.T) {
 	t.Setenv("TRIAGENT_MCP_PROM_BEARER", "secret-bearer")
 	dir := t.TempDir()

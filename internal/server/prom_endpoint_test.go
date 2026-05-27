@@ -15,6 +15,7 @@ import (
 	"k8s.io/client-go/rest"
 
 	"github.com/sourcehawk/triagent/internal/promforward"
+	k8smcp "github.com/sourcehawk/triagent/pkg/mcp/k8s"
 )
 
 // fakeFwd is a minimal PortForwarder for handler tests.
@@ -43,7 +44,7 @@ func TestPromEndpoint_ReturnsForwardURLForActiveContext(t *testing.T) {
 	mgr, inv := newTestManagerWithInvestigationForLabel(t)
 	inv.SessionDir = t.TempDir()
 	inv.PromTarget = testPromTarget
-	require.NoError(t, os.WriteFile(filepath.Join(inv.SessionDir, "active-context"), []byte("cluster-a"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(inv.SessionDir, k8smcp.ActiveContextFile), []byte("cluster-a"), 0o600))
 
 	a := &apiHandlers{
 		manager:        mgr,
@@ -121,7 +122,7 @@ func TestPromEndpoint_NoForwarderConfigured(t *testing.T) {
 	t.Parallel()
 	mgr, inv := newTestManagerWithInvestigationForLabel(t)
 	inv.SessionDir = t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(inv.SessionDir, "active-context"), []byte("cluster-a"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(inv.SessionDir, k8smcp.ActiveContextFile), []byte("cluster-a"), 0o600))
 	// No promForwarder injected.
 	a := &apiHandlers{manager: mgr, telemetryToken: "tok"}
 	req := httptest.NewRequest(http.MethodPost, "/api/internal/prom/"+inv.ID+"/endpoint", nil)
@@ -137,7 +138,7 @@ func TestPromEndpoint_NilPromTargetReturns503(t *testing.T) {
 	t.Parallel()
 	mgr, inv := newTestManagerWithInvestigationForLabel(t)
 	inv.SessionDir = t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(inv.SessionDir, "active-context"), []byte("cluster-a"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(inv.SessionDir, k8smcp.ActiveContextFile), []byte("cluster-a"), 0o600))
 	// PromTarget is nil — investigation has no prom target configured.
 	a := &apiHandlers{
 		manager:        mgr,
@@ -157,7 +158,7 @@ func TestPromEndpoint_PromDisabledReturns503(t *testing.T) {
 	t.Parallel()
 	mgr, inv := newTestManagerWithInvestigationForLabel(t)
 	inv.SessionDir = t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(inv.SessionDir, "active-context"), []byte("cluster-a"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(inv.SessionDir, k8smcp.ActiveContextFile), []byte("cluster-a"), 0o600))
 	// PromDisabled=true even though PromTarget is set.
 	inv.PromDisabled = true
 	inv.PromTarget = testPromTarget

@@ -57,13 +57,14 @@ func TestSparkline_SingleElement(t *testing.T) {
 
 func TestSparkline_NaNClampsToLow(t *testing.T) {
 	t.Parallel()
-	// Document the current NaN behaviour. NaN comparisons always return
-	// false, so NaN does not propagate through the max-reduction in
-	// downsample — NaN buckets carry NaN as-is. In the rune-mapping
-	// loop, (NaN - minVal)/rng is NaN; int(NaN) underflows to
-	// math.MinInt64, which the idx < 0 guard clamps to 0 so NaN cells
-	// silently render as the lowest rune '▁'. Non-NaN values render
-	// normally. Callers that need clean series must filter NaN upstream.
+	// NaN inputs in the values slice end up clamped to the lowest sparkline
+	// rune. NaN comparisons always return false, so NaN does not propagate
+	// through the max-reduction in downsample — NaN buckets carry NaN as-is.
+	// In the rune-mapping loop, (NaN - minVal)/rng is NaN; the exact
+	// integer-conversion result of NaN is platform-defined in Go, but the
+	// existing idx < 0 and idx >= len(runes) guards in sparkline() ensure the
+	// resulting bucket always renders as the lowest rune regardless of how the
+	// conversion resolves. Callers that need clean series must filter NaN upstream.
 	vals := []float64{1, math.NaN(), 3, 5, 7}
 	s := sparkline(vals)
 	assert.Equal(t, 20, runeCount(s))

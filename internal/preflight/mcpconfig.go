@@ -340,7 +340,7 @@ func writeMCPConfig(in mcpConfigInputs) (string, error) {
 		}
 	}
 
-	if !in.PromDisabled && in.PromTarget != nil && in.PromTarget.Service != "" {
+	if !in.PromDisabled && in.PromTarget != nil && in.PromTarget.Service != "" && in.TelemetryURL != "" {
 		promEnv := map[string]string{}
 		if origin := telemetryOrigin(in.TelemetryURL); origin != "" {
 			promEnv[EnvPromResolverURL] = origin + "/api/internal/prom/" + in.TraceID + "/endpoint"

@@ -23,11 +23,11 @@ type SearchMatch struct {
 
 type OverflowReport struct {
 	Total  int           `json:"total"`
-	Facets []OverflowFct `json:"facets"`
+	Facets []OverflowFacet `json:"facets"`
 	Hint   string        `json:"hint"`
 }
 
-type OverflowFct struct {
+type OverflowFacet struct {
 	Prefix string `json:"prefix"`
 	Count  int    `json:"count"`
 }
@@ -86,7 +86,10 @@ func searchMetrics(cat *catalog, query string, limit int) SearchResult {
 		for i, m := range matches {
 			names[i] = m.name
 		}
-		return SearchResult{Overflow: buildOverflow(names)}
+		return SearchResult{
+			Matches:  []SearchMatch{},
+			Overflow: buildOverflow(names),
+		}
 	}
 	out := make([]SearchMatch, len(matches))
 	for i, m := range matches {
@@ -112,9 +115,9 @@ func buildOverflow(names []string) *OverflowReport {
 		}
 		bucket[lcp+seg]++
 	}
-	var facets []OverflowFct
+	var facets []OverflowFacet
 	for p, c := range bucket {
-		facets = append(facets, OverflowFct{Prefix: p, Count: c})
+		facets = append(facets, OverflowFacet{Prefix: p, Count: c})
 	}
 	sort.Slice(facets, func(i, j int) bool {
 		if facets[i].Count != facets[j].Count {

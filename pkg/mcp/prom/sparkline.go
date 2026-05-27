@@ -7,8 +7,9 @@ const sparklineWidth = 20
 var sparklineRunes = []rune{'▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'}
 
 // sparkline downsamples vals to sparklineWidth buckets and renders each
-// as one Unicode block-element rune. Buckets are min-max so the shape
-// is preserved even when len(vals) >> sparklineWidth.
+// as one Unicode block-element rune. Sparse inputs are stretched by
+// nearest-left-neighbour repetition; dense inputs collapse each bucket
+// to its max so transient spikes are preserved in the rendered output.
 func sparkline(vals []float64) string {
 	if len(vals) == 0 {
 		return strings.Repeat("·", sparklineWidth)

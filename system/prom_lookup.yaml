@@ -36,7 +36,7 @@ entrypoint: info
 nodes:
   info:
     description: |
-      If you have NOT already this session, read the `prom://info`
+      If you have NOT already done so this session, read the `prom://info`
       MCP resource. It carries the metric-name count, the top
       `<prefix>_` families, and the tool surface as a single ~1KB
       block. Reading it once at the start of a Prom lookup keeps
