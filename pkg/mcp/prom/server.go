@@ -55,10 +55,10 @@ type snapshot struct {
 // during the first tool call.
 func New(opts Options) (*Server, error) {
 	if opts.Endpoint == "" {
-		return nil, fmt.Errorf("Endpoint is required")
+		return nil, fmt.Errorf("endpoint is required")
 	}
 	if opts.Bearer != "" && opts.BasicAuth != "" {
-		return nil, fmt.Errorf("Bearer and BasicAuth are mutually exclusive")
+		return nil, fmt.Errorf("bearer and BasicAuth are mutually exclusive")
 	}
 	httpClient := opts.HTTPClient
 	if httpClient == nil {
@@ -87,7 +87,7 @@ func (s *Server) Run(ctx context.Context) error {
 	if err := s.refreshCatalog(ctx); err != nil {
 		// Non-fatal: surface to logs via the SDK's stderr; tools will
 		// report "catalog empty" until a rebind succeeds.
-		fmt.Fprintf(stderrWriter, "prom: initial catalog fetch failed: %v\n", err)
+		_, _ = fmt.Fprintf(stderrWriter, "prom: initial catalog fetch failed: %v\n", err)
 	}
 	return s.impl.Run(ctx, &mcp.StdioTransport{})
 }

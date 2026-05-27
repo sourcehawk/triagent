@@ -45,7 +45,7 @@ func checkScope(ctx context.Context, c *promClient, cat *catalog, promql string)
 			}
 			if !scoped {
 				return fmt.Errorf(
-					"scope required for high-cardinality metric %q (cardinality estimate %s). Add at least one non-__name__ label matcher, e.g. namespace=\"...\", service=\"...\", job=\"...\". See prom_describe_metric for typical scope keys.",
+					"scope required for high-cardinality metric %q (cardinality estimate %s): add at least one non-__name__ label matcher, e.g. namespace=\"...\", service=\"...\", job=\"...\"; see prom_describe_metric for typical scope keys",
 					name, formatCard(est),
 				)
 			}

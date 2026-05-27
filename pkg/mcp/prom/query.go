@@ -55,7 +55,7 @@ func runInstantQuery(ctx context.Context, snap *snapshot, expr, atTime string) (
 	case "vector":
 		if len(res.Result) > queryHardSeriesCap {
 			return QueryResult{}, fmt.Errorf(
-				"query returned %d series; cap is %d. Wrap in topk(N, ...), aggregate (sum/avg by (...)) or add a scope matcher.",
+				"query returned %d series; cap is %d — wrap in topk(N, ...), aggregate (sum/avg by (...)) or add a scope matcher",
 				len(res.Result), queryHardSeriesCap,
 			)
 		}
@@ -257,7 +257,7 @@ func runRangeQuery(ctx context.Context, snap *snapshot, expr, rangeStr, endStr s
 	}
 	if len(res.Result) > maxSeries {
 		return RangeResult{}, fmt.Errorf(
-			"query returned %d series; cap is %d. Wrap in topk(N, ...), aggregate, or add a scope matcher.",
+			"query returned %d series; cap is %d — wrap in topk(N, ...), aggregate, or add a scope matcher",
 			len(res.Result), maxSeries,
 		)
 	}
