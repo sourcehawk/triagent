@@ -69,12 +69,14 @@ type ManagerOpts struct {
 // Manager owns user_watches.yaml + the per-watch Pollers. Concurrency-
 // safe; the HTTP layer (Milestone 2) calls Create/Patch/Delete via Mgr.
 type Manager struct {
-	opts     ManagerOpts
-	mu       sync.RWMutex
-	watches  map[string]Watch
-	pollers  map[string]*Poller
-	spawners map[string]*Spawner
-	ctx      context.Context
+	opts      ManagerOpts
+	mu        sync.RWMutex
+	watches   map[string]Watch
+	pollers   map[string]*Poller
+	spawners  map[string]*Spawner
+	ctx       context.Context
+	ctxCancel context.CancelFunc // set by Start; called by Stop to drain spawner goroutines.
+	spawnerWG sync.WaitGroup    // tracks all live spawner goroutines; Stop waits on it.
 }
 
 func NewManager(opts ManagerOpts) (*Manager, error) {
@@ -112,7 +114,9 @@ func NewManager(opts ManagerOpts) (*Manager, error) {
 func (m *Manager) Start(ctx context.Context) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.ctx = ctx
+	derived, cancel := context.WithCancel(ctx)
+	m.ctx = derived
+	m.ctxCancel = cancel
 	for id, w := range m.watches {
 		if !w.Enabled {
 			continue
@@ -123,11 +127,20 @@ func (m *Manager) Start(ctx context.Context) {
 
 func (m *Manager) Stop() {
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	// Cancel the derived context so all spawner Run() loops exit.
+	if m.ctxCancel != nil {
+		m.ctxCancel()
+		m.ctxCancel = nil
+	}
 	for id, p := range m.pollers {
 		p.Stop()
 		delete(m.pollers, id)
 	}
+	m.mu.Unlock()
+	// Wait for all spawner goroutines to finish writing before returning.
+	// Lock is released first so spawner goroutines that need m.mu don't
+	// deadlock while draining.
+	m.spawnerWG.Wait()
 }
 
 func (m *Manager) spawnLocked(id string, w Watch) {
@@ -156,7 +169,11 @@ func (m *Manager) spawnLocked(id string, w Watch) {
 		if len(state.Queued) > 0 || len(state.Running) > 0 {
 			sp := NewSpawner(dir, id, maxOne(w.AutoStart.MaxConcurrent), m.makeSpawnerCreate(id), m.spawnerOptions()...)
 			m.spawners[id] = sp
-			go sp.Run(m.ctx)
+			m.spawnerWG.Add(1)
+			go func() {
+				defer m.spawnerWG.Done()
+				sp.Run(m.ctx)
+			}()
 			sp.signalKick()
 		}
 	}
@@ -574,7 +591,11 @@ func (m *Manager) SpawnFromSignal(_ context.Context, watchID string, req SpawnFr
 	if !ok {
 		sp = NewSpawner(dir, watchID, maxOne(w.AutoStart.MaxConcurrent), m.makeSpawnerCreate(watchID), m.spawnerOptions()...)
 		m.spawners[watchID] = sp
-		go sp.Run(m.ctx)
+		m.spawnerWG.Add(1)
+		go func() {
+			defer m.spawnerWG.Done()
+			sp.Run(m.ctx)
+		}()
 	}
 	m.mu.Unlock()
 

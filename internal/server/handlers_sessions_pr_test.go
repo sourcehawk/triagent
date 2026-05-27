@@ -134,15 +134,16 @@ func TestHandlePushSessionPR_AfterArchiveDoesNotPanic(t *testing.T) {
 		manager:        NewManager(ctx, t.TempDir()),
 		sessionDrafter: blockUntilCancelledDrafter(t),
 	}
-	// Cleanup ordering matters: this t.Cleanup runs FIRST (LIFO) so the
-	// push goroutine's drafter ctx fires and the goroutine can exit before
-	// the tempdir destruction. We then poll PushInProgress to actually
-	// wait for the goroutine to finish.
+	// Cleanup ordering (LIFO): Shutdown registered first runs last, so the
+	// manager store is still intact when cancel+waitForPushDone runs first.
+	// cancel fires → drafter ctx done → push goroutine unblocks → wait
+	// until PushInProgress=false → THEN Shutdown closes the store →
+	// tempdir teardown.
+	t.Cleanup(a.manager.Shutdown)
 	t.Cleanup(func() {
 		cancel()
 		waitForPushDone(t, a.manager)
 	})
-	t.Cleanup(a.manager.Shutdown)
 	a.opts.SessionsPath = clone
 	a.opts.SessionsCloneRoot = clone
 	a.opts.SessionsRepo = "owner/repo"
@@ -200,13 +201,15 @@ func TestHandlePushSessionPR_ConcurrentKickoffReturns409(t *testing.T) {
 		manager:        NewManager(ctx, t.TempDir()),
 		sessionDrafter: blockUntilCancelledDrafter(t),
 	}
-	// Cancel the parent ctx first (LIFO) so the push goroutine's drafter
-	// unblocks, then wait for it to actually finish before tempdir teardown.
+	// Cleanup ordering (LIFO): Shutdown registered first runs last so
+	// waitForPushDone (registered second, runs first) can still call
+	// mgr.List(). cancel fires → drafter ctx done → push goroutine
+	// unblocks → wait until PushInProgress=false → THEN Shutdown.
+	t.Cleanup(a.manager.Shutdown)
 	t.Cleanup(func() {
 		cancel()
 		waitForPushDone(t, a.manager)
 	})
-	t.Cleanup(a.manager.Shutdown)
 	a.opts.SessionsPath = clone
 	a.opts.SessionsCloneRoot = clone
 	a.opts.SessionsRepo = "owner/repo"
