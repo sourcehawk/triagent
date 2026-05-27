@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -64,6 +65,29 @@ func (c *promClient) applyAuth(req *http.Request) {
 	case c.basic != "":
 		req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(c.basic)))
 	}
+}
+
+// series issues GET /api/v1/series?match[]=<expr>&limit=<n>. The Prom
+// response shape is {"status":"success","data":[{label:value, ...}, ...]}.
+// Returns the raw label maps so callers can both count and read sample
+// values without a second round-trip.
+func (c *promClient) series(ctx context.Context, matchExpr string, limit int) ([]map[string]string, error) {
+	q := url.Values{}
+	q.Set("match[]", matchExpr)
+	if limit > 0 {
+		q.Set("limit", strconv.Itoa(limit))
+	}
+	var resp struct {
+		Status string              `json:"status"`
+		Data   []map[string]string `json:"data"`
+	}
+	if err := c.doJSON(ctx, "/api/v1/series", q, &resp); err != nil {
+		return nil, err
+	}
+	if resp.Status != "success" {
+		return nil, fmt.Errorf("prom series: status=%q", resp.Status)
+	}
+	return resp.Data, nil
 }
 
 // labelNames returns the set of metric names indexed by Prom.
