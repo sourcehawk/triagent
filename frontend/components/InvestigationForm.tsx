@@ -34,6 +34,15 @@ export function InvestigationForm({ onSubmit }: Props) {
 
   useEffect(() => {
     api.getProfileInputs().then(setSchema).catch(() => setSchema([]));
+    // Pre-populate prom override fields with the profile's defaults so the
+    // operator sees what's currently configured. Failures (no profile, 503)
+    // leave the fields empty (the existing initial-state behaviour).
+    api.getProfilePromDefaults().then((defaults) => {
+      if (!defaults) return;
+      if (defaults.service) setPromService(defaults.service);
+      if (defaults.namespace) setPromNamespace(defaults.namespace);
+      if (defaults.port > 0) setPromPort(String(defaults.port));
+    });
   }, []);
 
   if (!schema) {

@@ -31,14 +31,18 @@ func newTestPromMgr(url string) *promforward.Manager {
 		KubeBuilder: func(_, _ string) (*rest.Config, kubernetes.Interface, error) {
 			return &rest.Config{}, nil, nil
 		},
-		Target: promforward.Target{Service: "prometheus", Namespace: "monitoring", Port: 9090},
 	})
 }
+
+// testPromTarget is the Target pre-populated on test investigations that need
+// prom wiring (inv.PromTarget must be non-nil for the endpoint to proceed).
+var testPromTarget = &promforward.Target{Service: "prometheus", Namespace: "monitoring", Port: 9090}
 
 func TestPromEndpoint_ReturnsForwardURLForActiveContext(t *testing.T) {
 	t.Parallel()
 	mgr, inv := newTestManagerWithInvestigationForLabel(t)
 	inv.SessionDir = t.TempDir()
+	inv.PromTarget = testPromTarget
 	require.NoError(t, os.WriteFile(filepath.Join(inv.SessionDir, "active-context"), []byte("cluster-a"), 0o600))
 
 	a := &apiHandlers{
@@ -63,6 +67,7 @@ func TestPromEndpoint_NoActiveContextFile(t *testing.T) {
 	t.Parallel()
 	mgr, inv := newTestManagerWithInvestigationForLabel(t)
 	inv.SessionDir = t.TempDir() // dir exists, but no active-context file
+	inv.PromTarget = testPromTarget
 	a := &apiHandlers{
 		manager:        mgr,
 		telemetryToken: "tok",
@@ -126,4 +131,46 @@ func TestPromEndpoint_NoForwarderConfigured(t *testing.T) {
 	a.handlePromEndpoint(w, req)
 	require.Equal(t, http.StatusServiceUnavailable, w.Code)
 	require.Contains(t, w.Body.String(), "prom not configured")
+}
+
+func TestPromEndpoint_NilPromTargetReturns503(t *testing.T) {
+	t.Parallel()
+	mgr, inv := newTestManagerWithInvestigationForLabel(t)
+	inv.SessionDir = t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(inv.SessionDir, "active-context"), []byte("cluster-a"), 0o600))
+	// PromTarget is nil — investigation has no prom target configured.
+	a := &apiHandlers{
+		manager:        mgr,
+		telemetryToken: "tok",
+		promForwarder:  newTestPromMgr("http://127.0.0.1:0"),
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/internal/prom/"+inv.ID+"/endpoint", nil)
+	req.Header.Set("Authorization", "Bearer tok")
+	req.SetPathValue("id", inv.ID)
+	w := httptest.NewRecorder()
+	a.handlePromEndpoint(w, req)
+	require.Equal(t, http.StatusServiceUnavailable, w.Code)
+	require.Contains(t, w.Body.String(), "not configured for this investigation")
+}
+
+func TestPromEndpoint_PromDisabledReturns503(t *testing.T) {
+	t.Parallel()
+	mgr, inv := newTestManagerWithInvestigationForLabel(t)
+	inv.SessionDir = t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(inv.SessionDir, "active-context"), []byte("cluster-a"), 0o600))
+	// PromDisabled=true even though PromTarget is set.
+	inv.PromDisabled = true
+	inv.PromTarget = testPromTarget
+	a := &apiHandlers{
+		manager:        mgr,
+		telemetryToken: "tok",
+		promForwarder:  newTestPromMgr("http://127.0.0.1:0"),
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/internal/prom/"+inv.ID+"/endpoint", nil)
+	req.Header.Set("Authorization", "Bearer tok")
+	req.SetPathValue("id", inv.ID)
+	w := httptest.NewRecorder()
+	a.handlePromEndpoint(w, req)
+	require.Equal(t, http.StatusServiceUnavailable, w.Code)
+	require.Contains(t, w.Body.String(), "not configured for this investigation")
 }

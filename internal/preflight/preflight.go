@@ -15,6 +15,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/sourcehawk/triagent/internal/profile"
+	"github.com/sourcehawk/triagent/internal/promforward"
 	"github.com/sourcehawk/triagent/internal/repos"
 	"github.com/sourcehawk/triagent/pkg/auth"
 )
@@ -96,6 +97,18 @@ type Options struct {
 	TelemetryURL   string
 	TraceID        string
 	TelemetryToken string
+
+	// PromTarget is the per-investigation resolved Prometheus target. When
+	// non-nil (and PromDisabled is false) the prom MCP server entry is
+	// emitted in the session MCP config. When nil, the prom MCP is skipped
+	// regardless of any profile defaults (those should already be reflected
+	// here by the caller).
+	PromTarget *promforward.Target
+
+	// PromDisabled, when true, explicitly suppresses the prom MCP server
+	// entry even if PromTarget is non-nil. Set when the operator opts out
+	// in the preflight form.
+	PromDisabled bool
 }
 
 // Result holds the artifacts a successful preflight produces.
@@ -156,6 +169,8 @@ func Run(opts Options) (*Result, error) {
 		TelemetryURL:       opts.TelemetryURL,
 		TraceID:            opts.TraceID,
 		TelemetryToken:     opts.TelemetryToken,
+		PromTarget:         opts.PromTarget,
+		PromDisabled:       opts.PromDisabled,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("write mcp config: %w", err)

@@ -16,6 +16,7 @@ import (
 	"github.com/sourcehawk/triagent/internal/claude"
 	"github.com/sourcehawk/triagent/internal/editor"
 	"github.com/sourcehawk/triagent/internal/profile"
+	"github.com/sourcehawk/triagent/internal/promforward"
 	"github.com/sourcehawk/triagent/internal/repos"
 	"github.com/sourcehawk/triagent/internal/sessions"
 	operatorskills "github.com/sourcehawk/triagent/operator-skills"
@@ -79,6 +80,15 @@ type Investigation struct {
 	IncidentioMCPEnabled bool
 	LinkedRepos     []repos.LinkedRepo
 	Profile         *profile.Profile // investigation profile (prompt content + playbook IDs)
+	// PromTarget is the per-investigation Prometheus port-forward target,
+	// resolved from the profile defaults overlaid with any per-investigation
+	// override supplied at preflight time. Nil means no prom target was
+	// configured for this investigation.
+	PromTarget  *promforward.Target
+	// PromDisabled, when true, explicitly opts this investigation out of
+	// the prom MCP regardless of profile defaults. Set at preflight time
+	// when the operator checks "disable prom MCP" in the form.
+	PromDisabled bool
 	CreatedAt       time.Time
 
 	// Set on imported investigations (those adopted from a teammate's

@@ -578,11 +578,6 @@ func New(opts Options) (*Server, error) {
 
 	var promForwarder *promforward.Manager
 	if opts.Profile != nil && opts.Profile.Defaults.Prometheus.Service != "" {
-		target := promforward.Target{
-			Service:   opts.Profile.Defaults.Prometheus.Service,
-			Namespace: opts.Profile.Defaults.Prometheus.Namespace,
-			Port:      opts.Profile.Defaults.Prometheus.Port,
-		}
 		promForwarder = promforward.NewManager(promforward.Options{
 			KubeBuilder: func(invID, ctxName string) (*rest.Config, kubernetes.Interface, error) {
 				inv := manager.Get(invID)
@@ -599,7 +594,6 @@ func New(opts Options) (*Server, error) {
 				}
 				return cfg, cs, nil
 			},
-			Target: target,
 		})
 		manager.SetCloseHook(func(invID string) {
 			promForwarder.Stop(invID)

@@ -22,10 +22,6 @@ type Options struct {
 	Factory Factory
 	// KubeBuilder turns a context name into kube clients. Required.
 	KubeBuilder KubeBuilder
-	// Target is the in-cluster Prometheus service to forward to. Same
-	// for every investigation in a launcher run (driven by the active
-	// profile's defaults.prometheus).
-	Target Target
 }
 
 // Manager owns one PortForwarder per investigation. The Get method
@@ -40,6 +36,7 @@ type Manager struct {
 
 type boundEntry struct {
 	contextName string
+	target      Target
 	fwd         PortForwarder
 	url         string
 }
@@ -54,16 +51,20 @@ func NewManager(opts Options) *Manager {
 }
 
 // Get returns the loopback URL of the port-forward bound for the given
-// investigation + kubeconfig context. Provisions a fresh forward on
-// first call or when the context differs from the previously-bound one
-// (the prior forward is torn down).
-func (m *Manager) Get(ctx context.Context, investigationID, contextName string) (string, error) {
+// investigation + kubeconfig context + target. Provisions a fresh forward on
+// first call, or when the context or target differs from the previously-bound
+// one (the prior forward is torn down).
+//
+// The caller is responsible for supplying the per-investigation Target resolved
+// from the profile defaults overlaid with any per-investigation override.
+func (m *Manager) Get(ctx context.Context, investigationID, contextName string, target Target) (string, error) {
 	if contextName == "" {
 		return "", fmt.Errorf("contextName is required")
 	}
 
 	m.mu.Lock()
-	if existing, ok := m.bound[investigationID]; ok && existing.contextName == contextName {
+	if existing, ok := m.bound[investigationID]; ok &&
+		existing.contextName == contextName && existing.target == target {
 		m.mu.Unlock()
 		return existing.url, nil
 	}
@@ -87,7 +88,7 @@ func (m *Manager) Get(ctx context.Context, investigationID, contextName string) 
 	if err != nil {
 		return "", fmt.Errorf("build kube client for context %q: %w", contextName, err)
 	}
-	fwd, err := m.opts.Factory(cfg, cs, m.opts.Target)
+	fwd, err := m.opts.Factory(cfg, cs, target)
 	if err != nil {
 		return "", fmt.Errorf("build forwarder: %w", err)
 	}
@@ -105,23 +106,23 @@ func (m *Manager) Get(ctx context.Context, investigationID, contextName string) 
 		// A concurrent Get raced us and already stored an entry. The
 		// caller-visible behaviour is "last writer wins" — but we must
 		// not leak our just-provisioned forwarder. Stop ours, return
-		// the existing URL if its context matches ours; otherwise
-		// surface our URL but stop the conflict's forwarder. Order
-		// doesn't matter — whichever Stop runs second is a no-op
+		// the existing URL if its context and target match ours;
+		// otherwise surface our URL but stop the conflict's forwarder.
+		// Order doesn't matter — whichever Stop runs second is a no-op
 		// because each entry holds a distinct forwarder.
-		if existing.contextName == contextName {
+		if existing.contextName == contextName && existing.target == target {
 			m.mu.Unlock()
 			fwd.Stop()
 			return existing.url, nil
 		}
-		// Different contexts raced for the same id. Stop the now-stale
-		// peer and store ours.
-		m.bound[investigationID] = boundEntry{contextName: contextName, fwd: fwd, url: url}
+		// Different contexts or targets raced for the same id. Stop the
+		// now-stale peer and store ours.
+		m.bound[investigationID] = boundEntry{contextName: contextName, target: target, fwd: fwd, url: url}
 		m.mu.Unlock()
 		existing.fwd.Stop()
 		return url, nil
 	}
-	m.bound[investigationID] = boundEntry{contextName: contextName, fwd: fwd, url: url}
+	m.bound[investigationID] = boundEntry{contextName: contextName, target: target, fwd: fwd, url: url}
 	m.mu.Unlock()
 	return url, nil
 }

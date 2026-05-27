@@ -43,11 +43,11 @@ func TestManager_GetProvisionsOnce(t *testing.T) {
 			return stub, nil
 		},
 		KubeBuilder: stubKubeBuilder,
-		Target:      Target{Service: "p", Namespace: "n", Port: 9090},
 	})
-	url1, err := mgr.Get(context.Background(), "inv-1", "cluster-a")
+	tgt := Target{Service: "p", Namespace: "n", Port: 9090}
+	url1, err := mgr.Get(context.Background(), "inv-1", "cluster-a", tgt)
 	require.NoError(t, err)
-	url2, err := mgr.Get(context.Background(), "inv-1", "cluster-a")
+	url2, err := mgr.Get(context.Background(), "inv-1", "cluster-a", tgt)
 	require.NoError(t, err)
 	assert.Equal(t, url1, url2)
 	assert.Equal(t, "http://127.0.0.1:7001", url1)
@@ -60,6 +60,7 @@ func TestManager_GetSwapsOnDifferentContext(t *testing.T) {
 	stubB := &stubForwarder{url: "http://127.0.0.1:7003"}
 	idx := 0
 	stubs := []*stubForwarder{stubA, stubB}
+	tgt := Target{Service: "p", Namespace: "n", Port: 9090}
 	mgr := NewManager(Options{
 		Factory: func(*rest.Config, kubernetes.Interface, Target) (PortForwarder, error) {
 			s := stubs[idx]
@@ -67,12 +68,11 @@ func TestManager_GetSwapsOnDifferentContext(t *testing.T) {
 			return s, nil
 		},
 		KubeBuilder: stubKubeBuilder,
-		Target:      Target{},
 	})
-	url, err := mgr.Get(context.Background(), "inv-1", "cluster-a")
+	url, err := mgr.Get(context.Background(), "inv-1", "cluster-a", tgt)
 	require.NoError(t, err)
 	assert.Equal(t, "http://127.0.0.1:7002", url)
-	url, err = mgr.Get(context.Background(), "inv-1", "cluster-b")
+	url, err = mgr.Get(context.Background(), "inv-1", "cluster-b", tgt)
 	require.NoError(t, err)
 	assert.Equal(t, "http://127.0.0.1:7003", url)
 	assert.Equal(t, int32(1), stubA.stopped.Load(), "cluster-a forward must be stopped after swap to cluster-b")
@@ -87,9 +87,8 @@ func TestManager_Stop(t *testing.T) {
 			return stub, nil
 		},
 		KubeBuilder: stubKubeBuilder,
-		Target:      Target{},
 	})
-	_, err := mgr.Get(context.Background(), "inv-1", "cluster-a")
+	_, err := mgr.Get(context.Background(), "inv-1", "cluster-a", Target{Service: "p", Namespace: "n", Port: 9090})
 	require.NoError(t, err)
 	mgr.Stop("inv-1")
 	assert.Equal(t, int32(1), stub.stopped.Load())
@@ -114,7 +113,7 @@ func TestManager_GetReturnsKubeBuilderError(t *testing.T) {
 			return nil, nil, errors.New("kubeconfig parse error")
 		},
 	})
-	_, err := mgr.Get(context.Background(), "inv-1", "any")
+	_, err := mgr.Get(context.Background(), "inv-1", "any", Target{Service: "p", Namespace: "n", Port: 9090})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "kubeconfig")
 }
@@ -126,7 +125,7 @@ func TestManager_GetReturnsForwarderStartError(t *testing.T) {
 		Factory:     func(*rest.Config, kubernetes.Interface, Target) (PortForwarder, error) { return stub, nil },
 		KubeBuilder: stubKubeBuilder,
 	})
-	_, err := mgr.Get(context.Background(), "inv-1", "any")
+	_, err := mgr.Get(context.Background(), "inv-1", "any", Target{Service: "p", Namespace: "n", Port: 9090})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no pods")
 	assert.Equal(t, int32(1), stub.stopped.Load(), "fwd.Stop must be called when Start fails")
@@ -138,7 +137,7 @@ func TestManager_GetRequiresContextName(t *testing.T) {
 		Factory:     func(*rest.Config, kubernetes.Interface, Target) (PortForwarder, error) { return &stubForwarder{}, nil },
 		KubeBuilder: stubKubeBuilder,
 	})
-	_, err := mgr.Get(context.Background(), "inv-1", "")
+	_, err := mgr.Get(context.Background(), "inv-1", "", Target{Service: "p", Namespace: "n", Port: 9090})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "contextName")
 }
@@ -149,7 +148,33 @@ func TestManager_GetReturnsErrorWhenFactoryReturnsNil(t *testing.T) {
 		Factory:     func(*rest.Config, kubernetes.Interface, Target) (PortForwarder, error) { return nil, nil },
 		KubeBuilder: stubKubeBuilder,
 	})
-	_, err := mgr.Get(context.Background(), "inv-1", "any")
+	_, err := mgr.Get(context.Background(), "inv-1", "any", Target{Service: "p", Namespace: "n", Port: 9090})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "nil forwarder")
+}
+
+func TestManager_GetSwapsOnDifferentTarget(t *testing.T) {
+	t.Parallel()
+	stubA := &stubForwarder{url: "http://127.0.0.1:7010"}
+	stubB := &stubForwarder{url: "http://127.0.0.1:7011"}
+	idx := 0
+	stubs := []*stubForwarder{stubA, stubB}
+	tgtA := Target{Service: "prom-a", Namespace: "monitoring", Port: 9090}
+	tgtB := Target{Service: "prom-b", Namespace: "monitoring", Port: 9090}
+	mgr := NewManager(Options{
+		Factory: func(*rest.Config, kubernetes.Interface, Target) (PortForwarder, error) {
+			s := stubs[idx]
+			idx++
+			return s, nil
+		},
+		KubeBuilder: stubKubeBuilder,
+	})
+	url, err := mgr.Get(context.Background(), "inv-1", "cluster-a", tgtA)
+	require.NoError(t, err)
+	assert.Equal(t, "http://127.0.0.1:7010", url)
+	url, err = mgr.Get(context.Background(), "inv-1", "cluster-a", tgtB)
+	require.NoError(t, err)
+	assert.Equal(t, "http://127.0.0.1:7011", url)
+	assert.Equal(t, int32(1), stubA.stopped.Load(), "old forwarder must be stopped when target changes")
+	assert.Equal(t, int32(1), stubB.started.Load())
 }

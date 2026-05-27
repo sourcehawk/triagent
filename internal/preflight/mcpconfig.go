@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/sourcehawk/triagent/internal/profile"
+	"github.com/sourcehawk/triagent/internal/promforward"
 	"github.com/sourcehawk/triagent/internal/repos"
 )
 
@@ -117,6 +118,14 @@ type mcpConfigInputs struct {
 	TelemetryURL     string             // empty disables telemetry across the board
 	TraceID          string             // opaque correlation key (this launcher's investigation id)
 	TelemetryToken   string
+	// PromTarget is the per-investigation resolved Prometheus target. When
+	// non-nil (and PromDisabled is false), the prom MCP server entry is
+	// emitted. Replaces the old profile-level gate so each investigation
+	// carries its own target.
+	PromTarget   *promforward.Target
+	// PromDisabled explicitly suppresses the prom MCP even when PromTarget
+	// is non-nil (operator checked "disable prom MCP" in the form).
+	PromDisabled bool
 }
 
 // telemetryEnv returns the telemetry env vars to inject into a single
@@ -331,7 +340,7 @@ func writeMCPConfig(in mcpConfigInputs) (string, error) {
 		}
 	}
 
-	if in.Profile != nil && in.Profile.Defaults.Prometheus.Service != "" {
+	if !in.PromDisabled && in.PromTarget != nil && in.PromTarget.Service != "" {
 		promEnv := map[string]string{}
 		if origin := telemetryOrigin(in.TelemetryURL); origin != "" {
 			promEnv[EnvPromResolverURL] = origin + "/api/internal/prom/" + in.TraceID + "/endpoint"

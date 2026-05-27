@@ -17,6 +17,7 @@ import (
 	"github.com/sourcehawk/triagent/internal/editor"
 	"github.com/sourcehawk/triagent/internal/preflight"
 	"github.com/sourcehawk/triagent/internal/profile"
+	"github.com/sourcehawk/triagent/internal/promforward"
 	"github.com/sourcehawk/triagent/internal/repos"
 	"github.com/sourcehawk/triagent/internal/sessions"
 	"github.com/sourcehawk/triagent/internal/watches"
@@ -199,6 +200,7 @@ func (a *apiHandlers) register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/tools", a.handleListTools)
 	mux.HandleFunc("GET /api/capabilities", a.handleCapabilities)
 	mux.HandleFunc("GET /api/profile/inputs", a.handleProfileInputs)
+	mux.HandleFunc("GET /api/profile/prom-defaults", a.handleProfilePromDefaults)
 	mux.HandleFunc("POST /api/editor-sessions", a.handleCreateOrResumeEditorSession)
 	mux.HandleFunc("GET /api/editor-sessions", a.handleFindEditorSession)
 	mux.HandleFunc("GET /api/editor-sessions/{id}", a.handleGetEditorSession)
@@ -401,6 +403,11 @@ func (a *apiHandlers) handlePreflight(w http.ResponseWriter, r *http.Request) {
 	slackMCPToken, _ := a.connections.GetSlackToken()
 	ioMCPToken, _ := a.connections.GetIncidentioToken()
 
+	// Resolve per-investigation prom target by overlaying body.Prom
+	// onto the profile's defaults. Each non-zero field in the override
+	// wins; the rest inherit from the profile.
+	promTarget, promDisabled := resolvePromTarget(a.prof, body.Prom)
+
 	runPreflight := a.preflightFn
 	if runPreflight == nil {
 		runPreflight = preflight.Run
@@ -425,6 +432,8 @@ func (a *apiHandlers) handlePreflight(w http.ResponseWriter, r *http.Request) {
 		TraceID:            investigationID,
 		TelemetryToken:     a.telemetryToken,
 		Profile:            a.prof,
+		PromTarget:         promTarget,
+		PromDisabled:       promDisabled,
 	})
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
@@ -446,6 +455,8 @@ func (a *apiHandlers) handlePreflight(w http.ResponseWriter, r *http.Request) {
 		IncidentioMCPEnabled: ioMCPToken != "",
 		LinkedRepos:          linked,
 		Profile:              a.prof,
+		PromTarget:           promTarget,
+		PromDisabled:         promDisabled,
 	}
 	inv.Author = resolveGitAuthor()
 	if _, err := a.manager.Register(inv); err != nil {
@@ -979,12 +990,80 @@ type preflightRequest struct {
 	// inputs it contains {"id": "...", "name": "...", "url": "..."}.
 	// Validated against the profile's InvestigationInputs schema before use.
 	Inputs map[string]map[string]any `json:"inputs"`
+	// Prom carries per-investigation Prometheus overrides. Each non-zero
+	// field overlays the profile's defaults; fields left at zero inherit
+	// the profile value. Disabled=true skips the prom MCP entirely.
+	Prom *promOverrideBody `json:"prom,omitempty"`
 	// Auto, when true, spawns the auto-mode operator agent (separate
 	// claude session) after the investigation is registered. The
 	// preflight HTTP response does NOT block on the operator's first
 	// turn — EnableAuto runs in a goroutine. Operator-side failures are
 	// logged to stderr and the investigation continues in manual mode.
 	Auto bool `json:"auto,omitempty"`
+}
+
+// promOverrideBody is the per-investigation Prometheus override received
+// from the browser form. Each field is optional; zero values inherit the
+// active profile's defaults.prometheus. Disabled=true skips the prom MCP
+// entirely for this investigation, regardless of profile defaults.
+type promOverrideBody struct {
+	Service   string `json:"service,omitempty"`
+	Namespace string `json:"namespace,omitempty"`
+	Port      int    `json:"port,omitempty"`
+	Disabled  bool   `json:"disabled,omitempty"`
+}
+
+// resolvePromTarget applies per-investigation prom overrides on top of
+// profile defaults using field-level overlay semantics:
+//   - If override.Disabled is true → return nil, true (skip prom MCP).
+//   - Otherwise, start from the profile defaults and overwrite each
+//     field where the override is non-zero.
+//   - If the resolved service is empty → return nil, false (no target).
+//
+// Returns (target, disabled) where target is nil when nothing is configured.
+func resolvePromTarget(prof *profile.Profile, override *promOverrideBody) (*promforward.Target, bool) {
+	if override != nil && override.Disabled {
+		return nil, true
+	}
+	// Start from profile defaults (may be zero-value if no profile).
+	var target promforward.Target
+	if prof != nil {
+		target.Service = prof.Defaults.Prometheus.Service
+		target.Namespace = prof.Defaults.Prometheus.Namespace
+		target.Port = prof.Defaults.Prometheus.Port
+	}
+	// Field-level overlay: non-zero values in the override win.
+	if override != nil {
+		if override.Service != "" {
+			target.Service = override.Service
+		}
+		if override.Namespace != "" {
+			target.Namespace = override.Namespace
+		}
+		if override.Port > 0 {
+			target.Port = override.Port
+		}
+	}
+	if target.Service == "" {
+		return nil, false
+	}
+	return &target, false
+}
+
+// handleProfilePromDefaults returns the active profile's prometheus defaults
+// so the frontend can pre-populate the per-investigation prom override form.
+//
+// GET /api/profile/prom-defaults
+func (a *apiHandlers) handleProfilePromDefaults(w http.ResponseWriter, r *http.Request) {
+	if a.prof == nil {
+		writeError(w, http.StatusServiceUnavailable, "no profile configured")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"service":   a.prof.Defaults.Prometheus.Service,
+		"namespace": a.prof.Defaults.Prometheus.Namespace,
+		"port":      a.prof.Defaults.Prometheus.Port,
+	})
 }
 
 // handleListRepos returns the resolved defaults (embedded or file-backed)

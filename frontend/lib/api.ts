@@ -262,6 +262,16 @@ export type PromOverride = {
   disabled?: boolean;
 };
 
+// PromDefaults is the shape returned by GET /api/profile/prom-defaults.
+// Used to pre-populate the per-investigation prom override form with the
+// active profile's configured defaults so operators see what's currently
+// wired and only change what they need to.
+export type PromDefaults = {
+  service: string;
+  namespace: string;
+  port: number;
+};
+
 // InputSchema mirrors the server-side ProfileInput DTO (see Task 4.5).
 // Returned by GET /api/profile/inputs; consumed by the dynamic form (Task 5.7).
 export type InputSchema = {
@@ -724,6 +734,12 @@ export const api = {
     fetchJSON<{ inputs: InputSchema[] }>("/api/profile/inputs").then(
       (r) => r.inputs,
     ),
+
+  // getProfilePromDefaults fetches the active profile's prometheus defaults
+  // so the investigation form can pre-populate the prom override panel.
+  // 503 when no profile is configured (returns null via the catch below).
+  getProfilePromDefaults: () =>
+    fetchJSON<PromDefaults>("/api/profile/prom-defaults").catch(() => null),
 
   health: () => fetchJSON<{ ok: boolean; version?: string }>("/api/health"),
 

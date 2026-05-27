@@ -7,13 +7,14 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/sourcehawk/triagent/internal/promforward"
 	"github.com/sourcehawk/triagent/pkg/mcp/k8s"
 )
 
 // promForwarderAPI is the subset of promforward.Manager the handler
 // needs. Lets tests inject a fake without spinning up a real manager.
 type promForwarderAPI interface {
-	Get(ctx context.Context, investigationID, contextName string) (string, error)
+	Get(ctx context.Context, investigationID, contextName string, target promforward.Target) (string, error)
 	Stop(investigationID string)
 }
 
@@ -25,8 +26,9 @@ type promForwarderAPI interface {
 // of the port-forward bound to the investigation's active kubeconfig
 // context. Provisions the port-forward lazily on first call.
 //
-// 503 when no context is bound yet (active-context file missing) or
-// when prom is not configured for this launcher.
+// 503 when no context is bound yet (active-context file missing), when
+// prom is not configured for this launcher, or when the investigation
+// has no Prometheus target (disabled or unconfigured).
 // 502 when port-forward provisioning fails (target unreachable).
 func (a *apiHandlers) handlePromEndpoint(w http.ResponseWriter, r *http.Request) {
 	if a.telemetryToken == "" {
@@ -47,13 +49,17 @@ func (a *apiHandlers) handlePromEndpoint(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusServiceUnavailable, "prom not configured for this launcher")
 		return
 	}
+	if inv.PromDisabled || inv.PromTarget == nil {
+		writeError(w, http.StatusServiceUnavailable, "Prometheus not configured for this investigation")
+		return
+	}
 	contextName, err := readActiveContext(inv.SessionDir)
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable,
 			"no active kubernetes context — call triagent-k8s.switch_context first")
 		return
 	}
-	url, err := a.promForwarder.Get(r.Context(), id, contextName)
+	url, err := a.promForwarder.Get(r.Context(), id, contextName, *inv.PromTarget)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "port-forward failed: "+err.Error())
 		return
