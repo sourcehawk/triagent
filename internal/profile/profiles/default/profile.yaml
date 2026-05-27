@@ -84,10 +84,14 @@ defaults:
   # from a child profile.
   sessions_path: sessions
 
-  # In-cluster Prometheus coordinates. Reserved for the prom MCP —
-  # parsed today but not yet consumed by the launcher. Set when
-  # you fork so the values are available to future Prom-aware MCPs
-  # without another profile change.
+  # In-cluster Prometheus coordinates. When `service` is non-empty, the
+  # launcher attaches the `triagent-prom` MCP and stands up a
+  # port-forward against `service.namespace:port` in whichever cluster
+  # context the agent is currently bound to (via triagent-k8s.switch_context).
+  # The port-forward is provisioned lazily on the first prom_* tool call
+  # and re-provisioned automatically when the active context changes.
+  # Leave `service` empty in deployments that don't run Prometheus —
+  # the MCP isn't attached and the agent never sees prom_* tools.
   prometheus:
     service: ""
     namespace: ""
