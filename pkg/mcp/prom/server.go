@@ -101,9 +101,24 @@ func (s *Server) register() {
 	// Tools added in later phases.
 }
 
-// refreshCatalog is the catalog rebuild path. Stub here so server.go
-// compiles; the real implementation lands in Task 4.
-func (s *Server) refreshCatalog(_ context.Context) error {
+// refreshCatalog rebuilds the catalog from the current endpoint and
+// atomically swaps the snapshot so in-flight tool calls continue
+// against the old snapshot until they complete.
+func (s *Server) refreshCatalog(ctx context.Context) error {
+	snap := s.snapshot.Load()
+	if snap == nil {
+		return nil
+	}
+	cat, err := buildCatalog(ctx, snap.client)
+	if err != nil {
+		return err
+	}
+	// CAS-style swap: build a new snapshot pointing at the same client.
+	s.snapshot.Store(&snapshot{
+		endpoint: snap.endpoint,
+		client:   snap.client,
+		catalog:  cat,
+	})
 	return nil
 }
 
