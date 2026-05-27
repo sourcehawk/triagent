@@ -2,6 +2,8 @@ package k8s
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"sort"
 	"strings"
 
@@ -113,6 +115,17 @@ func (t *ToolKit) switchContext(_ context.Context, _ *mcp.CallToolRequest, in Sw
 		prev = old.contextName
 	}
 	t.snapshot.Store(newSnap)
+
+	if t.sessionDir != "" {
+		// Best-effort: triagent's launcher reads this file to drive prom
+		// port-forwards. Failure to write is non-fatal — the snapshot
+		// swap already succeeded, the agent's tool calls work, only the
+		// launcher's prom resolver loses visibility into the new context.
+		if err := writeActiveContextFile(t.sessionDir, newSnap.contextName); err != nil {
+			fmt.Fprintf(os.Stderr, "k8s: write active-context: %v\n", err)
+		}
+	}
+
 	out := SwitchContextOutput{
 		PreviousContext: prev,
 		ActiveContext:   newSnap.contextName,

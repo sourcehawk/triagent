@@ -102,6 +102,23 @@ func TestSwitchContext_RebuildsClients(t *testing.T) {
 	assert.Nil(t, kit.snapshot.Load(), "snapshot must be nil after a failed switch")
 }
 
+func TestSwitchContext_FailedSwitchDoesNotWriteActiveContext(t *testing.T) {
+	t.Parallel()
+	kubePath := writeKubeconfig(t, "", "alpha")
+	sessionDir := t.TempDir()
+	kit := kitForContextTests(t, kubePath)
+	kit.sessionDir = sessionDir // file write target
+
+	// Use a context name that's not in the kubeconfig — switchContext
+	// will fail at buildSnapshot and must NOT write the file.
+	res, _, err := kit.switchContext(context.Background(), nil, SwitchContextInput{Name: "does-not-exist"})
+	require.NoError(t, err)
+	require.True(t, res.IsError)
+
+	_, err = os.Stat(filepath.Join(sessionDir, activeContextFile))
+	require.True(t, os.IsNotExist(err), "active-context must not be written on failed switch")
+}
+
 func TestSwitchContext_AtomicSwap(t *testing.T) {
 	t.Parallel()
 	kubePath := writeKubeconfig(t, "", "alpha")
