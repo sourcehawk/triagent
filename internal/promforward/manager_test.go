@@ -129,6 +129,7 @@ func TestManager_GetReturnsForwarderStartError(t *testing.T) {
 	_, err := mgr.Get(context.Background(), "inv-1", "any")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no pods")
+	assert.Equal(t, int32(1), stub.stopped.Load(), "fwd.Stop must be called when Start fails")
 }
 
 func TestManager_GetRequiresContextName(t *testing.T) {
@@ -140,4 +141,15 @@ func TestManager_GetRequiresContextName(t *testing.T) {
 	_, err := mgr.Get(context.Background(), "inv-1", "")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "contextName")
+}
+
+func TestManager_GetReturnsErrorWhenFactoryReturnsNil(t *testing.T) {
+	t.Parallel()
+	mgr := NewManager(Options{
+		Factory:     func(*rest.Config, kubernetes.Interface, Target) (PortForwarder, error) { return nil, nil },
+		KubeBuilder: stubKubeBuilder,
+	})
+	_, err := mgr.Get(context.Background(), "inv-1", "any")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "nil forwarder")
 }

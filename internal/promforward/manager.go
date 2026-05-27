@@ -71,6 +71,14 @@ func (m *Manager) Get(ctx context.Context, investigationID, contextName string) 
 	m.mu.Unlock()
 
 	if hadPrior {
+		// Tear down the prior forwarder before provisioning the new
+		// one. A transient Start failure on the new context therefore
+		// leaves the investigation with no working forward — the
+		// caller's next Get retries from scratch. Keeping the old
+		// forward alive as a fallback is tempting, but would mean
+		// the prom MCP could see a URL bound to the OLD cluster
+		// after a switch_context succeeded — a correctness hazard
+		// worse than a transient outage.
 		prior.fwd.Stop()
 	}
 
@@ -82,6 +90,9 @@ func (m *Manager) Get(ctx context.Context, investigationID, contextName string) 
 	if err != nil {
 		return "", fmt.Errorf("build forwarder: %w", err)
 	}
+	if fwd == nil {
+		return "", fmt.Errorf("factory returned nil forwarder")
+	}
 	url, err := fwd.Start(ctx)
 	if err != nil {
 		fwd.Stop()
@@ -89,6 +100,26 @@ func (m *Manager) Get(ctx context.Context, investigationID, contextName string) 
 	}
 
 	m.mu.Lock()
+	if existing, ok := m.bound[investigationID]; ok {
+		// A concurrent Get raced us and already stored an entry. The
+		// caller-visible behaviour is "last writer wins" — but we must
+		// not leak our just-provisioned forwarder. Stop ours, return
+		// the existing URL if its context matches ours; otherwise
+		// surface our URL but stop the conflict's forwarder. Order
+		// doesn't matter — whichever Stop runs second is a no-op
+		// because each entry holds a distinct forwarder.
+		if existing.contextName == contextName {
+			m.mu.Unlock()
+			fwd.Stop()
+			return existing.url, nil
+		}
+		// Different contexts raced for the same id. Stop the now-stale
+		// peer and store ours.
+		m.bound[investigationID] = boundEntry{contextName: contextName, fwd: fwd, url: url}
+		m.mu.Unlock()
+		existing.fwd.Stop()
+		return url, nil
+	}
 	m.bound[investigationID] = boundEntry{contextName: contextName, fwd: fwd, url: url}
 	m.mu.Unlock()
 	return url, nil
