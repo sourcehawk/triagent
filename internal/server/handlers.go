@@ -96,6 +96,10 @@ type apiHandlers struct {
 	// ingestToken is the per-launch bearer the ingestion-agent MCP sends.
 	// Empty disables the loopback (handlers reject all requests).
 	ingestToken string
+
+	// promForwarder manages per-investigation Prometheus port-forwards.
+	// Nil when prom isn't configured for the active profile.
+	promForwarder promForwarderAPI
 }
 
 // resolvedLinkedRepos returns the merged list at preflight time:
@@ -178,6 +182,7 @@ func (a *apiHandlers) register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/investigations/{id}/archive", a.handleArchiveInvestigation)
 	mux.HandleFunc("POST /api/investigations/{id}/label", a.handleRenameInvestigation)
 	mux.HandleFunc("POST /api/internal/investigations/{id}/label", a.handleSetLabelFromMCP)
+	mux.HandleFunc("POST /api/internal/prom/{id}/endpoint", a.handlePromEndpoint)
 	mux.HandleFunc("POST /api/internal/investigations/{id}/auto/send-message", a.handleAutoSendMessage)
 	mux.HandleFunc("POST /api/internal/investigations/{id}/auto/finish", a.handleAutoFinish)
 	mux.HandleFunc("POST /api/internal/investigations/{id}/auto/request-takeover", a.handleAutoRequestTakeover)
