@@ -117,6 +117,11 @@ func (s *Server) register() {
 		Name:        "prom_list_metrics",
 		Description: "Search the indexed metric namespace by token-AND match against name and HELP text. Returns up to `limit` matches (cap 50). When more than the cap match, returns a sub-prefix facet breakdown instead of the first N — refine with more tokens or pick a sub-prefix and re-search. Required: non-empty, non-wildcard `query`.",
 	}, telemetry.Wrap("prom_list_metrics", s.handleListMetrics))
+
+	mcp.AddTool(s.impl, &mcp.Tool{
+		Name:        "prom_describe_metric",
+		Description: "Return label keys, sample values, related sibling metrics, and total cardinality for a known metric. Use after prom_list_metrics to learn the scope keys before querying. The first call against a fresh metric pays one HTTP round-trip; subsequent calls are cached.",
+	}, telemetry.Wrap("prom_describe_metric", s.handleDescribeMetric))
 }
 
 type listMetricsIn struct {
@@ -157,6 +162,22 @@ func (s *Server) refreshCatalog(ctx context.Context) error {
 		catalog:  cat,
 	})
 	return nil
+}
+
+type describeMetricIn struct {
+	Name string `json:"name" jsonschema:"Required. Exact metric name from prom_list_metrics output."`
+}
+
+func (s *Server) handleDescribeMetric(ctx context.Context, _ *mcp.CallToolRequest, in describeMetricIn) (*mcp.CallToolResult, DescribeResult, error) {
+	snap := s.snapshot.Load()
+	if snap == nil || len(snap.catalog.names) == 0 {
+		return errorResult("catalog empty — the endpoint may have no metrics indexed, or it is not yet reachable"), DescribeResult{}, nil
+	}
+	res, err := describeMetric(ctx, snap.client, snap.catalog, in.Name)
+	if err != nil {
+		return errorResult(err.Error()), DescribeResult{}, nil
+	}
+	return nil, res, nil
 }
 
 // errorResult formats a tool-level error result.
