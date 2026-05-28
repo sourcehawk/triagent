@@ -2,6 +2,7 @@ package watches
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -512,10 +513,11 @@ func TestAutoStart_RetriesPersistAcrossRestart(t *testing.T) {
 	}
 }
 
-// TestManager_StopRefusesFutureSpawns verifies that calling SpawnFromSignal
-// after Stop does not start a new spawner goroutine (which would race with
-// the already-returned spawnerWG.Wait in Stop). The invariant: no panic,
-// no data race, and a second Stop call is idempotent.
+// TestManager_StopRefusesFutureSpawns verifies that SpawnFromSignal after
+// Stop returns ErrManagerStopped and writes no signal row — accepting work
+// after shutdown would queue a signal with no live spawner goroutine to
+// process it. Also confirms no race against spawnerWG.Wait and that a
+// second Stop is idempotent.
 func TestManager_StopRefusesFutureSpawns(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -552,17 +554,25 @@ func TestManager_StopRefusesFutureSpawns(t *testing.T) {
 	// Stop the manager. After this, spawnerWG.Wait has returned.
 	mgr.Stop()
 
-	// SpawnFromSignal after stop must not call spawnerWG.Add — that would
-	// race with the already-returned Wait. The call may succeed or silently
-	// skip the goroutine start; the key invariant is no panic and no race.
-	_, _, err = mgr.SpawnFromSignal(context.Background(), w.ID, SpawnFromSignalReq{
+	// SpawnFromSignal after Stop must reject with ErrManagerStopped before
+	// any work — writing a queued signal row when no spawner can process
+	// it would leak the signal until the next launcher restart.
+	sigID, invID, err := mgr.SpawnFromSignal(context.Background(), w.ID, SpawnFromSignalReq{
 		Briefing:     "post-stop",
 		CitedItemIDs: []string{"I1"},
 		AutoMode:     true,
 	})
-	// SpawnFromSignal's return is best-effort after stop; don't assert on
-	// the exact error — assert only that we got here without a race.
-	_ = err
+	if !errors.Is(err, ErrManagerStopped) {
+		t.Fatalf("SpawnFromSignal after Stop: err = %v, want ErrManagerStopped", err)
+	}
+	if sigID != "" || invID != "" {
+		t.Fatalf("SpawnFromSignal after Stop: sigID=%q invID=%q, want both empty", sigID, invID)
+	}
+
+	sigs, _ := ReadSignals(filepath.Join(WatchDir(yaml, w.ID), "signals.jsonl"), ReadOpts{Limit: 10})
+	if len(sigs) != 0 {
+		t.Fatalf("expected no signal rows after stop-rejected SpawnFromSignal; got %+v", sigs)
+	}
 
 	// Second Stop must be a no-op (idempotent).
 	mgr.Stop()

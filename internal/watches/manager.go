@@ -10,6 +10,13 @@ import (
 	"time"
 )
 
+// ErrManagerStopped is returned by mutating Manager calls (SpawnFromSignal,
+// etc.) after Stop has been called. Accepting work post-shutdown would
+// queue signals with no live spawner goroutine to process them — and the
+// caller has no way to recover without a launcher restart, so a typed
+// error is the only honest response.
+var ErrManagerStopped = errors.New("watches: manager stopped")
+
 // ClearOpts controls which logs ClearLogs truncates.
 type ClearOpts struct {
 	Items     bool
@@ -538,6 +545,12 @@ type SpawnFromSignalReq struct {
 // errorMessage. Returns the queued signalID; invID is always empty on
 // the immediate return path (caller observes invID via the mutated row).
 func (m *Manager) SpawnFromSignal(_ context.Context, watchID string, req SpawnFromSignalReq) (signalID, invID string, err error) {
+	m.mu.RLock()
+	stopped := m.stopped
+	m.mu.RUnlock()
+	if stopped {
+		return "", "", ErrManagerStopped
+	}
 	w, ok := m.Get(watchID)
 	if !ok {
 		return "", "", fmt.Errorf("watch %s not found", watchID)
