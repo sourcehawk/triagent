@@ -106,7 +106,9 @@ NOT the contracts between them). The spec stays a clean ADR otherwise.
 - Single PR → file one `feature` (or `bug`) issue.
 - Multiple PRs → file an `epic` with one sub-issue per PR.
 
-Issues link back to the spec path in their `## Context` section. Don't link the plan yet — it doesn't exist.
+Sub-issues reference only the parent epic in their `## Context` section — GitHub's sub-issue linkage threads them and
+the epic is the design hub. Don't link the spec or plan from any issue: issues are durable, those files move and get
+deleted, and the spec is referenced from the plan, not the ticket.
 
 ### 6. Write the plan (and discover contracts)
 
@@ -151,9 +153,9 @@ Planning often surfaces scope changes. If the issues from step 5 no longer match
 **now**, before implementation starts.
 
 **REQUIRED SUB-SKILL:** Re-invoke `writing-github-issues` Step 2B (update) for any issue whose acceptance criteria,
-scope, or dependencies shifted. When several issues need diff-sized edits at once (common at epic scale), batch the
-confirmation: present every affected issue's gap list + proposed body in a single chat turn and wait for one "yes
-to all" or per-issue redirection, instead of round-tripping the user N times.
+scope, or dependencies shifted. Present and confirm each affected issue **one at a time** — one issue's gap list +
+proposed body per confirmation prompt, then its `gh issue edit`, then the next. Don't batch several issues into a
+single "yes to all": a wall of bodies gets rubber-stamped instead of read.
 
 ### 8. Initialize the orchestration state file
 

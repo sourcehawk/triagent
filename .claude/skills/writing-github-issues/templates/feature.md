@@ -49,6 +49,10 @@ whole section otherwise. -->
 ## Context
 
 <!-- Links and pointers that help a no-context reader: prior issues,
-related PRs, the file path the change replaces, a brainstorm output
-this feature came from, a session id that surfaced the gap. Omit the
-section if there's nothing worth linking. -->
+related PRs, the file path the change replaces, a session id that
+surfaced the gap. For a sub-issue, reference ONLY the parent epic
+(e.g. "Sub-issue of #100") — GitHub's sub-issue linkage threads it
+and the epic is the design hub. Do NOT link the design spec or plan
+(`docs/superpowers/specs/...`, `docs/superpowers/plans/...`): issues
+are durable, those files move and get deleted. Omit the section if
+there's nothing worth linking. -->
