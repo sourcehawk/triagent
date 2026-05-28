@@ -87,6 +87,7 @@ func TestImportRoundtrip_AdoptsArchivedSessionWithProvenance(t *testing.T) {
 	assert.Equal(t, "sess-abc123", importedID, "import should preserve source id so the local slug matches the upstream slug")
 
 	mgr := NewManager(context.Background(), receiverRoot)
+	t.Cleanup(mgr.Shutdown)
 	inv, err := mgr.AdoptFromDir(dir)
 	require.NoError(t, err)
 	dto := inv.Snapshot()
@@ -237,6 +238,7 @@ func TestImportRoundtrip_PreservesSlugFromSource(t *testing.T) {
 	require.NoError(t, err)
 
 	mgr := NewManager(context.Background(), receiverRoot)
+	t.Cleanup(mgr.Shutdown)
 	inv, err := mgr.AdoptFromDir(dir)
 	require.NoError(t, err)
 	dto := inv.Snapshot()
@@ -327,6 +329,7 @@ func TestShareBundle_SlackPickerFieldsRoundTrip(t *testing.T) {
 	require.NotEmpty(t, newID)
 
 	mgr := NewManager(context.Background(), receiverRoot)
+	t.Cleanup(mgr.Shutdown)
 	inv, err := mgr.AdoptFromDir(importedDir)
 	require.NoError(t, err)
 	dto := inv.Snapshot()
@@ -371,6 +374,7 @@ func TestShareBundle_OlderInvestigationsURLOnlyStillWork(t *testing.T) {
 	require.NotEmpty(t, newID)
 
 	mgr := NewManager(context.Background(), receiverRoot)
+	t.Cleanup(mgr.Shutdown)
 	inv, err := mgr.AdoptFromDir(importedDir)
 	require.NoError(t, err)
 	dto := inv.Snapshot()
@@ -411,6 +415,7 @@ func TestShareBundle_LabelRoundtrip(t *testing.T) {
 	require.NoError(t, err)
 
 	mgr := NewManager(context.Background(), receiverRoot)
+	t.Cleanup(mgr.Shutdown)
 	inv, err := mgr.AdoptFromDir(importedDir)
 	require.NoError(t, err)
 	dto := inv.Snapshot()

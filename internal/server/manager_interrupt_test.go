@@ -68,6 +68,7 @@ func (s *interruptibleSession) spawn(ctx context.Context) <-chan claude.Event {
 func TestInvestigation_Interrupt_NotStreamingReturnsSentinel(t *testing.T) {
 	t.Parallel()
 	mgr := NewManager(context.Background(), t.TempDir())
+	t.Cleanup(mgr.Shutdown)
 	inv := mgr.RegisterForTest("inv-int-1")
 	inv.mu.Lock()
 	inv.started = true
@@ -81,6 +82,7 @@ func TestInvestigation_Interrupt_NotStreamingReturnsSentinel(t *testing.T) {
 func TestInvestigation_Interrupt_CancelsTurnAndEmitsBreadcrumb(t *testing.T) {
 	t.Parallel()
 	mgr := NewManager(context.Background(), t.TempDir())
+	t.Cleanup(mgr.Shutdown)
 	inv := mgr.RegisterForTest("inv-int-2")
 	sess := newInterruptibleSession()
 	inv.mu.Lock()
@@ -148,6 +150,7 @@ func TestInvestigation_Interrupt_CancelsTurnAndEmitsBreadcrumb(t *testing.T) {
 func TestInvestigation_Interrupt_LeavesSessionResumable(t *testing.T) {
 	t.Parallel()
 	mgr := NewManager(context.Background(), t.TempDir())
+	t.Cleanup(mgr.Shutdown)
 	inv := mgr.RegisterForTest("inv-int-3")
 	sess := newInterruptibleSession()
 	inv.mu.Lock()
@@ -187,6 +190,7 @@ func TestHandleInterrupt_NotStreamingReturns409(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	mgr := NewManager(context.Background(), root)
+	t.Cleanup(mgr.Shutdown)
 	inv := mgr.RegisterForTest("inv-int-h-1")
 	inv.mu.Lock()
 	inv.started = true
@@ -205,6 +209,7 @@ func TestHandleInterrupt_NotStreamingReturns409(t *testing.T) {
 func TestHandleInterrupt_UnknownInvestigationReturns404(t *testing.T) {
 	t.Parallel()
 	mgr := NewManager(context.Background(), t.TempDir())
+	t.Cleanup(mgr.Shutdown)
 	a := &apiHandlers{manager: mgr}
 	req := httptest.NewRequest(http.MethodPost, "/api/investigations/missing/interrupt", nil)
 	req.SetPathValue("id", "missing")
@@ -216,6 +221,7 @@ func TestHandleInterrupt_UnknownInvestigationReturns404(t *testing.T) {
 func TestHandleInterrupt_StreamingReturns202(t *testing.T) {
 	t.Parallel()
 	mgr := NewManager(context.Background(), t.TempDir())
+	t.Cleanup(mgr.Shutdown)
 	inv := mgr.RegisterForTest("inv-int-h-2")
 	sess := newInterruptibleSession()
 	inv.mu.Lock()

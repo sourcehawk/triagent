@@ -43,6 +43,7 @@ func newTestAPIWithAuto(t *testing.T, invID string, st auto.State) (*apiHandlers
 	t.Helper()
 	root := t.TempDir()
 	mgr := NewManager(context.Background(), root)
+	t.Cleanup(mgr.Shutdown)
 	inv := mgr.RegisterForTest(invID)
 	inv.mu.Lock()
 	inv.Auto = st

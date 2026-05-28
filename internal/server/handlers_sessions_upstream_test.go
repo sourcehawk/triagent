@@ -176,6 +176,7 @@ func TestHandleSessionsUpstreamList_DecoratesAndFilters(t *testing.T) {
 	// that match the slugs above by setting CreatedAt + Namespace +
 	// matching IDs.
 	mgr := NewManager(context.Background(), t.TempDir())
+	t.Cleanup(mgr.Shutdown)
 	created := time.Date(2026, 5, 8, 9, 0, 0, 0, time.UTC)
 	openPushedAt := created.Add(time.Hour)
 	mergedAt := created.Add(2 * time.Hour)

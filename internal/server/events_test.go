@@ -175,6 +175,7 @@ func TestRestore_ReplaysUsageTotals(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "events.jsonl"), []byte(buf.String()), 0o600))
 
 	m := NewManager(context.Background(), root)
+	t.Cleanup(m.Shutdown)
 	require.NoError(t, m.Restore())
 	inv := m.Get("sess-usage")
 	require.NotNil(t, inv)
@@ -220,6 +221,7 @@ func TestRestore_LegacySessionsFallBackToResultUsage(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "events.jsonl"), []byte(buf.String()), 0o600))
 
 	m := NewManager(context.Background(), root)
+	t.Cleanup(m.Shutdown)
 	require.NoError(t, m.Restore())
 	inv := m.Get("sess-legacy")
 	require.NotNil(t, inv)

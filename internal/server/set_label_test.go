@@ -16,6 +16,7 @@ import (
 func newTestManagerWithInvestigationForLabel(t *testing.T) (*Manager, *Investigation) {
 	t.Helper()
 	m := NewManager(context.Background(), t.TempDir())
+	t.Cleanup(m.Shutdown)
 	inv, err := m.Register(&Investigation{
 		Namespace: "default",
 	})

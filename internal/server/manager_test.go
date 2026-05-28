@@ -113,6 +113,7 @@ func TestManager_StartFromWatch_RunsSessionAndOptionalAuto(t *testing.T) {
 func TestManager_StartFromWatch_ManualModeSkipsAuto(t *testing.T) {
 	root := t.TempDir()
 	mgr := NewManager(context.Background(), root)
+	t.Cleanup(mgr.Shutdown)
 	inv := mgr.RegisterForTest("inv-wf-manual")
 	require.NoError(t, os.MkdirAll(inv.SessionDir, 0o700))
 
@@ -147,6 +148,7 @@ func TestManager_StartFromWatch_ManualModeSkipsAuto(t *testing.T) {
 func TestManager_StartFromWatch_StartErrorIsLoggedNotPropagated(t *testing.T) {
 	root := t.TempDir()
 	mgr := NewManager(context.Background(), root)
+	t.Cleanup(mgr.Shutdown)
 	inv := mgr.RegisterForTest("inv-wf-fail")
 
 	startFn := func() error { return assertableError("boom") }
@@ -165,6 +167,7 @@ func (e assertableError) Error() string { return string(e) }
 func TestManager_EnableAuto_StartsAutoOperator(t *testing.T) {
 	root := t.TempDir()
 	mgr := NewManager(context.Background(), root)
+	t.Cleanup(mgr.Shutdown)
 	inv := mgr.RegisterForTest("inv-1")
 	require.NoError(t, os.MkdirAll(inv.SessionDir, 0o700))
 
@@ -202,6 +205,7 @@ func TestManager_EnableAuto_StartsAutoOperator(t *testing.T) {
 func TestManager_EnableAuto_PublishesStartedEnvelope(t *testing.T) {
 	root := t.TempDir()
 	mgr := NewManager(context.Background(), root)
+	t.Cleanup(mgr.Shutdown)
 	inv := mgr.RegisterForTest("inv-started")
 	require.NoError(t, os.MkdirAll(inv.SessionDir, 0o700))
 
@@ -236,6 +240,7 @@ func TestManager_EnableAuto_PublishesStartedEnvelope(t *testing.T) {
 // the operator. Verify the watcher's value survives operator persists.
 func TestManager_ApplyAutoState_PreservesLastSentSeqAcrossOperatorPersists(t *testing.T) {
 	mgr := NewManager(context.Background(), t.TempDir())
+	t.Cleanup(mgr.Shutdown)
 	inv := mgr.RegisterForTest("inv-last-seq")
 	require.NoError(t, os.MkdirAll(inv.SessionDir, 0o700))
 
@@ -256,6 +261,7 @@ func TestManager_ApplyAutoState_PreservesLastSentSeqAcrossOperatorPersists(t *te
 func TestManager_NotifyAutoResume_BuildsCatchupSpan(t *testing.T) {
 	root := t.TempDir()
 	mgr := NewManager(context.Background(), root)
+	t.Cleanup(mgr.Shutdown)
 	inv := mgr.RegisterForTest("inv-2")
 	require.NoError(t, os.MkdirAll(inv.SessionDir, 0o700))
 
@@ -319,6 +325,7 @@ func TestManager_NotifyAutoResume_BuildsCatchupSpan(t *testing.T) {
 func TestPublishPushState_ReachesMultiplexStream(t *testing.T) {
 	dir := t.TempDir()
 	m := NewManager(context.Background(), dir)
+	t.Cleanup(m.Shutdown)
 	inv := &Investigation{ID: "inv-push", SessionDir: dir, CreatedAt: time.Now().UTC()}
 	inv.ctx, inv.cancel = context.WithCancel(context.Background())
 	inv.manager = m
@@ -430,6 +437,7 @@ func TestRestore_AssignsContext_AndMarksStarted(t *testing.T) {
 	st.close()
 
 	m := NewManager(context.Background(), root)
+	t.Cleanup(m.Shutdown)
 	require.NoError(t, m.Restore(), "Restore")
 	inv := m.Get("sess-1")
 	require.NotNil(t, inv, "Restore did not load sess-1")
@@ -474,6 +482,7 @@ func TestSnapshot_Resumable(t *testing.T) {
 func TestPublishRehydrateState_ReachesMultiplexStream(t *testing.T) {
 	dir := t.TempDir()
 	m := NewManager(context.Background(), dir)
+	t.Cleanup(m.Shutdown)
 	inv := &Investigation{ID: "inv-rehydrate", SessionDir: dir, CreatedAt: time.Now().UTC()}
 	inv.ctx, inv.cancel = context.WithCancel(context.Background())
 	inv.manager = m
@@ -510,6 +519,7 @@ func TestRestore_OrphanPushClearsFlag(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, fileMetadata), body, 0o600))
 
 	m := NewManager(context.Background(), root)
+	t.Cleanup(m.Shutdown)
 	require.NoError(t, m.Restore())
 	inv := m.Get("orphan")
 	require.NotNil(t, inv, "orphan investigation not loaded")
@@ -522,6 +532,7 @@ func TestRestore_OrphanPushClearsFlag(t *testing.T) {
 func TestInvestigation_Publish_ReachesMultiplexStream(t *testing.T) {
 	dir := t.TempDir()
 	m := NewManager(context.Background(), dir)
+	t.Cleanup(m.Shutdown)
 	inv := &Investigation{ID: "inv-X", SessionDir: dir, CreatedAt: time.Now().UTC()}
 	inv.ctx, inv.cancel = context.WithCancel(context.Background())
 	inv.manager = m
@@ -544,6 +555,7 @@ func TestInvestigation_Publish_ReachesMultiplexStream(t *testing.T) {
 
 func TestPublishGlobalEvent_ReachesMultiplexStream(t *testing.T) {
 	m := NewManager(context.Background(), t.TempDir())
+	t.Cleanup(m.Shutdown)
 	_, ch, _, cancel := m.SubscribeStream("tab", 0)
 	t.Cleanup(cancel)
 
@@ -570,6 +582,7 @@ func TestPersistOriginatingSignalRoundtrips(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
 	mgr := NewManager(context.Background(), tmp)
+	t.Cleanup(mgr.Shutdown)
 	sessDir := filepath.Join(tmp, "round-trip")
 	require.NoError(t, os.MkdirAll(sessDir, 0o700))
 	inv := &Investigation{
@@ -586,6 +599,7 @@ func TestPersistOriginatingSignalRoundtrips(t *testing.T) {
 	}
 	// Restore in a new manager to exercise the persist path.
 	mgr2 := NewManager(context.Background(), tmp)
+	t.Cleanup(mgr2.Shutdown)
 	if err := mgr2.Restore(); err != nil {
 		t.Fatal(err)
 	}

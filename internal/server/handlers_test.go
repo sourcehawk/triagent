@@ -165,6 +165,7 @@ func TestPreflight_AcceptsClusterID(t *testing.T) {
 func TestHandleMessage_RehydratesBeforeSend(t *testing.T) {
 	dir := t.TempDir()
 	mgr := NewManager(context.Background(), dir)
+	t.Cleanup(mgr.Shutdown)
 	inv := &Investigation{
 		ID:              "id",
 		SessionDir:      dir,
