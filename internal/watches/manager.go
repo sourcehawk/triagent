@@ -76,15 +76,16 @@ type ManagerOpts struct {
 // Manager owns user_watches.yaml + the per-watch Pollers. Concurrency-
 // safe; the HTTP layer (Milestone 2) calls Create/Patch/Delete via Mgr.
 type Manager struct {
-	opts      ManagerOpts
-	mu        sync.RWMutex
-	watches   map[string]Watch
-	pollers   map[string]*Poller
-	spawners  map[string]*Spawner
-	ctx       context.Context
-	ctxCancel context.CancelFunc // set by Start; called by Stop to drain spawner goroutines.
-	spawnerWG sync.WaitGroup    // tracks all live spawner goroutines; Stop waits on it.
-	stopped   bool              // set under m.mu by Stop; gates further spawnerWG.Add calls.
+	opts       ManagerOpts
+	mu         sync.RWMutex
+	watches    map[string]Watch
+	pollers    map[string]*Poller
+	spawners   map[string]*Spawner
+	ctx        context.Context
+	ctxCancel  context.CancelFunc // set by Start; called by Stop to drain spawner goroutines.
+	spawnerWG  sync.WaitGroup     // tracks all live spawner goroutines; Stop waits on it.
+	mutatorWG  sync.WaitGroup     // tracks in-flight mutators (SpawnFromSignal etc.); Stop drains it before returning.
+	stopped    bool               // set under m.mu by Stop; gates further mutator/spawnerWG.Add calls.
 }
 
 func NewManager(opts ManagerOpts) (*Manager, error) {
@@ -150,10 +151,16 @@ func (m *Manager) Stop() {
 		delete(m.pollers, id)
 	}
 	m.mu.Unlock()
-	// Wait for all spawner goroutines to finish writing before returning.
-	// Lock is released first so spawner goroutines that need m.mu don't
-	// deadlock while draining. No new Add calls can race with Wait because
-	// both spawn sites check m.stopped under m.mu before calling Add.
+	// Drain in-flight mutators (SpawnFromSignal etc.) before declaring the
+	// manager stopped. Each mutator incremented mutatorWG under the same
+	// m.mu critical section that flips m.stopped, so any call that gets
+	// past the gate is guaranteed to finish its disk + spawner-state work
+	// before this Wait returns — closing the TOCTOU window between the
+	// gate check and the later AppendSignal / sp.Enqueue side effects.
+	m.mutatorWG.Wait()
+	// Then wait for any spawner goroutines started by those mutators (or by
+	// Start) to exit; their context is already cancelled. Order matters:
+	// mutators can call spawnerWG.Add, so spawnerWG.Wait must come second.
 	m.spawnerWG.Wait()
 }
 
@@ -545,12 +552,20 @@ type SpawnFromSignalReq struct {
 // errorMessage. Returns the queued signalID; invID is always empty on
 // the immediate return path (caller observes invID via the mutated row).
 func (m *Manager) SpawnFromSignal(_ context.Context, watchID string, req SpawnFromSignalReq) (signalID, invID string, err error) {
-	m.mu.RLock()
-	stopped := m.stopped
-	m.mu.RUnlock()
-	if stopped {
+	// Claim a mutator slot under the same lock that flips m.stopped, so a
+	// concurrent Stop either observes our claim (and waits for us to drain)
+	// or completes first (and we bail). Releasing m.mu before the disk
+	// write keeps the lock short, but mutatorWG still pins Stop until we
+	// return.
+	m.mu.Lock()
+	if m.stopped {
+		m.mu.Unlock()
 		return "", "", ErrManagerStopped
 	}
+	m.mutatorWG.Add(1)
+	m.mu.Unlock()
+	defer m.mutatorWG.Done()
+
 	w, ok := m.Get(watchID)
 	if !ok {
 		return "", "", fmt.Errorf("watch %s not found", watchID)

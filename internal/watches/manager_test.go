@@ -513,6 +513,95 @@ func TestAutoStart_RetriesPersistAcrossRestart(t *testing.T) {
 	}
 }
 
+// TestManager_StopWaitsForInFlightSpawnFromSignal verifies that Stop
+// blocks until any SpawnFromSignal that already passed the initial
+// stopped check has finished writing its signal row and registering with
+// the per-watch Spawner. Without this, a TOCTOU window between the early
+// check and the later disk write + sp.Enqueue would let post-shutdown
+// work slip through against a manager whose context is already cancelled.
+func TestManager_StopWaitsForInFlightSpawnFromSignal(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	yaml := filepath.Join(dir, "user_watches.yaml")
+	reg := NewSourceRegistry()
+	reg.Register(&stubSource{})
+	mgr, err := NewManager(ManagerOpts{
+		UserWatchesPath: yaml,
+		Sources:         reg,
+		IDGen:           func() string { return "fixed" },
+		Create: func(_ context.Context, _ CreateRequest) (string, error) {
+			return "INV", nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mgr.Start(context.Background())
+	w, err := mgr.Create(Watch{
+		Name:      "blocked",
+		Source:    SourceConfig{Kind: SourceGitHubIssues, Owner: "o", Repo: "r"},
+		Polling:   PollingConfig{IntervalSeconds: 300},
+		AutoStart: AutoStartConfig{Enabled: true, MaxConcurrent: 1},
+		Enabled:   true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Pre-acquire the per-path mutex AppendSignal uses, so the in-flight
+	// SpawnFromSignal blocks on the disk write — emulating the slow window
+	// between the early stopped check and the spawner-creation step.
+	signalsPath := filepath.Join(WatchDir(yaml, w.ID), "signals.jsonl")
+	pathMu := lockFor(signalsPath)
+	pathMu.Lock()
+
+	spawnDone := make(chan error, 1)
+	go func() {
+		_, _, err := mgr.SpawnFromSignal(context.Background(), w.ID, SpawnFromSignalReq{
+			Briefing:     "blocked",
+			CitedItemIDs: []string{"I1"},
+			AutoMode:     true,
+		})
+		spawnDone <- err
+	}()
+
+	// Give the goroutine time to enter SpawnFromSignal and block on the
+	// AppendSignal path mutex.
+	time.Sleep(50 * time.Millisecond)
+
+	stopDone := make(chan struct{})
+	go func() {
+		mgr.Stop()
+		close(stopDone)
+	}()
+
+	// While SpawnFromSignal is mid-flight, Stop must NOT return — the
+	// in-flight mutator hasn't released its claim on the manager yet.
+	select {
+	case <-stopDone:
+		pathMu.Unlock()
+		t.Fatalf("Stop returned while an in-flight SpawnFromSignal was still blocked in AppendSignal — TOCTOU window not closed")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	// Release the disk write. SpawnFromSignal completes, then Stop returns.
+	pathMu.Unlock()
+
+	select {
+	case <-stopDone:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("Stop did not return after SpawnFromSignal drained")
+	}
+	select {
+	case err := <-spawnDone:
+		if err != nil {
+			t.Fatalf("SpawnFromSignal returned error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("SpawnFromSignal did not complete")
+	}
+}
+
 // TestManager_StopRefusesFutureSpawns verifies that SpawnFromSignal after
 // Stop returns ErrManagerStopped and writes no signal row — accepting work
 // after shutdown would queue a signal with no live spawner goroutine to
