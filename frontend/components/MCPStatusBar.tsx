@@ -86,7 +86,7 @@ export function MCPStatusBar({ investigation }: Props) {
   if (investigation.archived) return null;
 
   return (
-    <div className="px-1">
+    <div className="px-1" data-testid="triagent-mcp-status-bar">
       <div className="mb-1 flex items-baseline justify-between">
         <h3 className="text-sm font-medium text-zinc-200">active mcp</h3>
         <span className="text-xs text-zinc-500">
@@ -108,6 +108,8 @@ export function MCPStatusBar({ investigation }: Props) {
           return (
             <span
               key={m.alias}
+              data-testid="triagent-mcp-chip"
+              data-server-alias={m.alias}
               title={tooltip}
               className={
                 "rounded border px-1.5 py-0.5 font-mono text-xs inline-flex items-center " +

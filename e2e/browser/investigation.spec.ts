@@ -9,6 +9,7 @@ import {
   waitForAssistantText,
   waitForProposalCards,
 } from "./helpers/triagent";
+import { activityPanel, mcpStatusBar } from "./helpers/walkthrough";
 
 // Flow 2 browser assertions. The Go harness has already driven a live
 // investigation (four proposals staged, a follow-up turn answered) and
@@ -41,5 +42,11 @@ test.describe("investigation Flow 2", () => {
 
     // The follow-up turn's assistant reply renders.
     await waitForAssistantText(page, "isolated to the payments config");
+
+    // Ambient panels mount alongside the transcript (full coverage is #31's
+    // job; this asserts the shared walkthrough helpers resolve their testids
+    // against the real SPA).
+    await expect(mcpStatusBar(page)).toBeVisible();
+    await expect(activityPanel(page)).toBeVisible();
   });
 });
