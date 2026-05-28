@@ -19,11 +19,14 @@ import (
 )
 
 // Target identifies the in-cluster Prometheus service to forward to.
-// Mirrors profile.Defaults.Prometheus.
+// Mirrors profile.Defaults.Prometheus. The JSON tags match the
+// lower-camel shape the rest of the API uses (e.g. promOverrideBody on
+// the form side, persisted promPersistedTarget on disk) so clients see
+// one consistent field naming.
 type Target struct {
-	Service   string
-	Namespace string
-	Port      int
+	Service   string `json:"service"`
+	Namespace string `json:"namespace,omitempty"`
+	Port      int    `json:"port,omitempty"`
 }
 
 // PortForwarder is the interface the Manager uses to actually establish

@@ -2,6 +2,7 @@ package promforward
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -11,6 +12,18 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes/fake"
 )
+
+// Target ships out through InvestigationDTO and must use the same
+// lower-camel field names the rest of the API uses (service, namespace,
+// port) — clients should not have to special-case the {Service,
+// Namespace, Port} shape that an untagged Go struct would emit.
+func TestTarget_JSONShape(t *testing.T) {
+	t.Parallel()
+	tgt := Target{Service: "prometheus", Namespace: "monitoring", Port: 9090}
+	b, err := json.Marshal(tgt)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"service":"prometheus","namespace":"monitoring","port":9090}`, string(b))
+}
 
 func TestResolveTarget_ServiceSelectorMatchesPod(t *testing.T) {
 	t.Parallel()
