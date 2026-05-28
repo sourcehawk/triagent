@@ -105,6 +105,50 @@ func TestInvestigation_BackendInvariants(t *testing.T) {
 	}
 }
 
+// TestInvestigation_Browser drives the same live investigation through the
+// real launcher, then hands its id to the Playwright spec, which asserts
+// the rendered transcript in the embedded SPA: four proposal cards in
+// order with non-empty previews, plus the follow-up turn. The backend
+// invariants are pinned separately in TestInvestigation_BackendInvariants;
+// this test owns the DOM-rendering half.
+func TestInvestigation_Browser(t *testing.T) {
+	h := harness.Launch(t, harness.Options{
+		Profile:         "with-prompts-and-linked-repo",
+		SessionFixtures: "in-progress",
+		StubScript:      "investigation",
+		GhScript:        "investigation",
+		Browser:         true,
+	})
+
+	stream := h.Client.OpenStream(t)
+	defer stream.Close()
+
+	id := createInvestigation(t, h)
+	status, body := h.Client.PostJSON(t, "/api/investigations/"+id+"/start", nil)
+	if status != http.StatusAccepted {
+		t.Fatalf("start session status = %d (body %s)", status, body)
+	}
+	waitForEnd(t, stream, id)
+
+	// Confirm the four proposals landed server-side before driving the
+	// browser, so a browser-side timeout means a render bug, not a missing
+	// proposal.
+	if got := proposalToolNamesInOrder(t, h, id); len(got) != len(wantProposalToolsInOrder) {
+		t.Fatalf("expected %d proposals server-side before browser run, got %d: %v",
+			len(wantProposalToolsInOrder), len(got), got)
+	}
+
+	status, body = h.Client.PostJSON(t, "/api/investigations/"+id+"/messages",
+		map[string]string{"text": "Confirm the regression is isolated to the payments config."})
+	if status != http.StatusAccepted {
+		t.Fatalf("follow-up message status = %d (body %s)", status, body)
+	}
+	waitForEnd(t, stream, id)
+
+	h.Browser.SetEnv("TRIAGENT_INVESTIGATION_ID", id)
+	h.Browser.Run(t, "investigation.spec.ts")
+}
+
 // listContainsInvestigation reports whether /api/investigations includes
 // an investigation with the given id.
 func listContainsInvestigation(t *testing.T, h *harness.Harness, id string) bool {
