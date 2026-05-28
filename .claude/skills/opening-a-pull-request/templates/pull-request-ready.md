@@ -9,9 +9,9 @@ opening body for PRs that go straight to ready).
 ## Description
 
 <!--
-Open with `Fixes #<num>` (bug-fix tracking issue) or `Closes #<num>`
+Open with `Fixes #<num>` (bug-fix tracking issue) or `Closes #<num>` or `Towards #<num>`
 (feature/task tracking issue) as the FIRST line of this section, so
-GitHub auto-closes the issue on merge. Omit the line entirely if
+GitHub auto-closes the issue on merge (Towards to keep the issue open) . Omit the line entirely if
 there is no tracking issue.
 
 Then follow with a short, human-readable summary accessible to a dev
@@ -19,8 +19,6 @@ coming in without context. Not overly technical. Two-to-four
 sentences answering: what does this PR achieve, and why now. Lean on
 Changes (below) for the "what specifically".
 -->
-
-Fixes #<num>
 
 ## Changes
 

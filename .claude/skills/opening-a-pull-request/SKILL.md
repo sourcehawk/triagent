@@ -46,15 +46,24 @@ shipping stale wording into the merged record.
 ## Linking the tracking issue
 
 When the PR has a tracking issue, link it as the **first line of the body's opening section** — `## What lands here`
-for draft, `## Description` for ready. The exact keyword depends on **which branch the PR targets**:
+for draft, `## Description` for ready. The exact keyword depends on **whether the PR should close the issue on
+merge**:
 
-- **PR targets `main` (the default branch)** — use `Fixes #<num>` for bug-fix issues, `Closes #<num>` for
-  feature/task issues. Both trigger GitHub's issue auto-close on merge.
+- `Fixes #<num>` — bug-fix issue; GitHub auto-closes the issue when the PR merges to the default branch.
+- `Closes #<num>` — feature/task issue; same auto-close semantics, neutral phrasing.
+- `Towards #<num>` — the PR contributes to the issue but should NOT close it on merge. GitHub creates the back-link
+  but doesn't auto-close. Use when the issue will be closed by a sibling PR, by a later PR, or by the orchestrator
+  manually (see below).
+
+Which keyword belongs depends on **which branch the PR targets**:
+
+- **PR targets `main` (the default branch)** — use `Fixes` / `Closes` if the merge should close the issue;
+  use `Towards` if the issue should stay open.
 - **PR targets a feature branch** (`feature/<slug>` in the multi-PR feature-branch model — see `developing-a-feature`)
-  — use `Refs #<num>`. `Fixes` / `Closes` keywords only auto-trigger on merge to the default branch, so writing them
-  on a feature-branch-bound PR creates a misleading promise that nothing will fulfill. The sub-issue is closed
-  manually by the orchestrator after the self-merge. The integration PR (feature → main) is the one that gets the
-  auto-close keyword (`Closes #<epic>`) because that PR does merge to main.
+  — use `Towards #<sub-issue>`. `Fixes` / `Closes` keywords only auto-trigger on merges to the default branch, so
+  writing them on a feature-branch-bound PR creates a misleading promise that nothing will fulfill. The sub-issue is
+  closed manually by the orchestrator after the self-merge. The integration PR (feature → main) gets `Closes #<epic>`
+  because that PR does merge to main.
 
 If there is no tracking issue, drop the line entirely and open the section with prose.
 

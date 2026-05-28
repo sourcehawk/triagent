@@ -46,177 +46,94 @@ update the state file's rows to match reality before continuing.
   - When a sub-PR is ready, the orchestrator runs a self-review pass, then **self-merges** the sub-PR into
     `feature/<slug>`. The dispatching agent owns this merge — sub-agents don't merge their own PRs.
   - Sub-issue closure: `Fixes #<sub-issue>` / `Closes #<sub-issue>` only auto-fires on merge to the **default
-    branch**. Sub-PRs into the feature branch therefore use `Refs #<sub-issue>` (no auto-close); the orchestrator
-    runs `gh issue close <sub-issue>` after each self-merge.
+    branch**. Sub-PRs into the feature branch therefore use `Towards #<sub-issue>` (the explicit "keep this issue
+    open" keyword); the orchestrator runs `gh issue close <sub-issue>` after each self-merge.
   - When every sub-PR has been self-merged into the feature branch, the orchestrator opens the **integration PR**
     `feature/<slug>` → `main`, with `Closes #<epic>` in its body, for external review and the final merge.
 
 For sequential single-PR work, skip to Step 4. For multi-PR work, dispatch parallel subagents in Step 3.
 
-### 3. Fan out (parallel work only)
+### 3. Set up the implementation environment
 
-**REQUIRED SUB-SKILL:** Invoke `superpowers:dispatching-parallel-agents` to dispatch one subagent per parallel PR.
+- **Multi-PR (feature-branch model)** — create the long-lived feature branch and its main integration worktree:
 
-Each subagent's dispatch prompt MUST include:
+  ```
+  git worktree add .claude/worktrees/<slug> -b feature/<slug>
+  cd .claude/worktrees/<slug>
+  git push -u origin feature/<slug>
+  ```
 
-1. **Isolation as first step.** The subagent invokes `superpowers:using-git-worktrees` to create or enter a worktree
-   on a dedicated branch. Embed `cd <worktree-path> && pwd && git branch --show-current` as the verification opener
-   so the subagent confirms it's on the right branch before any edit (project-wide convention; commits land on the
-   wrong branch otherwise).
-2. **Context handoff.** The dispatch hands the subagent: the plan path, the spec path, the issue number it's working,
-   and the relevant contract row(s) from the plan's `## Contracts` section — **including each row's Realization
-   strategy** so the subagent knows whether to branch from main (pre-merge stub already landed, data-only contract),
-   from the producer's branch (stub-on-producer-branch), or block until the stub PR merges. The subagent implements
-   **against the contract** — it does not re-discover or re-design it.
-3. **Implementation skills.** The subagent follows `superpowers:test-driven-development` + `testing-a-feature` for
-   every change.
-4. **Completion.** The subagent invokes `opening-a-pull-request` for its branch with `Fixes #<sub-issue>` in the
-   PR body, then reports the PR URL + contract-row name(s) back to the orchestrator.
+  Update the state file's `feature_branch` + `feature_worktree` frontmatter fields to point here. Sub-worktrees off
+  this branch are created later by `fanning-out-with-worktrees`.
 
-**Multi-wave fan-out.** When the plan has foundational PRs (contract producers) that consumers depend on, dispatch
-in waves: producers first, then re-enter this step with the consumers once each producer's PR is open (not merged).
-Consumers compile against the contract row, not the producer's branch — so a producer's PR being open is enough
-signal that the contract shape is final. Don't dispatch a consumer wave before the producer wave's PRs surface; the
-consumer would have nothing concrete to align against.
+- **Single-PR** — create a working worktree off main via `EnterWorktree` (project's native worktree tool) or
+  `git worktree add .claude/worktrees/<slug> -b <single-branch>`. Skip the feature-branch setup; this is the only
+  branch.
 
-**Hold all merges until every wave's PRs are open.** The "land in dependency order" merge happens in Step 7, after
-every parallel PR (across all waves) has surfaced. A producer merged while a consumer is mid-implementation forces
-the consumer to compile against the merged shape — which may have drifted from the contract row if the producer
-edited under review.
+### 4. Implement
 
-**Orchestrator watch loop.** While the parallel subagents run, the orchestrator is the integration point — not an
-idle waiter. Watch for concerns that bubble up from any subagent and propagate the resolution across every subagent
-the concern touches. Silent divergence is the failure mode this watch loop exists to prevent.
+- **Multi-PR** — **REQUIRED SUB-SKILL:** `fanning-out-with-worktrees`. The skill owns parallel dispatch, multi-wave
+  ordering, the orchestrator watch loop, per-sub-PR review (via the `review` skill, orchestrator-driven — the
+  worktree subagent does not review its own PR), self-merge into the feature branch, manual sub-issue close, and
+  state-file maintenance. Returns control here when every sub-PR is self-merged and every contract is `locked`.
 
-Categories of concerns to watch for:
+- **Single-PR** — the orchestrator implements directly in the worktree from Step 3:
+  - **REQUIRED SUB-SKILL:** `superpowers:test-driven-development` for every code change.
+  - **REQUIRED SUB-SKILL:** `testing-a-feature` for the assertion shape — black-box against the contract, not
+    implementation.
+  - Commits follow CLAUDE.md conventions: `<type>(<area>): <imperative summary> (#<feature-issue>)`.
+  - Run `make test` and `make lint` (and `cd frontend && npm run typecheck` if frontend touched) before claiming
+    work is done.
 
-- **Contract drift.** A row in the plan's `## Contracts` table needs to shift (reviewer feedback, an edge case the
-  producer hit). Pause every affected consumer, update the plan's row, propagate.
-- **Spec ambiguity surfaced mid-implementation.** A subagent hits a case the spec didn't cover. Surface to the user,
-  get a decision, amend the spec (or add a note to the plan), and propagate to every subagent whose scope touches
-  the same surface.
-- **Discovered cross-PR dependency.** A subagent finds it needs a helper, type, or behaviour from another PR that the
-  plan didn't enumerate. Decide whether the helper becomes a new contract (file an issue, add a contract row),
-  inlines into the current PR, or is something one of the other subagents is already producing.
-- **Test failure in shared infrastructure.** One subagent breaks a test that another subagent's PR relies on.
-  Coordinate the fix into the right PR; don't let both subagents fix it independently and merge competing patches.
-- **External dependency change.** A Go module bump, a frontend lib update, an API shift the orchestrator notices —
-  affects every running subagent.
-- **Resource conflict.** Two subagents both editing the same file or symbol. Re-scope one to avoid the collision, or
-  serialize the work.
-
-How to propagate the resolution:
-
-- **Subagent still running** → use `SendMessage` with the subagent's id to push the resolution with full context.
-  The subagent resumes with the update applied.
-- **Subagent finished, PR still open** → re-dispatch a focused follow-up with the PR number and the specific change
-  to apply.
-- **Subagent not yet dispatched (later wave)** → update its dispatch prompt's context block before launching, so the
-  next wave starts with the resolution in hand.
-
-A concern raised by one subagent and not propagated to the others is how this whole pattern fails. The orchestrator
-owns propagation.
-
-**Keep the state file current.** The orchestrator updates `docs/superpowers/plans/<date>-<slug>-state.md` as
-reality moves:
-
-- When a subagent gets its worktree → fill in the branch + worktree path columns for its row.
-- When a subagent opens a PR → fill in the PR number + status (`draft` / `ready`).
-- When a contract's realization completes (stub PR merges, producer branch ships its stub) → flip the contract row's
-  status to `locked` and fill in the `Realized in` pointer.
-- When a bubble-up concern is raised and resolved → append a dated entry to the `## Bubble-up log` (newest at top)
-  naming the concern, the resolution, and the propagation path used (`SendMessage`, re-dispatch, next-wave prompt).
-- When a PR merges → flip the row's status to `merged`.
-- When phase 1 completes and phase 2 dispatches → flip `status:` in the frontmatter (`foundational-wave` →
-  `consumer-wave` → `review` → `merged`).
-
-A stale state file is worse than no state file — a resumed session reads it as ground truth. Commit state-file
-updates with each phase transition; don't let a session end with the file out of sync.
-
-### 4. Implement (sequential work, or per-subagent)
-
-**REQUIRED SUB-SKILL:** `superpowers:test-driven-development` for every code change. Tests first, watch them fail for
-the right reason, then implement.
-
-**REQUIRED SUB-SKILL:** `testing-a-feature` for the assertion shape — black-box against docstrings/contracts, not
-implementation.
-
-Per PR:
-- Commits follow CLAUDE.md conventions: `<type>(<area>): <imperative summary> (#<sub-issue>)`.
-- Run `make test` and `make lint` (and `cd frontend && npm run typecheck` if frontend touched) before claiming work
-  is done.
-
-### 5. Verify before completion
+### 5. Verify before completion (single-PR only)
 
 **REQUIRED SUB-SKILL:** `superpowers:verification-before-completion`. Forbids claiming "done" without evidence — run
 the verification commands, paste the output, then make the claim. `make test` runs the whole tree because launcher
 cross-package wiring breaks on edits that look local.
 
+For multi-PR features, per-sub-PR verification is owned by `fanning-out-with-worktrees`; the orchestrator doesn't
+re-run it here.
+
 ### 6. Open the PR
 
-**REQUIRED SUB-SKILL:** `opening-a-pull-request` — draft or ready. PR base + body shape depend on which model is in
-play:
+**REQUIRED SUB-SKILL:** `opening-a-pull-request`. Base + body keyword depend on which model is in play:
 
-- **Single-PR feature** → PR targets `main`. Body opens with `Fixes #<feature-issue>` (bug) or `Closes #<feature-issue>`
-  (feature/task) so the issue auto-closes on merge.
-- **Multi-PR feature** → PR targets the feature branch (`gh pr create --base feature/<slug>`). Body opens with
-  `Refs #<sub-issue>` — `Fixes` / `Closes` keywords don't auto-trigger on merges to non-default branches, so don't
-  pretend they will. The sub-issue is closed manually by the orchestrator at self-merge time (Step 7).
+- **Single-PR feature** → PR targets `main`. Body opens with `Fixes #<feature-issue>` (bug) or
+  `Closes #<feature-issue>` (feature/task) so the issue auto-closes on merge.
+- **Multi-PR integration PR** → PR targets `main` from `feature/<slug>` (`gh pr create --base main --head
+  feature/<slug>`). Body opens with `Closes #<epic>` so the epic auto-closes on merge. This is the PR external
+  reviewers see; the diff is the whole feature.
 
-### 7. Self-review, self-merge, close (multi-PR only)
+Sub-PRs into the feature branch are owned by `fanning-out-with-worktrees`, not this step.
 
-For every sub-PR against the feature branch:
+### 7. Tear down the planning artifacts
 
-1. **Self-review.** The orchestrator runs a code-review pass over the sub-PR diff (use the `code-review` slash command
-   or `superpowers:requesting-code-review`) before merging. Self-review is weaker than external review but stronger
-   than nothing; the integration PR (Step 8) is where external review lands.
-2. **Self-merge into the feature branch** (`gh pr merge <num> --merge` or whatever style the project prefers).
-3. **Close the sub-issue** manually: `gh issue close <sub-issue> --repo sourcehawk/triagent --comment "Merged via
-   sourcehawk/triagent#<sub-pr> into feature/<slug>"`.
-4. **Update the state file**: flip the row's status to `self-merged` and record the sub-PR number under the
-   `## Bubble-up log` if anything was learned during review.
-
-For single-PR features, skip this step — the final merge to main (Step 8) is the only merge.
-
-### 8. Open the integration PR (multi-PR only) / merge to main
-
-- **Multi-PR feature**: when every sub-PR has been self-merged into the feature branch, open the integration PR:
-  - `gh pr create --base main --head feature/<slug>` via `opening-a-pull-request`.
-  - Body opens with `Closes #<epic>` so the epic auto-closes on merge.
-  - This is the PR that gets external review. The diff is the feature as a whole, not one chunk.
-- **Single-PR feature**: skip — Step 6's PR already targets main and Step 7 doesn't apply.
-
-When the integration PR (or the single PR) merges to main, the orchestrator's merge order is implicit — it's the
-single integration merge. Sub-PR merge order within the feature branch is the orchestrator's responsibility
-(producers before consumers).
-
-### 9. Tear down the planning artifacts
-
-Once the integration PR (or the single-PR feature) merges to main and the epic has auto-closed via its `Closes #N`
-keyword, delete the plan + state file. For multi-PR features the cleanest path is to include the deletion as part
-of the integration PR itself (last commit on the feature branch before opening the integration PR): one diff,
-reviewed alongside the feature. For single-PR features, fold the deletion into the same PR's diff.
+Once the PR (single-PR or integration) merges to main and the epic has auto-closed via its `Closes #N` keyword,
+delete the plan + state file. For multi-PR features the cleanest path is to include the deletion as part of the
+integration PR itself (last commit on the feature branch before opening the integration PR): one diff, reviewed
+alongside the feature. For single-PR features, fold the deletion into the same PR's diff.
 
 The spec stays — it's the durable ADR. The plan and state file are scratch; leaving them committed past readiness
 pollutes the repo with stale operational state that future `grep`s have to wade through.
 
 ## Anti-patterns
 
-- **Fanning out without contracts.** "Two subagents on these two PRs" with no contract = divergent implementations
-  that block at integration. If the plan didn't define a contract, don't dispatch in parallel — re-invoke
-  `planning-a-feature` Step 5 and add one.
-- **One subagent doing two parallel PRs.** The whole point of parallel dispatch is wall-clock savings; one agent
-  serializes them. One subagent per PR.
-- **Merging mid-fan-out.** Don't merge any PR while sibling parallel PRs are still in flight — the consumer must
-  compile against the producer's final shape, not its mid-implementation shape.
+- **Mixing single-PR and multi-PR flows mid-feature.** Once the plan declares multi-PR, the feature-branch model is
+  on. Don't quietly merge "just this small fix" directly to main while the feature branch is live — it skips
+  external review on the integration PR and forks the work.
 - **Skipping `verification-before-completion` because "tests passed in my package".** `make test` runs the whole
   tree because launcher cross-package wiring breaks on edits that look local.
+- **Letting the state file drift from reality.** A resumed session reads the state file as ground truth. Update it
+  on every transition (worktree assigned, PR opened, sub-PR self-merged, phase changed, feature shipped).
+- **Re-implementing fan-out logic inline.** Parallel dispatch, multi-wave ordering, the watch loop, per-sub-PR
+  self-review and self-merge — all of that is in `fanning-out-with-worktrees`. Don't paste it into the dispatch
+  prompt or the developing-a-feature flow; reference the sub-skill instead.
 
 ## Red flags
 
 | Thought                                                              | Reality                                                                                                |
 | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| "The plan says parallel but I don't see contracts — I'll just guess" | Plan is incomplete. Stop and define the contract, or sequence the work.                                |
-| "I'll merge this one early, the others can rebase"                   | Forces every parallel consumer to rebase against your draft assumptions. Land in plan order.           |
-| "The subagent will figure out the worktree on its own"               | Embed `cd <path> && pwd && git branch --show-current` in the dispatch or commits land on the wrong branch. |
+| "I'll just open one big PR, the plan is overcomplicating this"       | The PR-shape decision happened during planning. Reopening it here means re-running `planning-a-feature` Step 3, not skipping the model. |
 | "Tests pass, I'll skip make lint"                                    | Lint is a CI gate. Running it locally is the cheapest place to catch the failure.                      |
+| "The state file is for the planner, I don't need to update it during dev" | The state file is the resume contract. Every transition is your responsibility while dev is in flight. |
+| "I'll open the integration PR before the last sub-PR is self-merged" | The integration PR's diff is supposed to be the whole feature. An in-flight sub-PR means the integration PR will be re-pushed mid-review. Wait. |

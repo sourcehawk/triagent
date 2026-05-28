@@ -179,9 +179,10 @@ When working a sub-issue (or a single-feature/bug issue):
   The issue page surfaces the commit history automatically; an epic doesn't need its own ref because GitHub's
   parent→sub-issue linkage already threads them.
 - **PR linkage depends on which branch the PR targets** (see `opening-a-pull-request`):
-  - **Sub-PR into the feature branch** (multi-PR features) — body uses `Refs #<sub-issue>`. `Fixes` / `Closes`
-    don't auto-trigger on non-default branches. The orchestrator closes the sub-issue manually after self-merging
-    the sub-PR: `gh issue close <sub-issue> --comment "Merged via #<sub-pr> into feature/<slug>"`.
+  - **Sub-PR into the feature branch** (multi-PR features) — body uses `Towards #<sub-issue>`. `Fixes` / `Closes`
+    don't auto-trigger on non-default branches; `Towards` is explicit about keeping the issue open until the
+    orchestrator closes it manually after the self-merge:
+    `gh issue close <sub-issue> --comment "Merged via #<sub-pr> into feature/<slug>"`.
   - **Integration PR into main** (multi-PR features) — body uses `Closes #<epic>` so the epic auto-closes when the
     feature lands.
   - **Single-PR feature → main** — body uses `Fixes #<feature-issue>` or `Closes #<feature-issue>`.
