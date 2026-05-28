@@ -36,22 +36,24 @@ entrypoint: info
 nodes:
   info:
     description: |
-      If you have NOT already done so this session, read the `prom://info`
-      MCP resource. It carries the metric-name count, the top
-      `<prefix>_` families, and the tool surface as a single ~1KB
-      block. Reading it once at the start of a Prom lookup keeps
-      every subsequent prom_list_metrics call grounded — without it
-      the agent is guessing what's even indexed.
+      Read the `prom://info` MCP resource before any prom_list_metrics
+      call. It carries the metric-name count, the top `<prefix>_`
+      families, and the tool surface as a single ~1KB block, so every
+      subsequent discover step is grounded against the actual catalog
+      rather than a guess.
 
-      Skip if you already pulled `prom://info` earlier in this
-      session. The catalog doesn't churn mid-investigation; one read
-      is enough.
+      The catalog is per-cluster. `triagent-k8s.switch_context`
+      rebinds the prom MCP to the new cluster's Prometheus and
+      rebuilds the catalog, so re-read `prom://info` after any
+      context switch — the prefix families and indexed metrics can
+      both change. Within a single cluster the catalog is stable;
+      one read per cluster is enough.
     expected_findings:
       - prom_namespace_shape
     next:
-      - condition: "haven't read prom://info this session — read it, then proceed"
+      - condition: "haven't read prom://info for the active cluster yet (fresh session or post-switch_context) — read it, then proceed"
         goto: discover
-      - condition: "already have a fix on the namespace shape — proceed directly to discover"
+      - condition: "already have a fix on the active cluster's namespace shape — proceed directly to discover"
         goto: discover
 
   discover:
