@@ -113,6 +113,50 @@ func TestResolvePromTarget_ProfileEmptyService(t *testing.T) {
 	assert.Nil(t, target)
 }
 
+// Regression: a partial target (service set but namespace empty or
+// port zero) used to be returned as non-nil, attaching the prom MCP
+// only for the resolver's service-lookup to fail later. Require all
+// three fields so the agent lands in the no-prom branch cleanly when
+// the configuration is incomplete.
+func TestResolvePromTarget_RejectsPartialTargets(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		prof *profile.Profile
+	}{
+		{
+			name: "missing namespace",
+			prof: &profile.Profile{Defaults: profile.Defaults{Prometheus: profile.Prometheus{Service: "p", Namespace: "", Port: 9090}}},
+		},
+		{
+			name: "missing port",
+			prof: &profile.Profile{Defaults: profile.Defaults{Prometheus: profile.Prometheus{Service: "p", Namespace: "ns", Port: 0}}},
+		},
+		{
+			name: "missing both",
+			prof: &profile.Profile{Defaults: profile.Defaults{Prometheus: profile.Prometheus{Service: "p"}}},
+		},
+	}
+	for _, c := range cases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			target, disabled := resolvePromTarget(c.prof, nil)
+			assert.False(t, disabled)
+			assert.Nil(t, target)
+		})
+	}
+}
+
+// Regression: override-only path also requires a complete target.
+func TestResolvePromTarget_RejectsPartialOverride(t *testing.T) {
+	t.Parallel()
+	// Override sets service but not namespace/port; profile is nil.
+	target, disabled := resolvePromTarget(nil, &promOverrideBody{Service: "svc"})
+	assert.False(t, disabled)
+	assert.Nil(t, target)
+}
+
 // TestResolvePromTarget_OverrideOnlyWithProfileNoProm: profile exists but has
 // no prom configured, override supplies the full target — the override wins.
 // This is the "override-only-no-profile-prom" path: the Manager is now

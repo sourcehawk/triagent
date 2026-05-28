@@ -1021,9 +1021,15 @@ type promOverrideBody struct {
 //   - If override.Disabled is true → return nil, true (skip prom MCP).
 //   - Otherwise, start from the profile defaults and overwrite each
 //     field where the override is non-zero.
-//   - If the resolved service is empty → return nil, false (no target).
+//   - The result is only returned non-nil when all three fields
+//     (service, namespace, port>0) are populated — a partial target
+//     would attach the prom MCP only for resolveTarget to fail later
+//     (e.g. "get service /name: no namespace specified"). Returning
+//     nil instead leaves the agent in the no-prom branch with a clean
+//     "catalog empty" reply rather than a service-lookup error.
 //
-// Returns (target, disabled) where target is nil when nothing is configured.
+// Returns (target, disabled) where target is nil when no complete
+// target is configured.
 func resolvePromTarget(prof *profile.Profile, override *promOverrideBody) (*promforward.Target, bool) {
 	if override != nil && override.Disabled {
 		return nil, true
@@ -1047,7 +1053,7 @@ func resolvePromTarget(prof *profile.Profile, override *promOverrideBody) (*prom
 			target.Port = override.Port
 		}
 	}
-	if target.Service == "" {
+	if target.Service == "" || target.Namespace == "" || target.Port <= 0 {
 		return nil, false
 	}
 	return &target, false
