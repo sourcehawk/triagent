@@ -120,9 +120,44 @@ Durable rules, conventions, and rationale. Code is the source of truth for "what
 - **Lead with the rule, follow with the _why_** in CLAUDE.md and any contributor-facing prose. Don't pad with examples that restate the rule; one idea per paragraph.
 - **Don't introduce a residue category in code either.** No `_legacy` / `_old` / `_v2` sibling files left dangling, no `// removed because X` comments where the deletion would suffice, no renamed-but-unused `_var` shims. If a thing is unused, delete it; if it's load-bearing, keep it under its real name.
 
-## Editing local skills
+## Local skills and the feature-development workflow
 
-- **No `.claude/skills/` directory exists today.** If/when one is added, invoke `superpowers:writing-skills` before creating or modifying any skill in it, and follow its RED → GREEN → REFACTOR loop. The methodology (test-driven, anti-patterns named, rationalizations closed in prose) is what makes a skill survive pressure; skipping it produces skills that look fine in review and fail on the next pushback turn.
+The `.claude/skills/` directory holds project-shared skills that every contributor and every Claude session in this repo uses. The seven skills below choreograph feature work end to end — invoke `planning-a-feature` at feature conception and let the cross-references fan out from there.
+
+```mermaid
+flowchart TD
+    Start([Feature conception]) --> P[planning-a-feature]
+    P -->|brainstorm + author spec<br/>at docs/superpowers/specs/| Review{User reviews<br/>spec}
+    Review -->|approved| Shape{PR shape:<br/>single or multi?}
+    Shape -->|single PR| Issue1[writing-github-issues<br/>file single feature/bug]
+    Shape -->|multi PR| Issue2[writing-github-issues<br/>file epic + sub-issues<br/>link via addSubIssue]
+    Issue1 --> Plan
+    Issue2 --> Plan[superpowers:writing-plans<br/>plan + ## Contracts table at<br/>docs/superpowers/plans/]
+    Plan --> State[Initialize state file at<br/>docs/superpowers/plans/<slug>-state.md]
+    State --> D[developing-a-feature]
+
+    D --> DShape{single-PR<br/>or multi-PR?}
+    DShape -->|single-PR| Direct[Implement directly<br/>TDD + testing-a-feature]
+    DShape -->|multi-PR| Setup[Create feature/<slug><br/>branch + main worktree]
+    Setup --> Fanout[fanning-out-with-worktrees]
+
+    Fanout -->|sub-worktree per sub-PR<br/>subagent writes,<br/>orchestrator reviews/merges/closes| Fanout
+    Fanout -->|between waves| Checkpoint[reviewing-feature-progress]
+    Checkpoint --> Fanout
+
+    Direct --> Verify1[superpowers:verification-before-completion<br/>make test + lint + typecheck]
+    Fanout --> Verify2[reviewing-feature-progress<br/>before integration PR]
+    Verify1 --> SinglePR[opening-a-pull-request<br/>PR → main, Fixes/Closes #issue]
+    Verify2 --> Integration[opening-a-pull-request<br/>feature → main, Closes #epic]
+    SinglePR --> Ship([External review → merge<br/>teardown plan + state in same diff])
+    Integration --> Ship
+```
+
+Each box above is a skill body (under `.claude/skills/<name>/SKILL.md`) — load the relevant skill via the `Skill` tool, follow it, and let its `**REQUIRED SUB-SKILL:**` markers walk you into the next one. The `review` slash command runs as part of the orchestrator's per-sub-PR ripening inside `fanning-out-with-worktrees`; `reviewing-feature-progress` is the broader alignment + end-to-end-verification checkpoint that runs between waves and before the integration PR.
+
+### Editing local skills
+
+- **Invoke `superpowers:writing-skills` before creating or modifying any skill** and follow its RED → GREEN → REFACTOR loop. The methodology (test-driven, anti-patterns named, rationalizations closed in prose) is what makes a skill survive pressure; skipping it produces skills that look fine in review and fail on the next pushback turn.
 - **Skill `description:` is "Use when..." triggers only, never a workflow summary.** Agents read the description to decide whether to load the skill; a workflow summary becomes a shortcut they take instead of reading the body.
 - **Name rationalizations explicitly in discipline content.** Pressure-induced shortcuts (gate skipping, premature completion claims, "I already confirmed earlier") belong in an anti-patterns or red-flag table with the correct counter-action. For schema content (template fields, section lists), the inverse: list only what's included and let absence speak — "no X field" tails are noise in a schema, not safety.
 

@@ -109,7 +109,22 @@ the switcher UI that lets the operator pick a profile is `feature` (the headline
 ### Linking sub-issues
 
 GitHub's `gh issue create` does not (yet) expose a `--parent` flag. Use the GraphQL `addSubIssue` mutation, fetching
-both issue node ids via `gh issue view --json id`:
+both issue node ids via `gh issue view --json id`.
+
+**Confirm the linkage set before running any mutation.** Sub-issue linking is a GitHub mutation; the user-in-the-loop
+rule from §Core principle applies. Once every child issue is filed (so every number is known), present the full
+linkage set to the user in one prompt:
+
+> About to link the following sub-issues to epic `sourcehawk/triagent#<epic-num>`:
+> - `#<child-1>` (<one-line title>)
+> - `#<child-2>` (<one-line title>)
+> - ...
+>
+> Confirm?
+
+Wait for an explicit yes. On push-back, drop or amend specific links before running anything.
+
+Then run the mutation once per sub-issue:
 
 ```
 PARENT_ID=$(gh issue view <epic-num> --repo sourcehawk/triagent --json id --jq .id)
@@ -117,8 +132,8 @@ CHILD_ID=$(gh issue view <child-num> --repo sourcehawk/triagent --json id --jq .
 gh api graphql -f query="mutation { addSubIssue(input: {issueId: \"$PARENT_ID\", subIssueId: \"$CHILD_ID\"}) { subIssue { number } } }"
 ```
 
-Repeat once per sub-issue. The epic's body's `## Sub-issues` section auto-renders as a checklist with progress —
-no manual list maintenance needed.
+The epic's body's `## Sub-issues` section auto-renders as a checklist with progress — no manual list maintenance
+needed.
 
 ## Step 2B: Issue exists but is missing context (update)
 

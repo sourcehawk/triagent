@@ -89,8 +89,12 @@ Wait for an explicit "yes" before any `gh pr` call. Treat absence of objection a
 
 1. **Rewrite the body from `templates/pull-request-ready.md`.** The shapes are different — the draft asks "review the
    direction"; the ready asks "review the implementation." Don't ship the draft body forward unchanged.
-2. **Confirm with the user**, body inline, before any `gh pr edit`.
-3. **Run `gh pr ready <num>`** once the body is updated.
+2. **Confirm both mutations in one prompt, body inline.** Marking the PR ready is a separate GitHub mutation from
+   editing the body, and the user-in-the-loop rule applies to both. Phrase the confirmation as: "About to update
+   #<num>'s body to the version below AND flip it from draft to ready. Confirm?" — then paste the body. Wait for
+   an explicit yes. Splitting confirmation across two prompts is fine; running `gh pr ready` on the strength of the
+   body confirmation is not.
+3. **Run `gh pr edit <num> --body "$(cat <<'EOF' … EOF)"` then `gh pr ready <num>`** once the user confirms.
 
 ## Anti-patterns
 

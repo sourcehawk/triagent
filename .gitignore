@@ -32,8 +32,6 @@ node_modules
 # one exception — project-shared skills (e.g. opening-a-pull-request,
 # writing-github-issues) are checked in so every contributor gets them.
 .worktrees/
-docs/superpowers/plans/*
-docs/superpowers/spec/*
 docs/superpowers/design/*
 .claude/*
 !.claude/skills/

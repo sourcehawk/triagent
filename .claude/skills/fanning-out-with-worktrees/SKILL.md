@@ -140,13 +140,17 @@ Per sub-PR, in order:
    contract (e.g. a pre-merge stub PR), flip the contract row's status to `locked` and fill in the `Realized in`
    pointer.
 
-### 6. Dispatch wave N+1
+### 6. Checkpoint review, then dispatch wave N+1
 
-When every sub-PR in wave N is `self-merged` AND every contract tied to wave N's producers is `locked`, dispatch
-wave N+1. Wave N+1's subagents pick up the realized contracts because the orchestrator updated the state file's
-`## Contracts` table.
+When every sub-PR in wave N is `self-merged` AND every contract tied to wave N's producers is `locked`:
 
-Repeat Steps 2 → 5 for each wave.
+1. **REQUIRED SUB-SKILL:** `reviewing-feature-progress` — run the alignment checkpoint at the wave boundary. Drift
+   accumulated across wave N is cheapest to fix here, not at the integration PR. If the checkpoint surfaces gaps,
+   address them (follow-up sub-PR in wave N, plan/issue refinement, or both) before moving on.
+2. Once the checkpoint is clean, dispatch wave N+1. Wave N+1's subagents pick up the realized contracts because the
+   orchestrator updated the state file's `## Contracts` table.
+
+Repeat Steps 2 → 6 for each wave.
 
 ### 7. All waves complete → hand back
 
@@ -158,7 +162,7 @@ integration PR (`feature/<slug>` → `main` with `Closes #<epic>`) which `develo
 
 - **Dispatching parallel agents without contracts.** "Two subagents on these two PRs" with no contract = divergent
   implementations that block at integration. If the plan didn't define a contract, don't dispatch — go back to
-  `planning-a-feature` Step 5 and add one.
+  `planning-a-feature` Step 6 and add one.
 - **Skipping wave dependencies.** Consumers dispatched before producers' contracts are realized produce code against
   an imagined shape. Dispatch wave N+1 only after wave N is fully self-merged and contracts locked.
 - **Self-merging without orchestrator review.** The integration PR is where external review lands, but sub-PRs still

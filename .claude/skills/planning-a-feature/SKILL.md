@@ -27,24 +27,27 @@ out instead of dragging.
 
 ## Workflow
 
-### 1. Brainstorm → spec
+### 1. Brainstorm intent
 
 **REQUIRED SUB-SKILL:** Invoke `superpowers:brainstorming` to nail down intent, scope, and design choices before any
-artifact is written.
+artifact is written. The brainstorming skill explores the problem — it does **not** author files.
 
-Output: a spec at `docs/superpowers/specs/YYYY-MM-DD-<slug>-design.md`. The spec is a durable ADR — WHAT we're
-building and WHY, with goals, non-goals, design choices, risks, alternatives considered. It does **not** enumerate
-PRs, commits, or parallelism contracts (those live in the plan, see step 5).
+### 2. Author the spec
+
+Capture the brainstorm's conclusions in a spec at `docs/superpowers/specs/YYYY-MM-DD-<slug>-design.md`. The spec is
+a durable ADR — WHAT we're building and WHY, with goals, non-goals, design choices, risks, alternatives considered.
+It does **not** enumerate PRs, commits, or parallelism contracts (those live in the plan, see step 6).
 
 Slug is short and descriptive ("multi-tenant-profiles", not "implement-multi-tenant-profile-system"). Date is the
-conception date.
+conception date. The spec file is committed to git like any other source artifact (`docs/superpowers/specs/` is no
+longer gitignored as of the workflow rollout).
 
-### 2. User reviews the spec
+### 3. User reviews the spec
 
 Pause. Surface the spec path and wait for explicit "approved" or redirection before moving on. A spec the user hasn't
 read is a draft, and drafts don't get tickets filed against them.
 
-### 3. PR-shape decision
+### 4. PR-shape decision
 
 Decide whether the work ships as:
 
@@ -62,7 +65,7 @@ model applies.
 The decision is noted in chat (or as a one-line `## Implementation breakdown` paragraph in the spec naming the PRs —
 NOT the contracts between them). The spec stays a clean ADR otherwise.
 
-### 4. File the tracking issue(s)
+### 5. File the tracking issue(s)
 
 **REQUIRED SUB-SKILL:** Invoke `writing-github-issues` with the PR-shape decision in hand.
 
@@ -71,7 +74,7 @@ NOT the contracts between them). The spec stays a clean ADR otherwise.
 
 Issues link back to the spec path in their `## Context` section. Don't link the plan yet — it doesn't exist.
 
-### 5. Write the plan (and discover contracts)
+### 6. Write the plan (and discover contracts)
 
 **REQUIRED SUB-SKILL:** Invoke `superpowers:writing-plans` to produce
 `docs/superpowers/plans/YYYY-MM-DD-<slug>-plan.md`. The plan is HOW: ordered tasks, dependencies, review checkpoints,
@@ -108,9 +111,9 @@ exist as code or as data before either side starts. Pick one per row and put it 
 
 Sequential work doesn't need contracts. Only document them where two workers genuinely run in parallel.
 
-### 6. Refine issues if planning surfaced changes
+### 7. Refine issues if planning surfaced changes
 
-Planning often surfaces scope changes. If the issues from step 4 no longer match the plan's breakdown, update them
+Planning often surfaces scope changes. If the issues from step 5 no longer match the plan's breakdown, update them
 **now**, before implementation starts.
 
 **REQUIRED SUB-SKILL:** Re-invoke `writing-github-issues` Step 2B (update) for any issue whose acceptance criteria,
@@ -118,7 +121,7 @@ scope, or dependencies shifted. When several issues need diff-sized edits at onc
 confirmation: present every affected issue's gap list + proposed body in a single chat turn and wait for one "yes
 to all" or per-issue redirection, instead of round-tripping the user N times.
 
-### 7. Initialize the orchestration state file
+### 8. Initialize the orchestration state file
 
 Before handing off, create `docs/superpowers/plans/YYYY-MM-DD-<slug>-state.md` from
 `templates/feature-state.md`. This is the **orchestration state** — phases, PRs, worktrees, contract realization,
@@ -130,7 +133,7 @@ Update it as the work progresses — see `developing-a-feature` for the update c
 
 Commit the spec, the plan, and the state file together as the planning artifact set.
 
-### 8. Hand off to implementation
+### 9. Hand off to implementation
 
 Spec + plan + state file committed, issues aligned, contracts written → invoke `developing-a-feature` to start the
 work. The state file is the entry-point artifact for every session that touches this feature afterward.
