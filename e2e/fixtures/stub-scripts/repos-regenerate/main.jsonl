@@ -1,0 +1,15 @@
+// Flow 5 regenerate-worker script. The launcher's architecture worker
+// shells out to `triagent-mcp generate-architecture-summary`, which runs a
+// claude sub-agent in the repo clone. That sub-agent gets an empty MCP
+// config, so detectRole resolves "subagent" and this main.jsonl drives it.
+//
+// The sub-agent's final text is what GenerateArchitectureSummary captures;
+// extractSummaryBody pops the body between the <<<BEGIN_SUMMARY / SUMMARY>>>
+// sentinels and writes it to the cache file. The wait_for_signal gates the
+// sub-agent's completion so the test can observe IsInFlight==true (and the
+// single-flight 409 on a second refresh) before releasing the worker.
+{"action": "record_args"}
+{"action": "emit", "event": {"type": "assistant_message", "text": "I have enough context to produce the summary.\n<<<BEGIN_SUMMARY\n# acme/gateway — architecture summary\n\nTRIAGENT-E2E-FLOW5-REGENERATED-MARKER\n\nThe gateway terminates auth at the edge and routes to downstream\nservices. Routing rules live in routes/; auth middleware in auth/.\nSUMMARY>>>\nLet me know if you'd like more detail."}}
+{"action": "wait_for_signal", "name": "regenerate-released"}
+{"action": "emit", "event": {"type": "end"}}
+{"action": "exit", "code": 0}

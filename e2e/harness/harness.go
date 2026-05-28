@@ -62,7 +62,7 @@ func Launch(t *testing.T, opts Options) *Harness {
 	stateDir := t.TempDir()
 	cacheDir := t.TempDir()
 
-	profilePath, err := seedFixtures(stateDir, opts)
+	profilePath, err := seedFixtures(stateDir, cacheDir, opts)
 	if err != nil {
 		t.Fatalf("harness: seed fixtures: %v", err)
 	}

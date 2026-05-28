@@ -30,7 +30,13 @@ func fixtureDir(bucket, scenario string) string {
 // The per-profile bucket layout mirrors profile.defaultPathTemplates:
 // ${XDG_CONFIG_HOME}/triagent/<profile>/<bucket>. The harness writes
 // fixtures there directly so the launcher discovers them the normal way.
-func seedFixtures(stateDir string, opts Options) (string, error) {
+//
+// cacheDir is the launcher's XDG_CACHE_HOME root. The repos vault is split
+// across both roots — user_repos.yaml lives under the config dir, but the
+// summary cache and the git clones live under
+// ${XDG_CACHE_HOME}/triagent-mcp/<profile>/git — so the repos scenario is
+// seeded by seedRepoVault rather than a flat bucket copy.
+func seedFixtures(stateDir, cacheDir string, opts Options) (string, error) {
 	if opts.Profile == "" {
 		return "", fmt.Errorf("Options.Profile is required")
 	}
@@ -50,7 +56,6 @@ func seedFixtures(stateDir string, opts Options) (string, error) {
 		{opts.SessionFixtures, "sessions", filepath.Join(base, "sessions")},
 		{opts.PlaybookFixtures, "playbooks", filepath.Join(base, "playbooks")},
 		{opts.WikiFixtures, "wiki", filepath.Join(base, "wiki")},
-		{opts.RepoFixtures, "repos", filepath.Join(base, "repos")},
 	}
 	for _, s := range seeds {
 		if s.scenario == "" {
@@ -64,7 +69,118 @@ func seedFixtures(stateDir string, opts Options) (string, error) {
 			return "", fmt.Errorf("seed %s/%s: %w", s.bucket, s.scenario, err)
 		}
 	}
+
+	if opts.RepoFixtures != "" {
+		gitCacheDir := filepath.Join(cacheDir, "triagent-mcp", opts.Profile, "git")
+		if err := seedRepoVault(fixtureDir("repos", opts.RepoFixtures), base, gitCacheDir); err != nil {
+			return "", fmt.Errorf("seed repos/%s: %w", opts.RepoFixtures, err)
+		}
+	}
 	return profilePath, nil
+}
+
+// seedRepoVault lays a repos scenario across the two roots the launcher
+// reads from. The scenario dir contains, all optional:
+//
+//   - user_repos.yaml          → <configBase>/user_repos.yaml (the
+//     user-local repos the page lists under "yours").
+//   - summaries/<o>/<n>/…       → <gitCacheDir>/summaries/<o>/<n>/… (the
+//     repo-summary vault GET .../summary reads; mirrors repos.SummaryPath).
+//   - clones/<o>/<n>/           → a real git clone at <gitCacheDir>/<o>/<n>
+//     with a local-file origin, so the regenerate worker's EnsureClone
+//     (git fetch against origin) succeeds offline and the summary
+//     sub-agent has a working tree to run in.
+func seedRepoVault(scenarioDir, configBase, gitCacheDir string) error {
+	if _, err := os.Stat(scenarioDir); err != nil {
+		return fmt.Errorf("scenario dir: %w", err)
+	}
+
+	if src := filepath.Join(scenarioDir, "user_repos.yaml"); fileExists(src) {
+		if err := copyFileAt(src, filepath.Join(configBase, "user_repos.yaml")); err != nil {
+			return fmt.Errorf("user_repos.yaml: %w", err)
+		}
+	}
+
+	if summaries := filepath.Join(scenarioDir, "summaries"); dirExists(summaries) {
+		if err := copyTree(summaries, filepath.Join(gitCacheDir, "summaries")); err != nil {
+			return fmt.Errorf("summaries: %w", err)
+		}
+	}
+
+	if clones := filepath.Join(scenarioDir, "clones"); dirExists(clones) {
+		if err := seedClones(clones, gitCacheDir); err != nil {
+			return fmt.Errorf("clones: %w", err)
+		}
+	}
+	return nil
+}
+
+// seedClones turns each clones/<owner>/<name> seed dir into a real git
+// clone at gitCacheDir/<owner>/<name> whose origin is a local bare repo.
+// EnsureClone treats the presence of a `.git` dir as a cache hit and runs
+// `git fetch --prune --tags`, which against a local-file origin succeeds
+// with no network — keeping the regenerate flow hermetic.
+func seedClones(clonesRoot, gitCacheDir string) error {
+	entries, err := readOwnerRepoDirs(clonesRoot)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		seedDir := filepath.Join(clonesRoot, e.owner, e.name)
+		origin := filepath.Join(gitCacheDir, ".origins", e.owner, e.name+".git")
+		clone := filepath.Join(gitCacheDir, e.owner, e.name)
+		if err := buildLocalClone(seedDir, origin, clone); err != nil {
+			return fmt.Errorf("%s/%s: %w", e.owner, e.name, err)
+		}
+	}
+	return nil
+}
+
+// ownerRepo is one owner/name pair discovered under a two-level dir tree.
+type ownerRepo struct{ owner, name string }
+
+// readOwnerRepoDirs lists every <owner>/<name> directory pair under root.
+func readOwnerRepoDirs(root string) ([]ownerRepo, error) {
+	owners, err := os.ReadDir(root)
+	if err != nil {
+		return nil, err
+	}
+	var out []ownerRepo
+	for _, o := range owners {
+		if !o.IsDir() {
+			continue
+		}
+		names, err := os.ReadDir(filepath.Join(root, o.Name()))
+		if err != nil {
+			return nil, err
+		}
+		for _, n := range names {
+			if n.IsDir() {
+				out = append(out, ownerRepo{owner: o.Name(), name: n.Name()})
+			}
+		}
+	}
+	return out, nil
+}
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
+}
+
+func dirExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
+}
+
+// copyFileAt copies src to dst, creating dst's parent dir. Mode is the
+// source's permission bits.
+func copyFileAt(src, dst string) error {
+	info, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+	return copyFile(src, dst, info.Mode())
 }
 
 // copyTree recursively copies src into dst, creating dst. File modes are
