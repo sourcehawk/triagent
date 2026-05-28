@@ -75,11 +75,15 @@ func TestWikiEditor_BackendInvariants(t *testing.T) {
 	}
 }
 
-// TestWikiEditor_Browser drives the same vault, then hands control to
-// the Playwright spec, which asserts the rendered DOM: the seeded entry
-// renders as a row in the entries list, and clicking it mounts the wiki
-// editor at ?slug=<slug>. Reuses the shared editor.ts helpers, exercising
-// the same selectors-as-contract over the wiki surface.
+// TestWikiEditor_Browser drives the wiki operator walkthrough in the
+// browser: the seeded with-links entry is listed; a brand-new entry is
+// created through NewWikiEntryModal and routes into the editor; the editor
+// chat is a real claude-stub round-trip; and a seeded pending UPDATE
+// proposal is approved from the editor's AI-proposal tab. The Go side seeds
+// prior state, hands env to the spec, and — once Playwright returns (Run is
+// synchronous) — asserts the approve promoted the draft onto the vault file
+// and cleared the pending proposal. The polymorphic twin of the playbook
+// browser walkthrough over Subject.Kind=wiki.
 func TestWikiEditor_Browser(t *testing.T) {
 	h := harness.Launch(t, harness.Options{
 		Profile:    "minimal",
@@ -87,14 +91,36 @@ func TestWikiEditor_Browser(t *testing.T) {
 		Browser:    true,
 	})
 	const slug = "inc-4242-payments-latency"
+	const proposalID = "prop-aaaa1111bbbb"
 	seedWikiEntry(t, h, "minimal", slug)
+	seedWikiProposal(t, h, "minimal", proposalID, slug)
 
 	if !wikiEntryListed(t, h, slug) {
 		t.Fatalf("seeded wiki entry %q missing server-side before browser run", slug)
 	}
+	if !wikiProposalPending(t, h, proposalID) {
+		t.Fatalf("seeded wiki proposal %q not pending server-side before browser run", proposalID)
+	}
 
 	h.Browser.SetEnv("TRIAGENT_WIKI_SLUG", slug)
+	h.Browser.SetEnv("TRIAGENT_WIKI_PROPOSAL_ID", proposalID)
 	h.Browser.Run(t, "wiki.spec.ts")
+
+	// The browser approved the proposal from the AI-proposal tab. Approve
+	// promotes the draft into the vault verbatim — the on-disk entry now
+	// carries the proposed root-cause edit AND retains the links
+	// frontmatter (the wiki entry's promote-from-draft round-trip).
+	onDisk := readWikiEntryFromDisk(t, h, "minimal", slug)
+	if !strings.Contains(onDisk, "PROPOSED-ROOT-CAUSE-EDIT") {
+		t.Errorf("approved proposal did not promote onto the vault entry (got %q)", truncate(onDisk))
+	}
+	if !strings.Contains(onDisk, "links:") || !strings.Contains(onDisk, "incident_io:") {
+		t.Errorf("links frontmatter not retained after promote (got %q)", truncate(onDisk))
+	}
+	// The pending proposal is cleared once approved.
+	if wikiProposalPending(t, h, proposalID) {
+		t.Errorf("wiki proposal %q still pending after browser approve", proposalID)
+	}
 }
 
 // ── wiki REST helpers ─────────────────────────────────────────────
@@ -218,4 +244,58 @@ func seedWikiEntry(t *testing.T, h *harness.Harness, profile, slug string) {
 			t.Fatalf("git %v in wiki vault: %v\n%s", args, err, out)
 		}
 	}
+}
+
+// wikiProposalsDir is the on-disk wiki-proposals dir the launcher reads
+// pending drafts from (sibling of the wiki vault under the profile root).
+func wikiProposalsDir(h *harness.Harness, profile string) string {
+	return filepath.Join(h.StateDir, "triagent", profile, "wiki-proposals")
+}
+
+// seedWikiProposal copies the with-links pending-proposal draft into the
+// launcher's wiki-proposals dir as <proposalID>__<slug>.md — the on-disk
+// shape handleListWikiProposals enumerates and approveWikiByID promotes. A
+// "pending" proposal is just a draft file with no sibling resolution
+// marker, so dropping the file post-boot is enough for the list/get/approve
+// endpoints (which read the live filesystem) to pick it up. This is the
+// wiki analogue of the playbook with-pending-proposal fixture; the harness
+// has no WikiProposalFixtures knob, so the test seeds it directly.
+func seedWikiProposal(t *testing.T, h *harness.Harness, profile, proposalID, slug string) {
+	t.Helper()
+	src := filepath.Join("fixtures", "wiki", "with-links", "proposals", proposalID+"__"+slug+".md")
+	data, err := os.ReadFile(src)
+	if err != nil {
+		t.Fatalf("read wiki proposal fixture %s: %v", src, err)
+	}
+	dir := wikiProposalsDir(h, profile)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatalf("mkdir wiki-proposals dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, proposalID+"__"+slug+".md"), data, 0o644); err != nil {
+		t.Fatalf("write wiki proposal into proposals dir: %v", err)
+	}
+}
+
+// wikiProposalPending reports whether GET /api/wiki-proposals lists the
+// given proposal id as pending (no resolution marker yet).
+func wikiProposalPending(t *testing.T, h *harness.Harness, proposalID string) bool {
+	t.Helper()
+	status, body := h.Client.Get(t, "/api/wiki-proposals")
+	if status != http.StatusOK {
+		t.Fatalf("GET /api/wiki-proposals status = %d (body %s)", status, body)
+	}
+	var parsed struct {
+		Proposals []struct {
+			ProposalID string `json:"proposal_id"`
+		} `json:"proposals"`
+	}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		t.Fatalf("decode wiki proposals: %v (body %s)", err, body)
+	}
+	for _, p := range parsed.Proposals {
+		if p.ProposalID == proposalID {
+			return true
+		}
+	}
+	return false
 }
