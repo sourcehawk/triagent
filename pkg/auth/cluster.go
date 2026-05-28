@@ -10,10 +10,17 @@ import (
 )
 
 // Cluster represents a Kubernetes cluster available through an access provider.
+//
+// KubeContext is the kubeconfig context name the provider uses to talk
+// to this cluster — populated by providers that own the kubeconfig
+// layout (e.g. Teleport's `<teleportCluster>-<kubeCluster>` form).
+// Empty for providers that don't know the answer; downstream callers
+// fall back to the agent invoking switch_context.
 type Cluster struct {
-	Name   string            `json:"name"`
-	ID     string            `json:"full_id"`
-	Labels map[string]string `json:"labels"`
+	Name        string            `json:"name"`
+	ID          string            `json:"full_id"`
+	KubeContext string            `json:"kubeContext,omitempty"`
+	Labels      map[string]string `json:"labels"`
 }
 
 // FilterValue returns the text used for interactive search matching.
