@@ -3,6 +3,7 @@ package prom
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -301,12 +302,13 @@ func TestPromClient_SeriesBoundedBody(t *testing.T) {
 // routes through doJSONBounded with queryMaxBodyBytes.
 func TestPromClient_QueryBoundedBody(t *testing.T) {
 	t.Parallel()
-	// Stub returns a deliberately oversized query response (>queryMaxBodyBytes=8 MiB).
-	// Each row is ~150 bytes; 70000 rows ≈ 10 MiB — well over the cap.
+	// Stub returns a deliberately oversized query response (>queryMaxBodyBytes).
+	// Each row is ~1.2 KiB; 32000 rows ≈ 38 MiB — well past any cap sized
+	// for the advertised range-query worst case.
 	stub := newStubProm(t, stubHandlers{
 		query: func(w http.ResponseWriter, r *http.Request) {
-			row := `{"metric":{"__name__":"x","pad":"` + strings.Repeat("a", 100) + `"},"value":[1700000000,"1"]}`
-			rows := strings.Repeat(row+",", 70000)
+			row := `{"metric":{"__name__":"x","pad":"` + strings.Repeat("a", 1024) + `"},"value":[1700000000,"1"]}`
+			rows := strings.Repeat(row+",", 32000)
 			rows = strings.TrimSuffix(rows, ",")
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[` + rows + `]}}`))
@@ -315,4 +317,49 @@ func TestPromClient_QueryBoundedBody(t *testing.T) {
 	c := newPromClient(stub.URL, "", "", http.DefaultClient)
 	_, err := c.query(context.Background(), "x", "")
 	require.Error(t, err, "oversized query response must trip the body cap before decode finishes")
+}
+
+// Regression for the body-cap-vs-advertised-input-cap mismatch: a range
+// query response that lands at the worst case the advertised input caps
+// permit (rangeHardSeriesCap × rangeHardPointsCap with realistic k8s
+// label volume) must NOT be rejected by the defensive body cap. The
+// previous 8 MiB ceiling tripped on bodies the agent was promised it
+// could request.
+func TestPromClient_QueryRangeWorstCaseValidResponseFitsBodyCap(t *testing.T) {
+	t.Parallel()
+	// Build a 500-series × 200-point matrix with ~12 KiB of labels per
+	// series (a realistic k8s pod row with annotations exposed as labels).
+	// Total body size ≈ 9.3 MiB — past the old 8 MiB cap, comfortably
+	// inside the new one and inside what rangeHardSeriesCap=500 ×
+	// rangeHardPointsCap=200 allows.
+	const series = 500
+	const points = 200
+	const labelPad = 12 * 1024
+	stub := newStubProm(t, stubHandlers{
+		queryRange: func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[`))
+			pointBuf := strings.Builder{}
+			for j := 0; j < points; j++ {
+				if j > 0 {
+					pointBuf.WriteByte(',')
+				}
+				_, _ = fmt.Fprintf(&pointBuf, `[%d,"1.234567"]`, 1700000000+j*60)
+			}
+			pointsBlock := pointBuf.String()
+			pad := strings.Repeat("a", labelPad)
+			for i := 0; i < series; i++ {
+				if i > 0 {
+					_, _ = w.Write([]byte(","))
+				}
+				_, _ = fmt.Fprintf(w, `{"metric":{"__name__":"m","pod":"p%d","pad":"%s"},"values":[%s]}`, i, pad, pointsBlock)
+			}
+			_, _ = w.Write([]byte(`]}}`))
+		},
+	})
+	c := newPromClient(stub.URL, "", "", http.DefaultClient)
+	res, err := c.queryRange(context.Background(), "m", "1700000000", "1700012000", "60")
+	require.NoError(t, err, "worst-case valid range response must fit the body cap")
+	require.Equal(t, "matrix", res.ResultType)
+	require.Len(t, res.Result, series)
 }
