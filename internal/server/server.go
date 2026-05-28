@@ -438,6 +438,12 @@ func New(opts Options) (*Server, error) {
 			slackTok, _ := connMgr.GetSlackToken()
 			ioTok, _ := connMgr.GetIncidentioToken()
 			telemetryURL := "http://" + listener.Addr().String() + "/api/internal/tool-events"
+			// Profile-level Prometheus defaults applied with no override —
+			// watch-spawned investigations have no per-investigation prom
+			// dialog. Mirrors handlePreflight so the prom MCP attaches
+			// the same way whether the session was kicked off manually or
+			// by a signal-watch.
+			promTarget, promDisabled := resolvePromTarget(opts.Profile, nil)
 			res, err := preflight.Run(preflight.Options{
 				Provider:           opts.Provider,
 				Profile:            opts.Profile,
@@ -458,6 +464,8 @@ func New(opts Options) (*Server, error) {
 				TelemetryURL:       telemetryURL,
 				TraceID:            invID,
 				TelemetryToken:     token,
+				PromTarget:         promTarget,
+				PromDisabled:       promDisabled,
 			})
 			if err != nil {
 				return "", fmt.Errorf("preflight: %w", err)
@@ -475,6 +483,8 @@ func New(opts Options) (*Server, error) {
 				OriginatingWatchID:   cr.WatchID,
 				OriginatingSignal:    &OriginatingSignal{WatchID: cr.WatchID, SignalID: cr.SignalID},
 				Profile:              opts.Profile,
+				PromTarget:           promTarget,
+				PromDisabled:         promDisabled,
 			}
 			inv.Author = resolveGitAuthor()
 			if watchesMgr != nil {
