@@ -70,8 +70,15 @@ func (m *Manager) Get(ctx context.Context, investigationID, contextName string, 
 	}
 	if existing, ok := m.bound[investigationID]; ok &&
 		existing.contextName == contextName && existing.target == target {
-		m.mu.Unlock()
-		return existing.url, nil
+		// Only serve the cached URL if the underlying forwarder is
+		// still alive. ForwardPorts can exit after readiness (pod
+		// restart, SPDY drop), and a stale URL would route prom MCP
+		// traffic to a dead local port. On death, fall through to
+		// re-provision a fresh forwarder.
+		if existing.fwd.IsAlive() {
+			m.mu.Unlock()
+			return existing.url, nil
+		}
 	}
 	prior, hadPrior := m.bound[investigationID]
 	delete(m.bound, investigationID)

@@ -35,6 +35,12 @@ type PortForwarder interface {
 	Start(ctx context.Context) (string, error)
 	// Stop tears down the forward. Idempotent.
 	Stop()
+	// IsAlive reports whether the underlying forwarder loop is still
+	// running. The Manager's cache-hit path consults this so a forward
+	// that died after becoming ready (pod restart, SPDY drop) is
+	// re-provisioned on the next Get rather than handing the prom MCP
+	// a dead URL forever.
+	IsAlive() bool
 }
 
 // Factory builds a PortForwarder for a (rest.Config, kubernetes.Clientset, Target).

@@ -18,6 +18,7 @@ type stubForwarder struct {
 	startErr error
 	started  atomic.Int32
 	stopped  atomic.Int32
+	dead     atomic.Bool // tests flip true to simulate a forward that died after becoming ready
 }
 
 func (s *stubForwarder) Start(_ context.Context) (string, error) {
@@ -27,7 +28,8 @@ func (s *stubForwarder) Start(_ context.Context) (string, error) {
 	s.started.Add(1)
 	return s.url, nil
 }
-func (s *stubForwarder) Stop() { s.stopped.Add(1) }
+func (s *stubForwarder) Stop()         { s.stopped.Add(1) }
+func (s *stubForwarder) IsAlive() bool { return !s.dead.Load() && s.stopped.Load() == 0 }
 
 // stubKubeBuilder hands back a fixed rest.Config / clientset for any
 // investigation id and context name. The Manager doesn't use these values when
@@ -154,6 +156,40 @@ func TestManager_GetReturnsErrorWhenFactoryReturnsNil(t *testing.T) {
 	assert.Contains(t, err.Error(), "nil forwarder")
 }
 
+// Regression: ForwardPorts can exit after readiness (pod restart,
+// dropped SPDY). Without a liveness check, Manager.Get's cache hit
+// would keep handing the prom MCP a dead loopback URL forever. After
+// the first forward "dies" (stub flips IsAlive → false), the next Get
+// must skip the cache and provision a fresh forwarder.
+func TestManager_GetReprovisionsWhenCachedForwarderDied(t *testing.T) {
+	t.Parallel()
+	stubA := &stubForwarder{url: "http://127.0.0.1:7050"}
+	stubB := &stubForwarder{url: "http://127.0.0.1:7051"}
+	idx := 0
+	stubs := []*stubForwarder{stubA, stubB}
+	tgt := Target{Service: "p", Namespace: "n", Port: 9090}
+	mgr := NewManager(Options{
+		Factory: func(*rest.Config, kubernetes.Interface, Target) (PortForwarder, error) {
+			s := stubs[idx]
+			idx++
+			return s, nil
+		},
+		KubeBuilder: stubKubeBuilder,
+	})
+	url1, err := mgr.Get(context.Background(), "inv-1", "cluster-a", tgt)
+	require.NoError(t, err)
+	assert.Equal(t, stubA.url, url1)
+
+	// Simulate the underlying ForwardPorts loop exiting (pod restart).
+	stubA.dead.Store(true)
+
+	url2, err := mgr.Get(context.Background(), "inv-1", "cluster-a", tgt)
+	require.NoError(t, err)
+	assert.Equal(t, stubB.url, url2, "dead cached forward must trigger re-provision")
+	assert.Equal(t, int32(1), stubA.stopped.Load(), "dead forward should be torn down before re-provision")
+	assert.Equal(t, int32(1), stubB.started.Load())
+}
+
 func TestManager_GetSwapsOnDifferentTarget(t *testing.T) {
 	t.Parallel()
 	stubA := &stubForwarder{url: "http://127.0.0.1:7010"}
@@ -199,6 +235,15 @@ func (s *raceStubForwarder) Start(_ context.Context) (string, error) {
 
 func (s *raceStubForwarder) Stop() {
 	s.once.Do(func() { close(s.stopRan) })
+}
+
+func (s *raceStubForwarder) IsAlive() bool {
+	select {
+	case <-s.stopRan:
+		return false
+	default:
+		return true
+	}
 }
 
 // TestManager_StopDuringProvisioningTearsDownNewForwarder reproduces the

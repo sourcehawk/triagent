@@ -22,7 +22,8 @@ import (
 type fakeFwd struct{ url string }
 
 func (f *fakeFwd) Start(_ context.Context) (string, error) { return f.url, nil }
-func (f *fakeFwd) Stop()                                    {}
+func (f *fakeFwd) Stop()                                   {}
+func (f *fakeFwd) IsAlive() bool                           { return true }
 
 func newTestPromMgr(url string) *promforward.Manager {
 	return promforward.NewManager(promforward.Options{

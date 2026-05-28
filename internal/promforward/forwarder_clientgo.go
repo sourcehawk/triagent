@@ -29,6 +29,7 @@ type clientGoForwarder struct {
 
 	mu        sync.Mutex
 	stopCh    chan struct{}
+	doneCh    chan struct{} // closed when the ForwardPorts goroutine exits (alive sentinel)
 	localPort int
 }
 
@@ -73,13 +74,16 @@ func (f *clientGoForwarder) Start(ctx context.Context) (string, error) {
 	}
 
 	errCh := make(chan error, 1)
+	doneCh := make(chan struct{})
 	go func() {
+		defer close(doneCh)
 		errCh <- pf.ForwardPorts()
 	}()
 
 	select {
 	case <-readyCh:
 		f.stopCh = stopCh
+		f.doneCh = doneCh
 		f.localPort = local
 		return "http://127.0.0.1:" + strconv.Itoa(local), nil
 	case err := <-errCh:
@@ -87,6 +91,27 @@ func (f *clientGoForwarder) Start(ctx context.Context) (string, error) {
 	case <-ctx.Done():
 		close(stopCh)
 		return "", ctx.Err()
+	}
+}
+
+// IsAlive reports whether the ForwardPorts goroutine is still running.
+// Once it exits — clean shutdown via Stop or premature death from a
+// dropped SPDY connection / restarted pod — doneCh is closed and IsAlive
+// returns false. Stop also nils stopCh, so a forwarder that has never
+// successfully started reports !IsAlive too.
+func (f *clientGoForwarder) IsAlive() bool {
+	f.mu.Lock()
+	doneCh := f.doneCh
+	stopCh := f.stopCh
+	f.mu.Unlock()
+	if stopCh == nil || doneCh == nil {
+		return false
+	}
+	select {
+	case <-doneCh:
+		return false
+	default:
+		return true
 	}
 }
 
