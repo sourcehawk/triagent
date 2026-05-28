@@ -33,6 +33,7 @@ func ResolveProfileRef(flagValue string) string {
 
 type startFlags struct {
 	profile string
+	port    int
 }
 
 func start() *cobra.Command {
@@ -57,6 +58,8 @@ it onto disk) to change those.`,
 	cmd.Flags().StringVar(&f.profile, "profile", "",
 		"Profile name (embedded: default) or filesystem path. "+
 			"Overridable via TRIAGENT_PROFILE. Defaults to default.")
+	cmd.Flags().IntVar(&f.port, "port", 0,
+		"TCP port to bind on 127.0.0.1. Defaults to 0 (a random free port).")
 	return cmd
 }
 
@@ -169,7 +172,7 @@ func runStart(cmd *cobra.Command, f *startFlags) error {
 		}
 	}
 
-	return runWeb(ctx, mcpBin, paths, playbooksRepo, wikiRepo, sessionsRepo, prof)
+	return runWeb(ctx, mcpBin, paths, playbooksRepo, wikiRepo, sessionsRepo, prof, f.port)
 }
 
 // warnLegacyUnnamespacedDirs surfaces a one-line WARN per legacy
@@ -220,7 +223,7 @@ func joinSubpath(root, sub string) string {
 // browser, and blocks until SIGINT/SIGTERM. Tearing down here cancels the
 // per-investigation contexts so claude CLIs and port-forwards drain
 // cleanly.
-func runWeb(ctx context.Context, mcpBin string, paths profile.Paths, playbooksRepo, wikiRepo, sessionsRepo string, prof *profile.Profile) error {
+func runWeb(ctx context.Context, mcpBin string, paths profile.Paths, playbooksRepo, wikiRepo, sessionsRepo string, prof *profile.Profile, port int) error {
 	// Derive the docs server name from the profile's extra_mcps list so the
 	// editor session's prompt still advertises the docs tools bullet.
 	docsServerName := ""
@@ -228,7 +231,14 @@ func runWeb(ctx context.Context, mcpBin string, paths profile.Paths, playbooksRe
 		docsServerName = m.Alias
 		break
 	}
+	// A non-zero --port binds 127.0.0.1:<port>; the default (0) leaves Addr
+	// empty so server.New picks a random free port.
+	addr := ""
+	if port != 0 {
+		addr = fmt.Sprintf("127.0.0.1:%d", port)
+	}
 	srv, err := server.New(server.Options{
+		Addr:                     addr,
 		Provider:                 provider,
 		MCPBinaryPath:            mcpBin,
 		SessionsRoot:             paths.SessionsRoot,
@@ -251,6 +261,7 @@ func runWeb(ctx context.Context, mcpBin string, paths profile.Paths, playbooksRe
 		CodefixProposalsPath:     paths.CodefixProposalsDir,
 		UserWatchesPath:          paths.UserWatchesFile,
 		Profile:                  prof,
+		Version:                  version,
 	})
 	if err != nil {
 		return fmt.Errorf("start server: %w", err)
