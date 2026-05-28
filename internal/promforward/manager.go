@@ -30,9 +30,10 @@ type Options struct {
 type Manager struct {
 	opts Options
 
-	mu     sync.Mutex
-	bound  map[string]boundEntry // investigation id → current entry
-	closed map[string]struct{}   // ids whose Stop has been called; refuses re-provision
+	mu        sync.Mutex
+	bound     map[string]boundEntry // investigation id → current entry
+	closed    map[string]struct{}   // ids whose Stop has been called; refuses re-provision
+	provLocks map[string]*sync.Mutex // per-investigation provisioning serialization
 }
 
 type boundEntry struct {
@@ -48,7 +49,28 @@ func NewManager(opts Options) *Manager {
 	if opts.Factory == nil {
 		opts.Factory = newClientGoForwarder
 	}
-	return &Manager{opts: opts, bound: map[string]boundEntry{}, closed: map[string]struct{}{}}
+	return &Manager{
+		opts:      opts,
+		bound:     map[string]boundEntry{},
+		closed:    map[string]struct{}{},
+		provLocks: map[string]*sync.Mutex{},
+	}
+}
+
+// provLock returns the per-investigation provisioning mutex, creating it
+// on first use. Serializing provisioning per id keeps a slow Get for an
+// older context from overwriting a faster Get for a newer context after
+// switch_context — concurrent callers run in arrival order, and the latest
+// wins by virtue of running last.
+func (m *Manager) provLock(investigationID string) *sync.Mutex {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	lk, ok := m.provLocks[investigationID]
+	if !ok {
+		lk = &sync.Mutex{}
+		m.provLocks[investigationID] = lk
+	}
+	return lk
 }
 
 // Get returns the loopback URL of the port-forward bound for the given
@@ -62,6 +84,10 @@ func (m *Manager) Get(ctx context.Context, investigationID, contextName string, 
 	if contextName == "" {
 		return "", fmt.Errorf("contextName is required")
 	}
+
+	plk := m.provLock(investigationID)
+	plk.Lock()
+	defer plk.Unlock()
 
 	m.mu.Lock()
 	if _, isClosed := m.closed[investigationID]; isClosed {
@@ -120,26 +146,6 @@ func (m *Manager) Get(ctx context.Context, investigationID, contextName string, 
 		m.mu.Unlock()
 		fwd.Stop()
 		return "", fmt.Errorf("investigation %q closed during provisioning; forwarder torn down", investigationID)
-	}
-	if existing, ok := m.bound[investigationID]; ok {
-		// A concurrent Get raced us and already stored an entry. The
-		// caller-visible behaviour is "last writer wins" — but we must
-		// not leak our just-provisioned forwarder. Stop ours, return
-		// the existing URL if its context and target match ours;
-		// otherwise surface our URL but stop the conflict's forwarder.
-		// Order doesn't matter — whichever Stop runs second is a no-op
-		// because each entry holds a distinct forwarder.
-		if existing.contextName == contextName && existing.target == target {
-			m.mu.Unlock()
-			fwd.Stop()
-			return existing.url, nil
-		}
-		// Different contexts or targets raced for the same id. Stop the
-		// now-stale peer and store ours.
-		m.bound[investigationID] = boundEntry{contextName: contextName, target: target, fwd: fwd, url: url}
-		m.mu.Unlock()
-		existing.fwd.Stop()
-		return url, nil
 	}
 	m.bound[investigationID] = boundEntry{contextName: contextName, target: target, fwd: fwd, url: url}
 	m.mu.Unlock()

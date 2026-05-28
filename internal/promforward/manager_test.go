@@ -6,6 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -286,6 +287,115 @@ func TestManager_StopDuringProvisioningTearsDownNewForwarder(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "closed during provisioning")
 	<-stopRan // Stop was called on the just-built forwarder.
+}
+
+// TestManager_ConcurrentGetWithSwitchPreservesNewest reproduces the race
+// where a slow Get for an older context finishes after a faster Get for a
+// newer context, and the slow Get would otherwise overwrite the newer
+// binding with the stale entry — leaving the prom MCP routed to the old
+// cluster while the user has already switched. The Manager must serialize
+// provisioning per investigation id so the newer Get's binding wins.
+func TestManager_ConcurrentGetWithSwitchPreservesNewest(t *testing.T) {
+	t.Parallel()
+	fwdA := &raceStubForwarder{
+		url:          "http://127.0.0.1:8001",
+		startBegan:   make(chan struct{}),
+		startProceed: make(chan struct{}),
+		stopRan:      make(chan struct{}),
+	}
+	fwdB := &stubForwarder{url: "http://127.0.0.1:8002"}
+
+	var calls atomic.Int32
+	mgr := NewManager(Options{
+		Factory: func(*rest.Config, kubernetes.Interface, Target) (PortForwarder, error) {
+			n := calls.Add(1)
+			if n == 1 {
+				return fwdA, nil
+			}
+			return fwdB, nil
+		},
+		KubeBuilder: stubKubeBuilder,
+	})
+	tgt := Target{Service: "p", Namespace: "n", Port: 9090}
+
+	getAResult := make(chan struct {
+		url string
+		err error
+	}, 1)
+	go func() {
+		url, err := mgr.Get(context.Background(), "inv-1", "cluster-a", tgt)
+		getAResult <- struct {
+			url string
+			err error
+		}{url, err}
+	}()
+
+	// Wait until Get(A) is blocked inside Start, then race a Get(B) for
+	// the new context. With serialized provisioning, Get(B) blocks behind
+	// Get(A)'s in-flight slow path and only resumes once Get(A) finishes;
+	// without it, Get(B) finishes first, then Get(A) overwrites with the
+	// stale {A, fwdA} entry.
+	<-fwdA.startBegan
+	getBResult := make(chan struct {
+		url string
+		err error
+	}, 1)
+	getBStarted := make(chan struct{})
+	go func() {
+		close(getBStarted)
+		url, err := mgr.Get(context.Background(), "inv-1", "cluster-b", tgt)
+		getBResult <- struct {
+			url string
+			err error
+		}{url, err}
+	}()
+	<-getBStarted
+
+	// Release Get(A). Order of completion is implementation-defined; the
+	// invariant under test is the *end state*, not the timing.
+	close(fwdA.startProceed)
+
+	waitGet := func(name string, ch <-chan struct {
+		url string
+		err error
+	}) struct {
+		url string
+		err error
+	} {
+		select {
+		case r := <-ch:
+			return r
+		case <-time.After(2 * time.Second):
+			t.Fatalf("%s did not return within 2s", name)
+			return struct {
+				url string
+				err error
+			}{}
+		}
+	}
+	aRes := waitGet("Get(A)", getAResult)
+	bRes := waitGet("Get(B)", getBResult)
+	require.NoError(t, aRes.err)
+	require.NoError(t, bRes.err)
+	assert.Equal(t, fwdA.url, aRes.url)
+	assert.Equal(t, fwdB.url, bRes.url)
+
+	// fwdA must have been torn down — under serialized provisioning, the
+	// newer Get(B) tears it down when replacing the binding.
+	select {
+	case <-fwdA.stopRan:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("stale forwarder fwdA was not torn down — newer Get(B) lost the race")
+	}
+	// fwdB must still be alive: it is the binding that should win.
+	assert.Equal(t, int32(0), fwdB.stopped.Load(), "newer forwarder must not be torn down by a stale concurrent Get")
+
+	// Confirm the manager's current binding is the cluster-b entry by
+	// reissuing a same-context Get and asserting the cache hits.
+	url, err := mgr.Get(context.Background(), "inv-1", "cluster-b", tgt)
+	require.NoError(t, err)
+	assert.Equal(t, fwdB.url, url)
+	assert.Equal(t, int32(1), fwdB.started.Load(), "cluster-b Get must hit the cache, not re-provision")
 }
 
 // TestManager_GetAfterStopErrors verifies that a Get call that arrives
