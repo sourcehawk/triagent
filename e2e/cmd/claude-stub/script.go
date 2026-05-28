@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -120,6 +121,12 @@ func replayWith(actions []action, in *bufio.Reader, out *bufio.Writer, tr *trace
 			if err := emitProposal(out, tr, p, a); err != nil {
 				return 0, err
 			}
+		case "record_prompt":
+			// Slurp the whole prompt the launcher fed over stdin (a finite
+			// write that EOFs) and record it as a stdin trace line so a test
+			// can assert the profile-derived system prompt reached the agent.
+			prompt, _ := io.ReadAll(in)
+			tr.record(map[string]any{"event": "stdin", "action": "record_prompt", "stdin": string(prompt)})
 		case "expect_tool_call", "expect_tool_result":
 			// Block until the launcher feeds the next stdin event. In this
 			// suite stdin carries only the opening prompt (one read, then

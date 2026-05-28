@@ -115,6 +115,32 @@ func TestReplay_ProposalWithNilPosterIsStreamOnly(t *testing.T) {
 	}
 }
 
+// record_prompt slurps the entire stdin (the launcher feeds claude its
+// prompt as one finite stdin write that then EOFs) and records it in the
+// trace, so a test can assert the profile-derived system prompt reached
+// the agent. Distinct from expect_*, which read a single line to model a
+// stdin yield.
+func TestReplay_RecordPromptCapturesFullStdin(t *testing.T) {
+	prompt := "FIRST-LINE-MARKER\nsecond line\nthird line\n"
+	actions := []action{
+		{Action: "record_prompt"},
+		{Action: "exit", Code: 0},
+	}
+
+	var traceBuf bytes.Buffer
+	tr := &trace{f: os.NewFile(0, ""), enc: json.NewEncoder(&traceBuf)}
+	var outBuf bytes.Buffer
+	out := bufio.NewWriter(&outBuf)
+	in := bufio.NewReader(strings.NewReader(prompt))
+
+	if _, err := replayWith(actions, in, out, tr, nil); err != nil {
+		t.Fatalf("replay: %v", err)
+	}
+	if !strings.Contains(traceBuf.String(), "FIRST-LINE-MARKER") {
+		t.Errorf("trace did not record the prompt: %s", traceBuf.String())
+	}
+}
+
 // posterFromMCPConfig extracts the telemetry triple (url/token/traceId)
 // from a launcher-written mcp.json by reading any one server's env block —
 // every server carries the same telemetry env. A config without telemetry
