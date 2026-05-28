@@ -27,6 +27,15 @@ type action struct {
 	Event  json.RawMessage `json:"event,omitempty"`
 	Name   string          `json:"name,omitempty"`
 	Code   int             `json:"code,omitempty"`
+
+	// proposal-action fields. Input is the tool_use args; Result is the
+	// end-phase tool result body (the proposal payload JSON the frontend
+	// renders). Gh, when set, is a gh argv the proposal's backing MCP
+	// tool would have shelled out to (create_github_issue → gh issue
+	// create); the stub runs it so the gh-stub records the invocation.
+	Input  json.RawMessage `json:"input,omitempty"`
+	Result json.RawMessage `json:"result,omitempty"`
+	Gh     []string        `json:"gh,omitempty"`
 }
 
 // scriptEvent is the simplified event shape carried by an "emit" action.
@@ -76,9 +85,19 @@ func loadScript(path string) ([]action, error) {
 // so the launcher can capture it and pass --resume on the next turn.
 const stubSessionID = "claude-stub-session"
 
-// replay runs the action loop. It returns the scripted exit code (0 unless
-// an "exit" action sets otherwise). out is flushed by the caller.
+// replay runs the action loop with no telemetry poster — proposal actions
+// degrade to stream-only. Kept as the simple entry point for unit tests
+// that never configure telemetry.
 func replay(actions []action, in *bufio.Reader, out *bufio.Writer, tr *trace) (int, error) {
+	return replayWith(actions, in, out, tr, nil)
+}
+
+// replayWith runs the action loop. It returns the scripted exit code (0
+// unless an "exit" action sets otherwise). out is flushed by the caller.
+// When p is non-nil, "proposal" actions POST a start/end tool-event
+// round-trip through it (the real path proposals reach the transcript);
+// when p is nil they emit only the stream tool_use line.
+func replayWith(actions []action, in *bufio.Reader, out *bufio.Writer, tr *trace, p *poster) (int, error) {
 	// Always open with a system/init line so the launcher captures the
 	// session id, mirroring the real CLI's first stream-json line.
 	if err := emitRaw(out, map[string]any{
@@ -95,6 +114,10 @@ func replay(actions []action, in *bufio.Reader, out *bufio.Writer, tr *trace) (i
 			tr.record(map[string]any{"event": "record_args"})
 		case "emit":
 			if err := emitEvent(out, a.Event); err != nil {
+				return 0, err
+			}
+		case "proposal":
+			if err := emitProposal(out, tr, p, a); err != nil {
 				return 0, err
 			}
 		case "expect_tool_call", "expect_tool_result":
@@ -114,6 +137,56 @@ func replay(actions []action, in *bufio.Reader, out *bufio.Writer, tr *trace) (i
 		}
 	}
 	return 0, nil
+}
+
+// emitProposal models one propose-* MCP tool call end to end. It POSTs a
+// start/end tool-event round-trip through the poster (the only path
+// proposals reach the launcher's transcript), runs any gh argv the
+// backing tool would have shelled out to, emits the stream tool_use line
+// for fidelity, and records the round-trip in the trace. With a nil
+// poster (telemetry off) it is stream-only.
+func emitProposal(out *bufio.Writer, tr *trace, p *poster, a action) error {
+	if a.Name == "" {
+		return fmt.Errorf("proposal action requires a tool name")
+	}
+	result := ""
+	if len(a.Result) > 0 {
+		result = string(a.Result)
+	}
+	if err := runGh(a.Gh); err != nil {
+		return err
+	}
+	toolID := ""
+	if p != nil {
+		id, err := p.roundTrip(a.Name, a.Input, result)
+		if err != nil {
+			return err
+		}
+		toolID = id
+	}
+	tr.record(map[string]any{"event": "proposal", "toolName": a.Name, "toolId": toolID})
+
+	// Stream-json tool_use line, mirroring what a real assistant turn that
+	// invoked the tool would emit. The launcher drops it for transcript
+	// purposes (the telemetry POST above is canonical), but emitting it
+	// keeps the stub's stdout faithful to the wire.
+	var input map[string]any
+	if len(a.Input) > 0 {
+		_ = json.Unmarshal(a.Input, &input)
+	}
+	return emitRaw(out, map[string]any{
+		"type":       "assistant",
+		"session_id": stubSessionID,
+		"message": map[string]any{
+			"id": "msg-" + nextID(),
+			"content": []any{map[string]any{
+				"type":  "tool_use",
+				"id":    "toolu-" + nextID(),
+				"name":  a.Name,
+				"input": input,
+			}},
+		},
+	})
 }
 
 // emitEvent translates one simplified script event to its stream-json wire
