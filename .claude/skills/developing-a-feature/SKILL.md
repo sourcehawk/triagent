@@ -51,7 +51,23 @@ update the state file's rows to match reality before continuing.
   - When every sub-PR has been self-merged into the feature branch, the orchestrator opens the **integration PR**
     `feature/<slug>` → `main`, with `Closes #<epic>` in its body, for external review and the final merge.
 
-For sequential single-PR work, skip to Step 4. For multi-PR work, dispatch parallel subagents in Step 3.
+For sequential single-PR work, skip to Step 4. For multi-PR work, dispatch parallel subagents in Step 3 — but
+first, ask the user how sub-PR approval should work.
+
+**Sub-PR approval mode (multi-PR only).** Before any sub-worktree work starts, the orchestrator presents the operator
+with a two-option choice via `AskUserQuestion`:
+
+- **Autonomous sub-worktree approval** — the orchestrator reviews each sub-PR with the `review` skill, self-merges it
+  into the feature branch, and closes its sub-issue automatically. Fastest fan-out; the operator only sees the
+  integration PR at the end. Suitable when the integration PR's external-review pass is the operator's intended
+  inspection point.
+- **Manual sub-worktree approval** — the orchestrator still runs the `review` skill on each sub-PR, but then pauses
+  to ask the operator for explicit approval before `gh pr merge` runs. One round-trip per sub-PR, but the operator
+  inspects every diff before it lands on the feature branch.
+
+Record the choice in the state file's frontmatter as `sub_pr_approval: autonomous` or `sub_pr_approval: manual`. The
+fan-out skill reads this field at every sub-PR ripening to decide whether to gate on operator approval. Default if
+the field is missing in an older state file: `autonomous` (preserves the original behaviour).
 
 ### 3. Set up the implementation environment
 

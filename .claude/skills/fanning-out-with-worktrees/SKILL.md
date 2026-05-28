@@ -131,12 +131,19 @@ Per sub-PR, in order:
 1. **Review.** **REQUIRED SUB-SKILL:** the `review` skill — invoke it against the sub-PR number to walk the diff with
    full PR context. This review is weaker than external review (which lands at the integration PR) but stronger than
    nothing; it catches issues that would otherwise pile onto the integration PR reviewer.
-2. **Merge into the feature branch.** `gh pr merge <num> --merge --repo sourcehawk/triagent` (or `--squash` /
+2. **Approval gate, per the state file's `sub_pr_approval` mode.**
+   - **`autonomous`** (default) — proceed straight to the merge in step 3. The operator opted out of per-sub-PR
+     gating in `developing-a-feature` Step 2.
+   - **`manual`** — pause and ask the operator for explicit approval before merging. Surface a one-line summary of
+     the review findings ("review clean" / "<N> findings, none blocking" / specific concerns) and the PR's
+     title/diff size in the prompt; wait for an explicit yes. On push-back, route the concern back to the worktree
+     subagent via `SendMessage` instead of merging.
+3. **Merge into the feature branch.** `gh pr merge <num> --merge --repo sourcehawk/triagent` (or `--squash` /
    `--rebase` per project preference).
-3. **Close the sub-issue manually.** `gh issue close <sub-issue> --comment "Merged via #<num> into feature/<slug>"`.
+4. **Close the sub-issue manually.** `gh issue close <sub-issue> --comment "Merged via #<num> into feature/<slug>"`.
    Sub-PRs into a non-default branch don't trigger `Fixes`/`Closes` — manual close is the workaround. (The body's
    `Towards #<sub-issue>` keyword left the issue open precisely so the orchestrator can close it here.)
-4. **Update the state file.** Flip the row's status to `self-merged`. If the sub-PR was the realization of a
+5. **Update the state file.** Flip the row's status to `self-merged`. If the sub-PR was the realization of a
    contract (e.g. a pre-merge stub PR), flip the contract row's status to `locked` and fill in the `Realized in`
    pointer.
 
