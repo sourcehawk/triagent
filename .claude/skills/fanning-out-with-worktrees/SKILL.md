@@ -142,8 +142,12 @@ Per sub-PR, in order:
      the PR's title and diff size, and a note that closing sub-issue `#<sub-issue>` follows the merge. Wait for an
      explicit yes. On push-back, route the concern back to the worktree subagent via `SendMessage` instead of
      merging.
-3. **Merge into the feature branch.** `gh pr merge <num> --merge --repo sourcehawk/triagent` (or `--squash` /
-   `--rebase` per project preference).
+3. **Merge into the feature branch.** First **push any local state-file commits to `origin/feature/<slug>`** — the
+   merge happens on GitHub's side and lands on origin's current tip, so unpushed local commits make the post-merge
+   `git -C <feature_worktree> pull --ff-only` fail with "Not possible to fast-forward" (local and origin have
+   diverged; recover with `git rebase origin/feature/<slug>`). Keep local == origin at every merge boundary. Then
+   `gh pr merge <num> --merge --repo sourcehawk/triagent` (or `--squash` / `--rebase` per project preference), and
+   `git -C <feature_worktree> fetch origin && git merge --ff-only origin/feature/<slug>` to bring the merge back.
 4. **Close the sub-issue.** `gh issue close <sub-issue> --repo sourcehawk/triagent`. Sub-PRs into a non-default
    branch don't trigger `Fixes`/`Closes` — manual close is the workaround. The body's `Towards #<sub-issue>`
    keyword left the issue open precisely so the orchestrator can close it here; the cross-reference from the merge
@@ -187,7 +191,8 @@ integration PR (`feature/<slug>` → `main` with `Closes #<epic>`) which `develo
 - **Forgetting to manually close the sub-issue.** The keyword doesn't fire on non-default-branch merges; the issue
   page silently shows "open" even though the work shipped.
 - **Letting the state file go stale.** A resumed session reads it as ground truth. Update every row as reality moves;
-  commit the state-file diff per phase transition.
+  commit **and push** the state-file diff per phase transition — an unpushed local commit diverges the feature branch
+  the moment the next sub-PR squash-merges on GitHub (see Step 5.3).
 
 ## Red flags
 
