@@ -64,10 +64,38 @@ every parallel PR (across all waves) has surfaced. A producer merged while a con
 the consumer to compile against the merged shape — which may have drifted from the contract row if the producer
 edited under review.
 
-**Contract drift mid-fan-out.** If a contract row needs to shift after consumers have started (reviewer feedback, an
-edge case the producer hit), pause every affected consumer, update the plan's `## Contracts` row, surface the diff
-to each paused subagent (or kill+redispatch), then resume. Don't let a contract drift silently — the consumers will
-silently diverge.
+**Orchestrator watch loop.** While the parallel subagents run, the orchestrator is the integration point — not an
+idle waiter. Watch for concerns that bubble up from any subagent and propagate the resolution across every subagent
+the concern touches. Silent divergence is the failure mode this watch loop exists to prevent.
+
+Categories of concerns to watch for:
+
+- **Contract drift.** A row in the plan's `## Contracts` table needs to shift (reviewer feedback, an edge case the
+  producer hit). Pause every affected consumer, update the plan's row, propagate.
+- **Spec ambiguity surfaced mid-implementation.** A subagent hits a case the spec didn't cover. Surface to the user,
+  get a decision, amend the spec (or add a note to the plan), and propagate to every subagent whose scope touches
+  the same surface.
+- **Discovered cross-PR dependency.** A subagent finds it needs a helper, type, or behaviour from another PR that the
+  plan didn't enumerate. Decide whether the helper becomes a new contract (file an issue, add a contract row),
+  inlines into the current PR, or is something one of the other subagents is already producing.
+- **Test failure in shared infrastructure.** One subagent breaks a test that another subagent's PR relies on.
+  Coordinate the fix into the right PR; don't let both subagents fix it independently and merge competing patches.
+- **External dependency change.** A Go module bump, a frontend lib update, an API shift the orchestrator notices —
+  affects every running subagent.
+- **Resource conflict.** Two subagents both editing the same file or symbol. Re-scope one to avoid the collision, or
+  serialize the work.
+
+How to propagate the resolution:
+
+- **Subagent still running** → use `SendMessage` with the subagent's id to push the resolution with full context.
+  The subagent resumes with the update applied.
+- **Subagent finished, PR still open** → re-dispatch a focused follow-up with the PR number and the specific change
+  to apply.
+- **Subagent not yet dispatched (later wave)** → update its dispatch prompt's context block before launching, so the
+  next wave starts with the resolution in hand.
+
+A concern raised by one subagent and not propagated to the others is how this whole pattern fails. The orchestrator
+owns propagation.
 
 ### 4. Implement (sequential work, or per-subagent)
 
