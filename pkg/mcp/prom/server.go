@@ -70,8 +70,11 @@ type snapshot struct {
 }
 
 // New constructs a Server. It does NOT fetch the catalog — that happens
-// in Run, so a misconfigured endpoint fails loudly at startup instead of
-// during the first tool call.
+// in Run. An unreachable Prometheus endpoint is non-fatal: Run logs the
+// failure to stderr and continues serving with an empty catalog, so the
+// agent sees each tool return "catalog empty …" rather than the whole
+// process exiting. Callers wanting a hard pre-check should validate the
+// endpoint themselves before invoking Run.
 func New(opts Options) (*Server, error) {
 	if opts.Endpoint == "" && opts.EndpointResolver == "" {
 		return nil, fmt.Errorf("endpoint or EndpointResolver is required")
