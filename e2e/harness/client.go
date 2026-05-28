@@ -54,6 +54,18 @@ func (c *Client) PostJSON(t *testing.T, path string, body any) (int, []byte) {
 	return c.do(t, http.MethodPost, path, raw)
 }
 
+// PutJSON issues an authenticated PUT with a JSON body. The launcher
+// uses PUT for in-place resource edits (e.g. wiki entry updates) that
+// POST would route to a create handler.
+func (c *Client) PutJSON(t *testing.T, path string, body any) (int, []byte) {
+	t.Helper()
+	raw, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("client: marshal body: %v", err)
+	}
+	return c.do(t, http.MethodPut, path, raw)
+}
+
 func (c *Client) do(t *testing.T, method, path string, body []byte) (int, []byte) {
 	t.Helper()
 	url := c.baseURL + path

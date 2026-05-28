@@ -95,9 +95,11 @@ export async function openPlaybookEditor(page: Page, id: string): Promise<void> 
 
 // ── Wiki surface ──────────────────────────────────────────────────
 
-// openWikiEntries navigates to the wiki entries index.
+// openWikiEntries navigates to the wiki home, which renders the entries
+// list (the EntryList rows live in WikiHome at /wiki; /wiki/entries is
+// the per-entry editor route).
 export async function openWikiEntries(page: Page): Promise<void> {
-  await gotoAuthed(page, "/wiki/entries");
+  await gotoAuthed(page, "/wiki");
 }
 
 // wikiEntryRows returns every wiki entry row in the list, in DOM order.
