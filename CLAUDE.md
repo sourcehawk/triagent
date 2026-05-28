@@ -126,29 +126,29 @@ The `.claude/skills/` directory holds project-shared skills that every contribut
 
 ```mermaid
 flowchart TD
-    Start([Feature conception]) --> P[planning-a-feature]
+    Start([Feature conception]) --> P[skill:planning-a-feature]
     P -->|brainstorm + author spec<br/>at docs/superpowers/specs/| Review{User reviews<br/>spec}
     Review -->|approved| Shape{PR shape:<br/>single or multi?}
-    Shape -->|single PR| Issue1[writing-github-issues<br/>file single feature/bug]
-    Shape -->|multi PR| Issue2[writing-github-issues<br/>file epic + sub-issues<br/>link via addSubIssue]
+    Shape -->|single PR| Issue1[skill:writing-github-issues<br/>file single feature/bug]
+    Shape -->|multi PR| Issue2[skill:writing-github-issues<br/>file epic + sub-issues<br/>link via addSubIssue]
     Issue1 --> Plan
     Issue2 --> Plan[superpowers:writing-plans<br/>plan + ## Contracts table at<br/>docs/superpowers/plans/]
     Plan --> State[Initialize state file at<br/>docs/superpowers/plans/<slug>-state.md]
-    State --> D[developing-a-feature]
+    State --> D[skill:developing-a-feature]
 
     D --> DShape{single-PR<br/>or multi-PR?}
     DShape -->|single-PR| Direct[Implement directly<br/>TDD + testing-a-feature]
     DShape -->|multi-PR| Setup[Create feature/<slug><br/>branch + main worktree]
-    Setup --> Fanout[fanning-out-with-worktrees]
+    Setup --> Fanout[skill:fanning-out-with-worktrees]
 
     Fanout -->|sub-worktree per sub-PR<br/>subagent writes,<br/>orchestrator reviews/merges/closes| Fanout
-    Fanout -->|between waves| Checkpoint[reviewing-feature-progress]
+    Fanout -->|between waves| Checkpoint[skill:reviewing-feature-progress]
     Checkpoint --> Fanout
 
     Direct --> Verify1[superpowers:verification-before-completion<br/>make test + lint + typecheck]
-    Fanout --> Verify2[reviewing-feature-progress<br/>before integration PR]
-    Verify1 --> SinglePR[opening-a-pull-request<br/>PR → main, Fixes/Closes #issue]
-    Verify2 --> Integration[opening-a-pull-request<br/>feature → main, Closes #epic]
+    Fanout --> Verify2[skill:reviewing-feature-progress<br/>before integration PR]
+    Verify1 --> SinglePR[skill:opening-a-pull-request<br/>PR → main, Fixes/Closes #issue]
+    Verify2 --> Integration[skill:opening-a-pull-request<br/>feature → main, Closes #epic]
     SinglePR --> Ship([External review → merge<br/>teardown plan + state in same diff])
     Integration --> Ship
 ```
