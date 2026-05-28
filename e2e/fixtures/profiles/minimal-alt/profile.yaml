@@ -1,0 +1,23 @@
+# Second minimal e2e fixture profile. Identical local-only, offline shape
+# to `minimal`, but with a distinct `name:` so the boot-options flow can
+# prove the /healthz profile field tracks the loaded profile rather than a
+# baked-in constant.
+name: minimal-alt
+
+description: |
+  Alternate minimal profile used by the boot-options flow to assert that
+  --profile resolution is reflected in /healthz. Local kubeconfig auth,
+  offline, no upstream repos.
+
+auth:
+  kind: kubeconfig
+
+playbooks:
+  entrypoint: investigation
+  closing: capture_offer
+
+defaults:
+  playbooks_repo: ""
+  wiki_repo: ""
+  sessions_repo: ""
+  offline: true
