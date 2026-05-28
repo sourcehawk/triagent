@@ -91,6 +91,14 @@ func isIdentChar(c byte) bool {
 		return true
 	case c == '_':
 		return true
+	case c == ':':
+		// PromQL metric identifiers may contain `:` — the recording-
+		// rule convention is `level:metric:operation` (e.g.
+		// `job:http_requests:rate5m`). Treating `:` as a non-ident
+		// boundary would let a recording rule containing the substring
+		// of a high-cardinality raw metric be misclassified as an
+		// unscoped reference to that raw metric.
+		return true
 	default:
 		return false
 	}

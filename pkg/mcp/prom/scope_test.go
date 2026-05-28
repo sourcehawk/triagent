@@ -185,6 +185,26 @@ func TestScope_AllowsCommaInsideLabelValue(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// Regression: PromQL identifiers may contain `:` (recording-rule
+// naming convention). A scoped query against a recording rule whose
+// name contains the substring of a high-cardinality raw metric used
+// to be falsely rejected as an unscoped reference to that raw metric.
+func TestScope_AllowsRecordingRuleNameContainingHighCardSubstring(t *testing.T) {
+	t.Parallel()
+	cat := emptyCatalog()
+	cat.names = []string{"http_requests", "job:http_requests:rate5m"}
+	cat.cardEst = map[string]int{
+		"http_requests":            500,
+		"job:http_requests:rate5m": 5,
+	}
+	// The recording rule is low-card; a scoped query against it must pass.
+	// Without `:` in isIdentChar, the substring scan would land on the
+	// `http_requests` inside the recording-rule name and reject because
+	// no scope follows.
+	err := checkScope(context.Background(), nil, cat, `job:http_requests:rate5m{job="x"}`)
+	require.NoError(t, err)
+}
+
 // Regression: the unscoped-name-matcher guard must also see through
 // quoted braces. A `}` inside a quoted regex value should not be
 // mistaken for the end of the matcher block.
