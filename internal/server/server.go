@@ -30,13 +30,10 @@ import (
 	"github.com/sourcehawk/triagent/internal/editor"
 	"github.com/sourcehawk/triagent/internal/preflight"
 	"github.com/sourcehawk/triagent/internal/profile"
-	"github.com/sourcehawk/triagent/internal/promforward"
 	"github.com/sourcehawk/triagent/internal/repos"
 	"github.com/sourcehawk/triagent/internal/watches"
 	"github.com/sourcehawk/triagent/internal/watches/sources"
 	"github.com/sourcehawk/triagent/internal/web"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
 )
 
 const (
@@ -586,33 +583,16 @@ func New(opts Options) (*Server, error) {
 		})
 	}
 
-	// Provision the prom Manager whenever we have a profile — the Manager
-	// itself has no dependency on profile-level prom config because
-	// per-investigation overrides can supply the full target even when the
-	// profile has no defaults.prometheus section.
-	var promForwarder *promforward.Manager
-	if opts.Profile != nil {
-		promForwarder = promforward.NewManager(promforward.Options{
-			KubeBuilder: func(invID, ctxName string) (*rest.Config, kubernetes.Interface, error) {
-				inv := manager.Get(invID)
-				if inv == nil {
-					return nil, nil, fmt.Errorf("investigation %q not found", invID)
-				}
-				cfg, err := buildKubeConfigForContext(inv.KubeconfigPath, ctxName)
-				if err != nil {
-					return nil, nil, err
-				}
-				cs, err := kubernetes.NewForConfig(cfg)
-				if err != nil {
-					return nil, nil, err
-				}
-				return cfg, cs, nil
-			},
-		})
-		manager.SetCloseHook(func(invID string) {
-			promForwarder.Stop(invID)
-		})
-	}
+	// Per-investigation prom forwarder. Unconditional: profile defaults
+	// and per-investigation overrides both flow through resolvePromTarget,
+	// and the override path can supply a full target with no profile at
+	// all. Gating this on opts.Profile != nil would leave override-only
+	// configs with `triagent-prom` attached in the MCP config but a nil
+	// forwarder serving 503 from the resolver endpoint.
+	promForwarder := newPromForwarder(manager)
+	manager.SetCloseHook(func(invID string) {
+		promForwarder.Stop(invID)
+	})
 
 	api := &apiHandlers{
 		opts:         opts,
