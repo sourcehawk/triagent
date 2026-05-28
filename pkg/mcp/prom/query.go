@@ -158,6 +158,15 @@ func runRecentValue(ctx context.Context, snap *snapshot, metric string, labels m
 	if metric == "" {
 		return ValueResult{}, fmt.Errorf("metric is required — pass the exact metric name from prom_list_metrics")
 	}
+	// Enforce the exact-name contract: metric is concatenated raw into
+	// PromQL, so without a catalog check a caller could smuggle a
+	// PromQL fragment (e.g. `foo{a="b"} or bar`) and turn this tool
+	// into an arbitrary query that bypasses the scope semantics it
+	// advertises. catalogHas does a binary search on the sorted name
+	// list — cheap relative to the round-trip we're about to make.
+	if !catalogHas(snap.catalog, metric) {
+		return ValueResult{}, fmt.Errorf("metric %q is not in the indexed catalog — pass the exact metric name from prom_list_metrics", metric)
+	}
 	if len(labels) == 0 {
 		return ValueResult{}, fmt.Errorf("labels required (non-empty) — prom_recent_value needs at least one label matcher to scope the lookup")
 	}

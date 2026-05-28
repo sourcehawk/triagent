@@ -472,6 +472,30 @@ func TestBuildMatcherString_EmptyMap(t *testing.T) {
 	assert.Equal(t, "", buildMatcherString(map[string]string{}))
 }
 
+// Regression: `metric` is concatenated raw into PromQL. Without a
+// catalog check, a caller could pass a fragment like `foo{a="b"} or bar`
+// and turn the exact-label lookup into an arbitrary query — bypassing
+// the scope semantics this tool advertises.
+func TestRecentValue_RejectsNonCatalogMetric(t *testing.T) {
+	t.Parallel()
+	cat := cardCatalog("known_metric", 5)
+	snap := &snapshot{client: newPromClient("http://stub", "", "", http.DefaultClient), catalog: cat}
+	_, err := runRecentValue(context.Background(), snap, "not_in_catalog", map[string]string{"k": "v"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not_in_catalog")
+	assert.Contains(t, err.Error(), "prom_list_metrics", "error should redirect to discovery tool")
+}
+
+func TestRecentValue_RejectsPromqlFragmentSmuggling(t *testing.T) {
+	t.Parallel()
+	cat := cardCatalog("foo", 5)
+	snap := &snapshot{client: newPromClient("http://stub", "", "", http.DefaultClient), catalog: cat}
+	// "foo or bar" is not a catalog name even though "foo" alone is —
+	// the contract is exact match.
+	_, err := runRecentValue(context.Background(), snap, `foo{a="b"} or bar`, map[string]string{"k": "v"})
+	require.Error(t, err)
+}
+
 func TestRecentValue_RequiresMetric(t *testing.T) {
 	t.Parallel()
 	cat := cardCatalog("foo", 5)
