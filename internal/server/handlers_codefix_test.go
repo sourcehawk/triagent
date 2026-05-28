@@ -182,6 +182,7 @@ func TestBackfillCodefixProposals_UsesSessionDirNotID(t *testing.T) {
 	}))
 
 	mgr := NewManager(context.Background(), sessionsRoot)
+	t.Cleanup(mgr.Shutdown)
 	require.NoError(t, mgr.Restore())
 	require.Len(t, mgr.List(), 1, "manager.Restore should have loaded the session")
 	require.Equal(t, invID, mgr.List()[0].ID, "loaded DTO id must match metadata, not directory name")

@@ -29,6 +29,7 @@ func initFixtureRepo(t *testing.T, owner, name string) (cacheDir, repoDir string
 			"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@example.com",
 			"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@example.com",
 			"GIT_CONFIG_NOSYSTEM=1",
+			"GIT_OPTIONAL_LOCKS=0", // suppress .git/index.lock and similar
 		)
 		out, err := cmd.CombinedOutput()
 		require.NoError(t, err, "git %v: %s", args, out)
@@ -41,6 +42,11 @@ func initFixtureRepo(t *testing.T, owner, name string) (cacheDir, repoDir string
 	run("init", "-q", "--initial-branch=main")
 	run("config", "commit.gpgsign", "false")
 	run("config", "tag.gpgsign", "false")
+	// Prevent background gc / maintenance workers from writing to .git/objects
+	// after the test logic completes, which races with t.TempDir's RemoveAll.
+	run("config", "--local", "gc.auto", "0")
+	run("config", "--local", "maintenance.auto", "false")
+	run("config", "--local", "core.fsmonitor", "false") // prevent fsmonitor daemon writes
 
 	writeFile("README.md", "hello\n")
 	run("add", "README.md")
@@ -56,6 +62,24 @@ func initFixtureRepo(t *testing.T, owner, name string) (cacheDir, repoDir string
 	run("add", "-A")
 	run("commit", "-q", "-m", "fix: reduce backpressure timeout")
 	run("tag", "-a", "-m", "second release", "v0.2.0")
+
+	t.Cleanup(func() {
+		// Retry the cacheDir cleanup explicitly so transient
+		// "directory not empty" races with git background workers
+		// (fsmonitor, async fsync) don't surface as test failures.
+		// Runs BEFORE Go's t.TempDir cleanup (LIFO); on success, the
+		// later cleanup is a no-op.
+		for attempt := 0; attempt < 10; attempt++ {
+			if err := os.RemoveAll(cacheDir); err == nil {
+				return
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		// Last attempt — let any final error fall through to Go's
+		// own t.TempDir cleanup, which will log it but not fail.
+		_ = os.RemoveAll(cacheDir)
+	})
+
 	return cacheDir, repoDir
 }
 
@@ -168,6 +192,7 @@ func TestLatestTags_FiltersPrereleasesByDefault(t *testing.T) {
 			"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@example.com",
 			"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@example.com",
 			"GIT_CONFIG_NOSYSTEM=1",
+			"GIT_OPTIONAL_LOCKS=0", // suppress .git/index.lock and similar
 		)
 		out, err := cmd.CombinedOutput()
 		require.NoError(t, err, "git %v: %s", args, out)
@@ -178,6 +203,20 @@ func TestLatestTags_FiltersPrereleasesByDefault(t *testing.T) {
 	run("init", "-q", "--initial-branch=main")
 	run("config", "commit.gpgsign", "false")
 	run("config", "tag.gpgsign", "false")
+	// Prevent background gc / maintenance workers from writing to .git/objects
+	// after the test logic completes, which races with t.TempDir's RemoveAll.
+	run("config", "--local", "gc.auto", "0")
+	run("config", "--local", "maintenance.auto", "false")
+	run("config", "--local", "core.fsmonitor", "false") // prevent fsmonitor daemon writes
+	t.Cleanup(func() {
+		for attempt := 0; attempt < 10; attempt++ {
+			if err := os.RemoveAll(cacheDir); err == nil {
+				return
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		_ = os.RemoveAll(cacheDir)
+	})
 	write("README.md", "a\n")
 	run("add", "README.md")
 	run("commit", "-q", "-m", "release 1.2.3")

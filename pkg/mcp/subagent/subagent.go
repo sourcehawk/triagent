@@ -16,6 +16,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -23,6 +24,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/sourcehawk/triagent/pkg/mcp/telemetry"
@@ -149,21 +151,8 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	if opts.ResumeSessionID != "" {
 		args = append(args, "--resume", opts.ResumeSessionID)
 	}
-	cmd := exec.CommandContext(subCtx, bin, args...)
-	cmd.Dir = opts.WorkingDir
-	cmd.Stdin = strings.NewReader(opts.Prompt)
-	cmd.Env = filterEnv(os.Environ())
-
-	stdout, err := cmd.StdoutPipe()
+	cmd, stdout, stderr, err := startCmdWithETXTBSYRetry(subCtx, bin, args, opts)
 	if err != nil {
-		return Result{}, fmt.Errorf("stdout pipe: %w", err)
-	}
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return Result{}, fmt.Errorf("stderr pipe: %w", err)
-	}
-
-	if err := cmd.Start(); err != nil {
 		return Result{}, fmt.Errorf("start claude: %w", err)
 	}
 
@@ -530,3 +519,43 @@ func trimTo(s string, n int) string {
 }
 
 func errIs(got, want error) bool { return got == want }
+
+// startCmdWithETXTBSYRetry builds and starts a fresh *exec.Cmd, retrying
+// on ETXTBSY ("text file busy"). The error surfaces transiently when a
+// sibling goroutine forked while holding an open-for-write FD on the
+// claude binary — child forks inherit FDs, and O_CLOEXEC only takes
+// effect at exec time, so the kernel blocks exec of the binary until
+// the sibling's exec closes the inherited FD. A few short retries
+// dissolve the window without masking real failures; ETXTBSY past the
+// retry budget still surfaces. Cmd is reconstructed each attempt so
+// fresh stdout/stderr pipes back the returned readers (exec.Cmd's
+// internal pipes are closed on Start failure).
+func startCmdWithETXTBSYRetry(ctx context.Context, bin string, args []string, opts Options) (*exec.Cmd, io.ReadCloser, io.ReadCloser, error) {
+	const maxAttempts = 5
+	backoff := 10 * time.Millisecond
+	for attempt := 1; ; attempt++ {
+		cmd := exec.CommandContext(ctx, bin, args...)
+		cmd.Dir = opts.WorkingDir
+		cmd.Stdin = strings.NewReader(opts.Prompt)
+		cmd.Env = filterEnv(os.Environ())
+		stdout, err := cmd.StdoutPipe()
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("stdout pipe: %w", err)
+		}
+		stderr, err := cmd.StderrPipe()
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("stderr pipe: %w", err)
+		}
+		err = cmd.Start()
+		if err == nil {
+			return cmd, stdout, stderr, nil
+		}
+		// Pipes are closed inside cmd.Start on failure; the next
+		// iteration recreates them via a fresh Cmd.
+		if !errors.Is(err, syscall.ETXTBSY) || attempt >= maxAttempts {
+			return nil, nil, nil, err
+		}
+		time.Sleep(backoff)
+		backoff *= 2
+	}
+}

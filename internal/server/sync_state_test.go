@@ -396,6 +396,7 @@ func TestHandleSessionsUpstreamSync_TriggersReconcile(t *testing.T) {
 
 	// Register a local Investigation whose slug we'll plant on origin.
 	mgr := NewManager(context.Background(), t.TempDir())
+	t.Cleanup(mgr.Shutdown)
 	created := time.Date(2026, 5, 8, 9, 0, 0, 0, time.UTC)
 	inv, err := mgr.Register(&Investigation{
 		ID:        "abcdef0123456789abcdef0123456789",

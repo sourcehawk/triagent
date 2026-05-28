@@ -34,11 +34,21 @@ func (a *apiHandlers) handleArchiveInvestigation(w http.ResponseWriter, r *http.
 		inv.mu.Lock()
 		inv.archived = true
 		inv.mu.Unlock()
-		if err := a.manager.persistMetadata(inv); err != nil {
-			writeError(w, http.StatusInternalServerError, "persist: "+err.Error())
+		// Fire the terminal + close hooks based on the in-memory
+		// transition, NOT gated on persist success. The hooks release
+		// per-investigation resources (spawner slot, prom port-forward)
+		// that match the in-memory archived state; if we skipped them
+		// when persistMetadata failed, the next archive retry would
+		// take the alreadyArchived fast path above and the port-forward
+		// would leak until launcher shutdown. The persist error still
+		// surfaces to the caller.
+		persistErr := a.manager.persistMetadata(inv)
+		a.manager.fireTerminal(inv)       // M6.4: release spawner slot on archive
+		a.manager.FireCloseHook(inv.ID) // release per-investigation resources (prom port-forward, ...)
+		if persistErr != nil {
+			writeError(w, http.StatusInternalServerError, "persist: "+persistErr.Error())
 			return
 		}
-		a.manager.fireTerminal(inv) // M6.4: release spawner slot on archive
 	}
 	writeJSON(w, http.StatusOK, inv.Snapshot())
 }
@@ -100,6 +110,18 @@ func (a *apiHandlers) handlePushSessionPR(w http.ResponseWriter, r *http.Request
 	inv.PushStartedAt = &now
 	inv.PushError = ""
 	inv.mu.Unlock()
+
+	if !a.manager.trackBackground() {
+		// Launcher is shutting down. Undo the in-memory state we just set
+		// so a future launcher boot sees an idle investigation rather
+		// than a stuck "in progress" flag.
+		inv.mu.Lock()
+		inv.PushInProgress = false
+		inv.PushStartedAt = nil
+		inv.mu.Unlock()
+		writeError(w, http.StatusServiceUnavailable, "manager is shutting down")
+		return
+	}
 	_ = a.manager.persistMetadata(inv)
 	inv.publishPushState(PushStatePayload{Phase: "pushing", StartedAt: &now})
 
@@ -114,6 +136,7 @@ func (a *apiHandlers) handlePushSessionPR(w http.ResponseWriter, r *http.Request
 // triagent-mcp drafter mid-flight, and the goroutine still dies cleanly on
 // launcher shutdown.
 func (a *apiHandlers) runPushSessionPR(inv *Investigation, sessionDir string, req sessionPushRequest) {
+	defer a.manager.bgDone()
 	ctx := a.manager.ParentContext()
 	res, errs, err := pushSessionPR(ctx, a.capabilities,
 		a.opts.SessionsCloneRoot,

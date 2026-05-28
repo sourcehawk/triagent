@@ -155,7 +155,8 @@ func (p *Provider) EnsureAuthenticated(ctx context.Context) error {
 // deduplicated by name and sorted by env label (dev < int < prod) then
 // by name using natural ordering.
 func (p *Provider) ListClusters(ctx context.Context) ([]auth.Cluster, error) {
-	if _, err := p.Auth.EnsureLoggedIn(); err != nil {
+	prof, err := p.Auth.EnsureLoggedIn()
+	if err != nil {
 		return nil, err
 	}
 
@@ -170,28 +171,52 @@ func (p *Provider) ListClusters(ctx context.Context) ([]auth.Cluster, error) {
 		return nil, fmt.Errorf("listing Kubernetes clusters: %w", err)
 	}
 
-	return buildClusterList(kubeServers), nil
+	return buildClusterList(kubeServerMetas(kubeServers), prof.SiteName), nil
 }
 
-// buildClusterList deduplicates kube servers by name and sorts the result.
-func buildClusterList(kubeServers []types.KubeServer) []auth.Cluster {
+// kubeServerMeta is the slice of a teleport KubeServer that
+// buildClusterList consumes — extracted at the teleport-SDK boundary
+// so buildClusterList stays unit-testable without mocking the full
+// types.KubeServer surface.
+type kubeServerMeta struct {
+	Name   string
+	Labels map[string]string
+}
+
+// kubeServerMetas converts the teleport SDK shape into the local meta
+// slice, defaulting nil label maps to empty so downstream loops don't
+// have to guard on it.
+func kubeServerMetas(servers []types.KubeServer) []kubeServerMeta {
+	out := make([]kubeServerMeta, 0, len(servers))
+	for _, ks := range servers {
+		c := ks.GetCluster()
+		labels := c.GetStaticLabels()
+		if labels == nil {
+			labels = map[string]string{}
+		}
+		out = append(out, kubeServerMeta{Name: c.GetName(), Labels: labels})
+	}
+	return out
+}
+
+// buildClusterList deduplicates kube servers by name, populates each
+// auth.Cluster's KubeContext (so the launcher can pre-seed
+// <sessionDir>/active-context when the operator selects this cluster
+// at preflight), and sorts the result.
+func buildClusterList(metas []kubeServerMeta, siteName string) []auth.Cluster {
 	seen := make(map[string]bool)
-	clusters := make([]auth.Cluster, 0, len(kubeServers))
-	for _, ks := range kubeServers {
-		cluster := ks.GetCluster()
-		name := cluster.GetName()
+	clusters := make([]auth.Cluster, 0, len(metas))
+	for _, m := range metas {
+		name := m.Name
 		if seen[name] {
 			continue
 		}
 		seen[name] = true
-		labels := cluster.GetStaticLabels()
-		if labels == nil {
-			labels = map[string]string{}
-		}
 		clusters = append(clusters, auth.Cluster{
-			Name:   name,
-			ID:     labels["full_id"],
-			Labels: labels,
+			Name:        name,
+			ID:          m.Labels["full_id"],
+			KubeContext: kubeContextName(siteName, name),
+			Labels:      m.Labels,
 		})
 	}
 

@@ -50,6 +50,7 @@ func TestStreamRing_StaleAfterEviction(t *testing.T) {
 
 func TestManager_PublishStream_FansOutToSubscribers(t *testing.T) {
 	m := NewManager(context.Background(), t.TempDir())
+	t.Cleanup(m.Shutdown)
 	_, ch, _, cancel := m.SubscribeStream("tab-A", 0)
 	t.Cleanup(cancel)
 
@@ -71,6 +72,7 @@ func TestManager_PublishStream_FansOutToSubscribers(t *testing.T) {
 
 func TestManager_CloseStreamSubscriber_ClosesByToken(t *testing.T) {
 	m := NewManager(context.Background(), t.TempDir())
+	t.Cleanup(m.Shutdown)
 	_, _, done, cancel := m.SubscribeStream("tab-A", 0)
 	t.Cleanup(cancel)
 
@@ -87,6 +89,7 @@ func TestManager_CloseStreamSubscriber_ClosesByToken(t *testing.T) {
 
 func TestManager_SubscribeStream_LastEventIDReplay(t *testing.T) {
 	m := NewManager(context.Background(), t.TempDir())
+	t.Cleanup(m.Shutdown)
 	for i := 0; i < 3; i++ {
 		m.PublishStream(StreamEnvelope{Kind: "x", Text: "msg"})
 	}
@@ -98,6 +101,7 @@ func TestManager_SubscribeStream_LastEventIDReplay(t *testing.T) {
 func TestHandleInvestigationTranscript_ReturnsBacklog(t *testing.T) {
 	dir := t.TempDir()
 	m := NewManager(context.Background(), dir)
+	t.Cleanup(m.Shutdown)
 	inv := &Investigation{ID: "inv-T", SessionDir: dir, CreatedAt: time.Now().UTC()}
 	inv.ctx, inv.cancel = context.WithCancel(context.Background())
 	m.byID[inv.ID] = inv
@@ -129,6 +133,7 @@ func TestHandleStream_DeliversEnvelope(t *testing.T) {
 	// replayed from the backlog), then read the SSE frame off the
 	// wire.
 	m := NewManager(context.Background(), t.TempDir())
+	t.Cleanup(m.Shutdown)
 	a := &apiHandlers{manager: m}
 
 	m.PublishStream(StreamEnvelope{Seq: 1, Kind: "assistant", InvestigationID: "x", Text: "hi"})
@@ -172,6 +177,7 @@ func TestHandleStream_DeliversEnvelope(t *testing.T) {
 
 func TestPublishStream_NoPanicOnConcurrentClose(t *testing.T) {
 	m := NewManager(context.Background(), t.TempDir())
+	t.Cleanup(m.Shutdown)
 	_, _, _, cancel := m.SubscribeStream("tab", 0)
 
 	// Cancel-then-publish: simulates the close-during-fan-out race.
@@ -185,6 +191,7 @@ func TestPublishStream_NoPanicOnConcurrentClose(t *testing.T) {
 
 func TestEditorPublish_ReachesMultiplexStream(t *testing.T) {
 	m := NewManager(context.Background(), t.TempDir())
+	t.Cleanup(m.Shutdown)
 	_, ch, _, cancel := m.SubscribeStream("tab", 0)
 	t.Cleanup(cancel)
 

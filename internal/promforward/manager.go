@@ -1,0 +1,166 @@
+package promforward
+
+import (
+	"context"
+	"fmt"
+	"sync"
+
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+)
+
+// KubeBuilder turns an investigation id and a kubeconfig context name into a
+// (rest.Config, kubernetes.Interface) pair. The Manager calls it on first Get
+// for a new context. Production wires it to a clientcmd-backed builder that
+// reads the per-investigation KubeconfigPath via the investigation id; tests
+// inject a stub.
+type KubeBuilder func(investigationID, contextName string) (*rest.Config, kubernetes.Interface, error)
+
+// Options configures the Manager.
+type Options struct {
+	// Factory builds a PortForwarder. Defaults to newClientGoForwarder.
+	Factory Factory
+	// KubeBuilder turns a context name into kube clients. Required.
+	KubeBuilder KubeBuilder
+}
+
+// Manager owns one PortForwarder per investigation. The Get method
+// provisions lazily on first use and re-provisions when the bound
+// kubeconfig context changes.
+type Manager struct {
+	opts Options
+
+	mu        sync.Mutex
+	bound     map[string]boundEntry // investigation id → current entry
+	closed    map[string]struct{}   // ids whose Stop has been called; refuses re-provision
+	provLocks map[string]*sync.Mutex // per-investigation provisioning serialization
+}
+
+type boundEntry struct {
+	contextName string
+	target      Target
+	fwd         PortForwarder
+	url         string
+}
+
+// NewManager returns a Manager with the provided options. If opts.Factory
+// is nil it defaults to newClientGoForwarder.
+func NewManager(opts Options) *Manager {
+	if opts.Factory == nil {
+		opts.Factory = newClientGoForwarder
+	}
+	return &Manager{
+		opts:      opts,
+		bound:     map[string]boundEntry{},
+		closed:    map[string]struct{}{},
+		provLocks: map[string]*sync.Mutex{},
+	}
+}
+
+// provLock returns the per-investigation provisioning mutex, creating it
+// on first use. Serializing provisioning per id keeps a slow Get for an
+// older context from overwriting a faster Get for a newer context after
+// switch_context — concurrent callers run in arrival order, and the latest
+// wins by virtue of running last.
+func (m *Manager) provLock(investigationID string) *sync.Mutex {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	lk, ok := m.provLocks[investigationID]
+	if !ok {
+		lk = &sync.Mutex{}
+		m.provLocks[investigationID] = lk
+	}
+	return lk
+}
+
+// Get returns the loopback URL of the port-forward bound for the given
+// investigation + kubeconfig context + target. Provisions a fresh forward on
+// first call, or when the context or target differs from the previously-bound
+// one (the prior forward is torn down).
+//
+// The caller is responsible for supplying the per-investigation Target resolved
+// from the profile defaults overlaid with any per-investigation override.
+func (m *Manager) Get(ctx context.Context, investigationID, contextName string, target Target) (string, error) {
+	if contextName == "" {
+		return "", fmt.Errorf("contextName is required")
+	}
+
+	plk := m.provLock(investigationID)
+	plk.Lock()
+	defer plk.Unlock()
+
+	m.mu.Lock()
+	if _, isClosed := m.closed[investigationID]; isClosed {
+		m.mu.Unlock()
+		return "", fmt.Errorf("investigation %q has been closed; refusing to provision port-forward", investigationID)
+	}
+	if existing, ok := m.bound[investigationID]; ok &&
+		existing.contextName == contextName && existing.target == target {
+		// Only serve the cached URL if the underlying forwarder is
+		// still alive. ForwardPorts can exit after readiness (pod
+		// restart, SPDY drop), and a stale URL would route prom MCP
+		// traffic to a dead local port. On death, fall through to
+		// re-provision a fresh forwarder.
+		if existing.fwd.IsAlive() {
+			m.mu.Unlock()
+			return existing.url, nil
+		}
+	}
+	prior, hadPrior := m.bound[investigationID]
+	delete(m.bound, investigationID)
+	m.mu.Unlock()
+
+	if hadPrior {
+		// Tear down the prior forwarder before provisioning the new
+		// one. A transient Start failure on the new context therefore
+		// leaves the investigation with no working forward — the
+		// caller's next Get retries from scratch. Keeping the old
+		// forward alive as a fallback is tempting, but would mean
+		// the prom MCP could see a URL bound to the OLD cluster
+		// after a switch_context succeeded — a correctness hazard
+		// worse than a transient outage.
+		prior.fwd.Stop()
+	}
+
+	cfg, cs, err := m.opts.KubeBuilder(investigationID, contextName)
+	if err != nil {
+		return "", fmt.Errorf("build kube client for context %q: %w", contextName, err)
+	}
+	fwd, err := m.opts.Factory(cfg, cs, target)
+	if err != nil {
+		return "", fmt.Errorf("build forwarder: %w", err)
+	}
+	if fwd == nil {
+		return "", fmt.Errorf("factory returned nil forwarder")
+	}
+	url, err := fwd.Start(ctx)
+	if err != nil {
+		fwd.Stop()
+		return "", err
+	}
+
+	m.mu.Lock()
+	if _, isClosed := m.closed[investigationID]; isClosed {
+		// Stop ran while we were provisioning. Tear down our freshly-
+		// built forwarder so nothing leaks.
+		m.mu.Unlock()
+		fwd.Stop()
+		return "", fmt.Errorf("investigation %q closed during provisioning; forwarder torn down", investigationID)
+	}
+	m.bound[investigationID] = boundEntry{contextName: contextName, target: target, fwd: fwd, url: url}
+	m.mu.Unlock()
+	return url, nil
+}
+
+// Stop tears down the forwarder for investigationID and marks it closed
+// so future Get calls refuse to provision a new one. Idempotent.
+func (m *Manager) Stop(investigationID string) {
+	m.mu.Lock()
+	m.closed[investigationID] = struct{}{}
+	entry, ok := m.bound[investigationID]
+	delete(m.bound, investigationID)
+	m.mu.Unlock()
+	if ok {
+		entry.fwd.Stop()
+	}
+}

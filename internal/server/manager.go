@@ -16,6 +16,7 @@ import (
 	"github.com/sourcehawk/triagent/internal/claude"
 	"github.com/sourcehawk/triagent/internal/editor"
 	"github.com/sourcehawk/triagent/internal/profile"
+	"github.com/sourcehawk/triagent/internal/promforward"
 	"github.com/sourcehawk/triagent/internal/repos"
 	"github.com/sourcehawk/triagent/internal/sessions"
 	operatorskills "github.com/sourcehawk/triagent/operator-skills"
@@ -79,6 +80,15 @@ type Investigation struct {
 	IncidentioMCPEnabled bool
 	LinkedRepos     []repos.LinkedRepo
 	Profile         *profile.Profile // investigation profile (prompt content + playbook IDs)
+	// PromTarget is the per-investigation Prometheus port-forward target,
+	// resolved from the profile defaults overlaid with any per-investigation
+	// override supplied at preflight time. Nil means no prom target was
+	// configured for this investigation.
+	PromTarget  *promforward.Target
+	// PromDisabled, when true, explicitly opts this investigation out of
+	// the prom MCP regardless of profile defaults. Set at preflight time
+	// when the operator checks "disable prom MCP" in the form.
+	PromDisabled bool
 	CreatedAt       time.Time
 
 	// Set on imported investigations (those adopted from a teammate's
@@ -150,6 +160,14 @@ type Investigation struct {
 	ClaudeSessionID string
 	LaunchCwd       string
 	KubeconfigPath  string
+
+	// ActiveContext is the kubeconfig context name the launcher seeded
+	// at preflight from the operator's cluster_id selection. Empty when
+	// no cluster was pre-selected or the provider couldn't resolve it.
+	// The k8s MCP reads <sessionDir>/active-context on startup and
+	// hydrates from there; this field exists so the frontend can show
+	// which context is active without parsing the events.jsonl.
+	ActiveContext string
 
 	// Auto holds the auto-mode lifecycle state. Zero value (Enabled=false)
 	// means manual mode — preserves current behavior. Written by the
@@ -294,6 +312,9 @@ type InvestigationDTO struct {
 	ClaudeSessionID string `json:"claudeSessionId,omitempty"`
 	LaunchCwd       string `json:"launchCwd,omitempty"`
 	KubeconfigPath  string `json:"kubeconfigPath,omitempty"`
+	// ActiveContext is the kubeconfig context the launcher pre-seeded
+	// for the k8s MCP from the operator's cluster_id pick at preflight.
+	ActiveContext string `json:"activeContext,omitempty"`
 	// Auto holds the auto-mode lifecycle state. The `omitempty` tag is
 	// cosmetic — encoding/json does not skip non-pointer struct values,
 	// so manual-mode investigations still emit `"auto":{"enabled":false}`.
@@ -305,6 +326,18 @@ type InvestigationDTO struct {
 	// OriginatingSignal is the back-reference to the specific signal that
 	// produced this investigation. nil for preflight-created investigations.
 	OriginatingSignal *OriginatingSignal `json:"originatingSignal,omitempty"`
+	// PromTarget is the per-investigation Prometheus port-forward target.
+	// Nil means no prom target was configured (or prom is disabled).
+	PromTarget *promforward.Target `json:"promTarget,omitempty"`
+	// PromDisabled, when true, explicitly opts this investigation out of
+	// the prom MCP regardless of profile defaults.
+	PromDisabled bool `json:"promDisabled,omitempty"`
+	// PromEnabled is the rendered boolean the frontend reads to decide
+	// whether to show the prom MCP chip in the sidebar. Derived from
+	// PromTarget and PromDisabled — kept as its own field because the
+	// frontend's Investigation type contracts on `promEnabled`, not on
+	// the raw target / disabled inputs.
+	PromEnabled bool `json:"promEnabled,omitempty"`
 	// Resumable is true for restored sessions whose claude conversation
 	// can be picked up via --resume on the next follow-up. False once
 	// rehydrated, when archived, or when no session id was captured.
@@ -370,9 +403,13 @@ func (i *Investigation) Snapshot() InvestigationDTO {
 		ClaudeSessionID: i.ClaudeSessionID,
 		LaunchCwd:       i.LaunchCwd,
 		KubeconfigPath:  i.KubeconfigPath,
+		ActiveContext:   i.ActiveContext,
 		Auto:               i.Auto,
 		OriginatingWatchID: i.OriginatingWatchID,
 		OriginatingSignal:  i.OriginatingSignal,
+		PromTarget:         i.PromTarget,
+		PromDisabled:       i.PromDisabled,
+		PromEnabled:        i.PromTarget != nil && !i.PromDisabled,
 		Resumable:          !i.archived && i.ClaudeSessionID != "" && i.needsRehydrate,
 		Slug:            computeSessionSlug(i.CreatedAt, i.Namespace, i.ID),
 		SyncState: sessionSyncStateFor(sessionSyncStateInputs{
@@ -386,6 +423,16 @@ func (i *Investigation) Snapshot() InvestigationDTO {
 		Usage:   snapshotUsage(i.totalUsage),
 		CostUSD: i.totalCostUSD,
 	}
+}
+
+// IsArchived reports whether the investigation has been archived.
+// Safe to call concurrently. Used by the prom resolver to refuse
+// re-provisioning a port-forward for a session that's already wound
+// down.
+func (i *Investigation) IsArchived() bool {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	return i.archived
 }
 
 // snapshotUsage returns a pointer to a copy of the running usage total
@@ -589,7 +636,6 @@ func (i *Investigation) drain(events <-chan claude.Event) {
 	interrupted := i.interrupted
 	i.interrupted = false
 	i.turnCancel = nil
-	i.streaming = false
 	i.mu.Unlock()
 	if interrupted {
 		// Audit-trail breadcrumb so reviewers can see this turn ended
@@ -604,6 +650,12 @@ func (i *Investigation) drain(events <-chan claude.Event) {
 		})
 	}
 	i.publish(EventEnvelope{Kind: envKindEnd})
+	// streaming flips false last so observers polling on `!streaming`
+	// (production and tests both do) see the full transcript — including
+	// the breadcrumb and end envelopes — by the time the flag clears.
+	i.mu.Lock()
+	i.streaming = false
+	i.mu.Unlock()
 }
 
 // publish appends env to the backlog, stamps it with the next seq +
@@ -813,11 +865,26 @@ type Manager struct {
 	byID         map[string]*Investigation
 	closed       bool
 
+	// bgWG tracks background goroutines (currently the push-PR pipeline)
+	// the manager spawned via ParentContext. Shutdown waits on it after
+	// cancelling the parent context so per-session file I/O (atomic
+	// metadata write, SSE publish) has fully completed before callers
+	// tear down on-disk state. Add is gated by closed under mu so a late
+	// trackBackground after Shutdown can't race Wait.
+	bgWG sync.WaitGroup
+
 	// terminalHook is called when an investigation reaches a terminal
 	// lifecycle state (archive, delete, auto-mode finished/aborted).
 	// Wired by server.New to bridge the watches subsystem's slot-release.
 	// nil disables the hook. Guarded by mu (R when reading, W when setting).
 	terminalHook func(invID, watchID string)
+
+	// closeHook is called when an investigation is removed or the
+	// manager shuts down — every Close() path fires it. Used to
+	// release per-investigation resources (e.g. prom port-forwards)
+	// without entangling them in Investigation itself.
+	// nil disables the hook. Guarded by mu (R when reading, W when setting).
+	closeHook func(invID string)
 
 	// globalMu guards globalNextSeq and globalRing. Acquired before
 	// globalRing.mu — never the reverse.
@@ -882,6 +949,29 @@ func (m *Manager) SetTerminalHook(fn func(invID, watchID string)) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.terminalHook = fn
+}
+
+// SetCloseHook registers a callback fired when an investigation's
+// resources are torn down (Remove, Shutdown). The hook receives the
+// investigation id. nil disables it.
+func (m *Manager) SetCloseHook(fn func(invID string)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.closeHook = fn
+}
+
+// FireCloseHook invokes the registered close hook for invID, if any.
+// Used by archive and other terminal-lifecycle paths to release
+// per-investigation resources (e.g. prom port-forwards) without
+// requiring those paths to know about the hook's consumers.
+// Idempotent: safe to call multiple times for the same investigation.
+func (m *Manager) FireCloseHook(invID string) {
+	m.mu.RLock()
+	hook := m.closeHook
+	m.mu.RUnlock()
+	if hook != nil {
+		hook(invID)
+	}
 }
 
 // fireTerminal invokes the registered hook when present. Idempotent —
@@ -1112,13 +1202,21 @@ func (m *Manager) Remove(id string, removeFromDisk bool) bool {
 	}
 	dir := inv.SessionDir
 	inv.Close()
+	m.FireCloseHook(inv.ID)
 	if removeFromDisk && dir != "" {
 		_ = os.RemoveAll(dir)
 	}
 	return true
 }
 
-// Shutdown closes every investigation. After Shutdown, Register fails.
+// Shutdown closes every investigation and waits for tracked background
+// goroutines (e.g. the push-PR pipeline) to exit. After Shutdown,
+// Register fails and trackBackground refuses new work.
+//
+// Callers must cancel the manager's parent context before invoking
+// Shutdown — the production launcher does this via cancelManager in
+// Server.Run. Without it, push goroutines blocked on parent-ctx-derived
+// work (drafter, network) never release and Wait deadlocks.
 func (m *Manager) Shutdown() {
 	m.mu.Lock()
 	investigations := make([]*Investigation, 0, len(m.byID))
@@ -1130,7 +1228,29 @@ func (m *Manager) Shutdown() {
 	m.mu.Unlock()
 	for _, inv := range investigations {
 		inv.Close()
+		m.FireCloseHook(inv.ID)
 	}
+	m.bgWG.Wait()
+}
+
+// trackBackground reserves a slot on the manager's background goroutine
+// counter. Returns false if the manager has already been shut down, in
+// which case the caller must not spawn the goroutine. On true the
+// caller is responsible for calling bgDone exactly once when the
+// goroutine exits (defer).
+func (m *Manager) trackBackground() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.closed {
+		return false
+	}
+	m.bgWG.Add(1)
+	return true
+}
+
+// bgDone releases a slot reserved by trackBackground. Safe to defer.
+func (m *Manager) bgDone() {
+	m.bgWG.Done()
 }
 
 // ReconcileUpstreamPushed sweeps every investigation the manager knows
@@ -1428,13 +1548,18 @@ func (m *Manager) StartFromWatch(inv *Investigation, start func() error, autoOpt
 	if err := start(); err != nil {
 		fmt.Fprintf(os.Stderr, "investigate: start watch-spawned %s: %v\n", inv.ID, err)
 	}
-	if autoOpts != nil {
-		go func() {
-			if err := m.EnableAuto(inv, *autoOpts); err != nil {
-				fmt.Fprintf(os.Stderr, "investigate: EnableAuto %s: %v\n", inv.ID, err)
-			}
-		}()
+	if autoOpts == nil {
+		return
 	}
+	if !m.trackBackground() {
+		return
+	}
+	go func() {
+		defer m.bgDone()
+		if err := m.EnableAuto(inv, *autoOpts); err != nil {
+			fmt.Fprintf(os.Stderr, "investigate: EnableAuto %s: %v\n", inv.ID, err)
+		}
+	}()
 }
 
 // EnableAuto spawns the AutoOperator and starts the per-investigation

@@ -10,6 +10,13 @@ import (
 	"time"
 )
 
+// ErrManagerStopped is returned by mutating Manager calls (SpawnFromSignal,
+// etc.) after Stop has been called. Accepting work post-shutdown would
+// queue signals with no live spawner goroutine to process them — and the
+// caller has no way to recover without a launcher restart, so a typed
+// error is the only honest response.
+var ErrManagerStopped = errors.New("watches: manager stopped")
+
 // ClearOpts controls which logs ClearLogs truncates.
 type ClearOpts struct {
 	Items     bool
@@ -69,12 +76,16 @@ type ManagerOpts struct {
 // Manager owns user_watches.yaml + the per-watch Pollers. Concurrency-
 // safe; the HTTP layer (Milestone 2) calls Create/Patch/Delete via Mgr.
 type Manager struct {
-	opts     ManagerOpts
-	mu       sync.RWMutex
-	watches  map[string]Watch
-	pollers  map[string]*Poller
-	spawners map[string]*Spawner
-	ctx      context.Context
+	opts       ManagerOpts
+	mu         sync.RWMutex
+	watches    map[string]Watch
+	pollers    map[string]*Poller
+	spawners   map[string]*Spawner
+	ctx        context.Context
+	ctxCancel  context.CancelFunc // set by Start; called by Stop to drain spawner goroutines.
+	spawnerWG  sync.WaitGroup     // tracks all live spawner goroutines; Stop waits on it.
+	mutatorWG  sync.WaitGroup     // tracks in-flight mutators (SpawnFromSignal etc.); Stop drains it before returning.
+	stopped    bool               // set under m.mu by Stop; gates further mutator/spawnerWG.Add calls.
 }
 
 func NewManager(opts ManagerOpts) (*Manager, error) {
@@ -112,7 +123,9 @@ func NewManager(opts ManagerOpts) (*Manager, error) {
 func (m *Manager) Start(ctx context.Context) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.ctx = ctx
+	derived, cancel := context.WithCancel(ctx)
+	m.ctx = derived
+	m.ctxCancel = cancel
 	for id, w := range m.watches {
 		if !w.Enabled {
 			continue
@@ -123,11 +136,32 @@ func (m *Manager) Start(ctx context.Context) {
 
 func (m *Manager) Stop() {
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	if m.stopped {
+		m.mu.Unlock()
+		return
+	}
+	m.stopped = true
+	// Cancel the derived context so all spawner Run() loops exit.
+	if m.ctxCancel != nil {
+		m.ctxCancel()
+		m.ctxCancel = nil
+	}
 	for id, p := range m.pollers {
 		p.Stop()
 		delete(m.pollers, id)
 	}
+	m.mu.Unlock()
+	// Drain in-flight mutators (SpawnFromSignal etc.) before declaring the
+	// manager stopped. Each mutator incremented mutatorWG under the same
+	// m.mu critical section that flips m.stopped, so any call that gets
+	// past the gate is guaranteed to finish its disk + spawner-state work
+	// before this Wait returns — closing the TOCTOU window between the
+	// gate check and the later AppendSignal / sp.Enqueue side effects.
+	m.mutatorWG.Wait()
+	// Then wait for any spawner goroutines started by those mutators (or by
+	// Start) to exit; their context is already cancelled. Order matters:
+	// mutators can call spawnerWG.Add, so spawnerWG.Wait must come second.
+	m.spawnerWG.Wait()
 }
 
 func (m *Manager) spawnLocked(id string, w Watch) {
@@ -156,8 +190,14 @@ func (m *Manager) spawnLocked(id string, w Watch) {
 		if len(state.Queued) > 0 || len(state.Running) > 0 {
 			sp := NewSpawner(dir, id, maxOne(w.AutoStart.MaxConcurrent), m.makeSpawnerCreate(id), m.spawnerOptions()...)
 			m.spawners[id] = sp
-			go sp.Run(m.ctx)
-			sp.signalKick()
+			if !m.stopped {
+				m.spawnerWG.Add(1)
+				go func() {
+					defer m.spawnerWG.Done()
+					sp.Run(m.ctx)
+				}()
+				sp.signalKick()
+			}
 		}
 	}
 }
@@ -512,6 +552,20 @@ type SpawnFromSignalReq struct {
 // errorMessage. Returns the queued signalID; invID is always empty on
 // the immediate return path (caller observes invID via the mutated row).
 func (m *Manager) SpawnFromSignal(_ context.Context, watchID string, req SpawnFromSignalReq) (signalID, invID string, err error) {
+	// Claim a mutator slot under the same lock that flips m.stopped, so a
+	// concurrent Stop either observes our claim (and waits for us to drain)
+	// or completes first (and we bail). Releasing m.mu before the disk
+	// write keeps the lock short, but mutatorWG still pins Stop until we
+	// return.
+	m.mu.Lock()
+	if m.stopped {
+		m.mu.Unlock()
+		return "", "", ErrManagerStopped
+	}
+	m.mutatorWG.Add(1)
+	m.mu.Unlock()
+	defer m.mutatorWG.Done()
+
 	w, ok := m.Get(watchID)
 	if !ok {
 		return "", "", fmt.Errorf("watch %s not found", watchID)
@@ -570,11 +624,43 @@ func (m *Manager) SpawnFromSignal(_ context.Context, watchID string, req SpawnFr
 	m.opts.Publisher.PublishSignalCreated(watchID, queued.ID, string(queued.Outcome), "", queued.ManuallyStarted)
 
 	m.mu.Lock()
+	if m.stopped {
+		// Stop won the race between the gate check and now. The queued
+		// row is already on disk and the per-watch Spawner cannot be
+		// constructed against a stopped manager (its Run would never
+		// start). Compensate with a failed mutation so the latest-row-
+		// per-id projection converges on a terminal outcome, then return
+		// ErrManagerStopped without leaving a half-registered spawner.
+		m.mu.Unlock()
+		failed := Signal{
+			ID:            signalID,
+			WatchID:       watchID,
+			CreatedAt:     time.Now().UTC(),
+			CitedItemIDs:  req.CitedItemIDs,
+			Outcome:       OutcomeFailed,
+			Clusters:      req.Clusters,
+			Briefing:      composedBriefing,
+			AutoMode:      req.AutoMode,
+			SlackChannel:  req.SlackChannel,
+			IncidentioURL: req.IncidentioURL,
+			Repos:         req.Repos,
+			ErrorMessage:  "manager stopped during enqueue",
+		}
+		if appendErr := AppendSignal(filepath.Join(dir, "signals.jsonl"), failed); appendErr != nil {
+			return "", "", appendErr
+		}
+		m.opts.Publisher.PublishSignalCreated(watchID, failed.ID, string(failed.Outcome), "", failed.ManuallyStarted)
+		return "", "", ErrManagerStopped
+	}
 	sp, ok := m.spawners[watchID]
 	if !ok {
 		sp = NewSpawner(dir, watchID, maxOne(w.AutoStart.MaxConcurrent), m.makeSpawnerCreate(watchID), m.spawnerOptions()...)
 		m.spawners[watchID] = sp
-		go sp.Run(m.ctx)
+		m.spawnerWG.Add(1)
+		go func() {
+			defer m.spawnerWG.Done()
+			sp.Run(m.ctx)
+		}()
 	}
 	m.mu.Unlock()
 

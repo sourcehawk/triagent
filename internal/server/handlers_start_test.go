@@ -30,6 +30,7 @@ func newPreflightAPIWithInputsProfile(t *testing.T) *apiHandlers {
 	}
 	sessionsRoot := t.TempDir()
 	manager := NewManager(context.Background(), sessionsRoot)
+	t.Cleanup(manager.Shutdown)
 	// Drain per-session persistence goroutines before t.TempDir cleanup
 	// runs, or RemoveAll races writes into session-*/ and fails with
 	// "directory not empty".

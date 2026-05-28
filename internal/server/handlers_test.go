@@ -4,21 +4,31 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/sourcehawk/triagent/internal/connections"
 	"github.com/sourcehawk/triagent/internal/preflight"
+	"github.com/sourcehawk/triagent/pkg/auth"
+	"github.com/sourcehawk/triagent/pkg/mcp/k8s"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 // newPreflightAPI returns an apiHandlers suitable for testing handlePreflight.
 // The preflightFn is stubbed out so no kubernetes I/O occurs.
+//
+// Registers manager.Shutdown as a t.Cleanup so the per-investigation
+// persistence store's writer goroutine drains any queued events.jsonl
+// writes before tempdir teardown reaches the session subdirectory.
+// Without it, the writer goroutine can race RemoveAll and leave a
+// freshly re-created events.jsonl behind ("directory not empty").
 func newPreflightAPI(t *testing.T) *apiHandlers {
 	t.Helper()
 	sessionsRoot := t.TempDir()
-	return &apiHandlers{
+	a := &apiHandlers{
 		opts:        Options{SessionsRoot: sessionsRoot},
 		manager:     NewManager(context.Background(), sessionsRoot),
 		connections: connections.NewWithDir(t.TempDir()),
@@ -29,6 +39,55 @@ func newPreflightAPI(t *testing.T) *apiHandlers {
 			}, nil
 		},
 	}
+	t.Cleanup(a.manager.Shutdown)
+	return a
+}
+
+// When the operator pre-selects a cluster on the session-start form,
+// handlePreflight must (a) resolve cluster_id → kubeContext via the
+// Provider, (b) write <sessionDir>/active-context so the k8s MCP's
+// hydrate-on-startup picks it up, and (c) surface the resolved
+// context on Investigation.ActiveContext for the frontend.
+func TestPreflight_SeedsActiveContextWhenClusterPreSelected(t *testing.T) {
+	t.Parallel()
+	a := newPreflightAPI(t)
+	a.opts.Provider = &stubClusterProvider{clusters: []auth.Cluster{
+		{ID: "dev-gke-europe-north1-worker-2", Name: "saas-dev-worker-2", KubeContext: "camunda.teleport.sh-saas-dev-worker-2"},
+	}}
+
+	body := strings.NewReader(`{"inputs": {"cluster_id": {"value": "dev-gke-europe-north1-worker-2"}}}`)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/preflight", body)
+	a.handlePreflight(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body)
+
+	invs := a.manager.List()
+	require.Len(t, invs, 1)
+	got := invs[0]
+	assert.Equal(t, "camunda.teleport.sh-saas-dev-worker-2", got.ActiveContext, "Investigation.ActiveContext must reflect the resolved kubeContext")
+
+	body2, err := os.ReadFile(filepath.Join(got.SessionDir, k8s.ActiveContextFile))
+	require.NoError(t, err, "<sessionDir>/active-context must be written")
+	assert.Equal(t, "camunda.teleport.sh-saas-dev-worker-2", string(body2))
+}
+
+// When no provider is wired (e.g. tests that don't need it) preflight
+// must still succeed and leave the active-context file absent.
+func TestPreflight_NoActiveContextFileWhenProviderUnwired(t *testing.T) {
+	t.Parallel()
+	a := newPreflightAPI(t) // no Provider
+
+	body := strings.NewReader(`{"inputs": {"cluster_id": {"value": "anything"}}}`)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/preflight", body)
+	a.handlePreflight(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body)
+
+	invs := a.manager.List()
+	require.Len(t, invs, 1)
+	assert.Equal(t, "", invs[0].ActiveContext)
+	_, err := os.Stat(filepath.Join(invs[0].SessionDir, k8s.ActiveContextFile))
+	assert.True(t, os.IsNotExist(err), "no file written when no provider could resolve")
 }
 
 func TestPreflight_AcceptsPickerFieldsAndDerivesURL(t *testing.T) {
@@ -157,6 +216,7 @@ func TestPreflight_AcceptsClusterID(t *testing.T) {
 func TestHandleMessage_RehydratesBeforeSend(t *testing.T) {
 	dir := t.TempDir()
 	mgr := NewManager(context.Background(), dir)
+	t.Cleanup(mgr.Shutdown)
 	inv := &Investigation{
 		ID:              "id",
 		SessionDir:      dir,

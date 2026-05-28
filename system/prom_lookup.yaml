@@ -1,0 +1,168 @@
+id: prom_lookup
+schema_version: 1
+type: general
+symptom: "Need a metric-shaped read from Prometheus — current value, threshold check, or short-window shape — and the question is in scope for a curated query"
+description: |
+  Meta-playbook the agent walks whenever an investigation needs a
+  metric-shaped read from Prometheus. The triagent-prom MCP exposes a
+  bounded, scope-enforced surface — agents cannot enumerate every
+  metric, cannot return megabyte payloads, and cannot query
+  high-cardinality metrics without a label matcher. This playbook
+  codifies the three-step approach those constraints push you toward:
+
+    1. **Orient against `prom://info`** so the metric-namespace shape
+       and the tool surface are loaded into context before any tool
+       call.
+    2. **Discover with `prom_list_metrics`** — keyword search by
+       token-AND match against name + HELP. If the result is a facet
+       breakdown rather than a match list, refine with one more
+       token or pick a sub-prefix and search again. Once you have a
+       shortlist, call `prom_describe_metric` on the most relevant
+       metric to learn its labels, sample values, and the typical
+       scope key.
+    3. **Query with a scoped expression.** Prefer `prom_recent_value`
+       when you know the exact label set. Prefer `prom_query` with a
+       threshold / topk / aggregation when you want a yes/no or
+       worst-offender answer. Reach for `prom_query_range` only when
+       shape-over-time genuinely matters — the response is summary
+       stats + a 20-cell sparkline by default; opt into raw points
+       only when summary stats aren't enough.
+
+  Use this as a sub-flow: walk it, get a citable answer, then return
+  to the parent investigation.
+
+entrypoint: info
+
+nodes:
+  info:
+    description: |
+      Read the `prom://info` MCP resource before any prom_list_metrics
+      call. It carries the metric-name count, the top `<prefix>_`
+      families, and the tool surface as a single ~1KB block, so every
+      subsequent discover step is grounded against the actual catalog
+      rather than a guess.
+
+      The catalog is per-cluster. `triagent-k8s.switch_context`
+      rebinds the prom MCP to the new cluster's Prometheus and
+      rebuilds the catalog, so re-read `prom://info` after any
+      context switch — the prefix families and indexed metrics can
+      both change. Within a single cluster the catalog is stable;
+      one read per cluster is enough.
+    expected_findings:
+      - prom_namespace_shape
+    next:
+      - condition: "haven't read prom://info for the active cluster yet (fresh session or post-switch_context) — read it, then proceed"
+        goto: discover
+      - condition: "already have a fix on the active cluster's namespace shape — proceed directly to discover"
+        goto: discover
+
+  discover:
+    description: |
+      Call `prom_list_metrics` with one or two keywords drawn from
+      the symptom + the prefix family that prom://info suggested.
+
+      If the response is a `matches` list, pick the most relevant
+      metric and call `prom_describe_metric` on it to learn labels
+      and the typical scope key. If the response is an `overflow`
+      facet breakdown (more than `limit` matches), DO NOT broaden —
+      add a more specific token or pick a sub-prefix and search
+      again. The facet breakdown is the tool telling you the
+      candidate set is too wide; treat it as a hint, not a result.
+      When you get an overflow, refine your keywords and call
+      `prom_list_metrics` again before advancing.
+
+      Common failure modes:
+        - Searching for a single ambiguous token ("rate", "errors"):
+          you'll get a facet overflow. Add the prefix family or a
+          service-level token to narrow.
+        - Searching for an entire phrase: tokens AND-match, so
+          "rate of http requests" requires every word to appear in
+          name+HELP. Drop function words.
+        - Searching for a metric you "know" exists but the catalog
+          says it doesn't: the catalog comes from the active
+          cluster's Prom — switch_context may have moved you to a
+          cluster that doesn't have that metric. Confirm with
+          prom://info.
+
+      Call step_complete with findings=[{key: "candidate_metric",
+      value: "<exact metric name>"}, {key: "scope_key",
+      value: "<the label key you'll filter on>"}] before moving on.
+    suggested_calls:
+      - tool: triagent-prom/prom_list_metrics
+      - tool: triagent-prom/prom_describe_metric
+    expected_findings:
+      - candidate_metric
+      - scope_key
+    next:
+      - condition: "have a candidate metric and the scope key — proceed to query"
+        goto: query
+      - condition: "the metric you wanted isn't in this cluster's Prom — abandon the lookup and return to parent"
+        goto: terminal_unmapped
+
+  query:
+    description: |
+      Build a SCOPED query. Pick the cheapest shape that answers the
+      operator's question:
+
+        - Exact label set known → `prom_recent_value(metric, labels)`.
+          One value, one timestamp. Use when the question is "what is
+          X right now for pod Y?".
+        - Yes/no or worst-offender → `prom_query(promql)` with
+          `count(... > threshold)`, `topk(N, ...)`, `max_over_time(...)`,
+          `sum by (label) (...)`. The 50-series cap is hard;
+          over-cap responses are rejected with a corrective hint.
+        - Shape-over-time genuinely needed → `prom_query_range`.
+          Default response is summary stats + a 20-cell sparkline;
+          opt into `raw=true` only when you need individual points.
+
+      Scope is enforced at the MCP layer: a query referencing a
+      high-cardinality metric without a non-`__name__` label matcher
+      is rejected before the HTTP round-trip. If you get a
+      `"scope required for high-cardinality metric"` error, add the
+      scope key from prom_describe_metric and retry. If you get an
+      over-cap rejection, add a topk / aggregation / scope matcher
+      and retry.
+
+      Call step_complete with findings=[{key: "prom_finding",
+      value: "<metric+labels=value or summary stats>"}].
+    suggested_calls:
+      - tool: triagent-prom/prom_recent_value
+      - tool: triagent-prom/prom_query
+      - tool: triagent-prom/prom_query_range
+    expected_findings:
+      - prom_finding
+    next:
+      - condition: "got a usable value or summary — done"
+        goto: terminal_done
+      - condition: "query failed or returned no useful result — lookup cannot be completed"
+        goto: terminal_unmapped
+
+  terminal_done:
+    description: "Prom lookup complete. Surface the finding to the parent investigation."
+    terminal_advice: |
+      Hand the prom finding back to the parent investigation as a
+      short bullet:
+
+        - `zeebe_partition_health{namespace="pay",pod="api-0"} = 0.93` at 14:31Z (healthy)
+        - or: top-5 `rate(http_requests_total[5m])` by `service` — payment-api leading at 412 rps
+
+      Failure shapes worth naming explicitly:
+
+        - **Scope-required and you ran out of labels to add.** The
+          metric is genuinely too high-cardinality for the question
+          you're asking. Aggregate or topk before continuing.
+        - **Over-cap and you can't aggregate further.** The question
+          is asking about too many series at once — split it into
+          per-service queries, or use prom_query_range with
+          max_series=1 and an aggregating PromQL expression.
+
+      This playbook does NOT call summarize — it's a sub-flow.
+      The parent investigation reaches summarize on its own.
+
+  terminal_unmapped:
+    description: "Couldn't map the question to a metric in this Prom — return to parent without a Prom finding."
+    terminal_advice: |
+      Tell the operator explicitly: "Prom in the active cluster
+      doesn't index a metric for <question>. Either switch_context
+      to a cluster that does, or rely on k8s logs / events for this
+      check."

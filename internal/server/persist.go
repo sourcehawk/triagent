@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/sourcehawk/triagent/internal/auto"
+	"github.com/sourcehawk/triagent/internal/promforward"
 )
 
 // File names under each session directory:
@@ -129,6 +130,24 @@ type persistedMetadata struct {
 	// the watch's signals.jsonl that produced this investigation. Persisted
 	// so reload paths can surface the chip without re-querying the watch.
 	OriginatingSignal *OriginatingSignal `json:"originatingSignal,omitempty"`
+
+	// PromTarget is the resolved per-investigation Prometheus port-forward
+	// target. Persisted so a rehydrated investigation re-attaches the same
+	// prom config without re-running the preflight form. Nil when no target
+	// was configured for this investigation.
+	PromTarget *promPersistedTarget `json:"promTarget,omitempty"`
+	// PromDisabled, when true, explicitly opts this investigation out of
+	// the prom MCP. Persisted alongside PromTarget so the rehydrate path
+	// can pass the correct flags into preflight.Options.
+	PromDisabled bool `json:"promDisabled,omitempty"`
+}
+
+// promPersistedTarget mirrors promforward.Target on disk. Using a local
+// type keeps the persistence shape decoupled from the runtime type.
+type promPersistedTarget struct {
+	Service   string `json:"service"`
+	Namespace string `json:"namespace,omitempty"`
+	Port      int    `json:"port,omitempty"`
 }
 
 // store guards file IO for one investigation. Writes are async — events
@@ -199,6 +218,8 @@ func (s *store) writeMetadata(dto InvestigationDTO) error {
 		Auto:               dto.Auto,
 		OriginatingWatchID: dto.OriginatingWatchID,
 		OriginatingSignal:  dto.OriginatingSignal,
+		PromDisabled:       dto.PromDisabled,
+		PromTarget:         promTargetToPersistedTarget(dto.PromTarget),
 	})
 }
 
@@ -334,6 +355,8 @@ func loadInvestigation(dir string) (*Investigation, error) {
 		Auto:               meta.Auto,
 		OriginatingWatchID: meta.OriginatingWatchID,
 		OriginatingSignal:  meta.OriginatingSignal,
+		PromTarget:         persistedTargetToPromTarget(meta.PromTarget),
+		PromDisabled:       meta.PromDisabled,
 		archived:           meta.Archived,
 		needsRehydrate:  !meta.Archived,
 		// A non-archived restored session was started in some prior
@@ -348,6 +371,15 @@ func loadInvestigation(dir string) (*Investigation, error) {
 	}
 	if t, err := parseTimestamp(meta.CreatedAt); err == nil {
 		inv.CreatedAt = t
+	}
+
+	// Hydrate ActiveContext from the on-disk file rather than from a
+	// duplicate metadata field. The file is canonical — the k8s MCP
+	// writes it on switch_context and the launcher's prom resolver
+	// already reads it through readActiveContext. Errors and missing
+	// files mean "no pre-selection" and leave ActiveContext empty.
+	if name, err := readActiveContext(inv.SessionDir); err == nil {
+		inv.ActiveContext = name
 	}
 
 	// Replay events into the backlog. New subscribers replay it on connect,
@@ -455,4 +487,30 @@ func scanSessionDirs(root string) ([]string, error) {
 
 func parseTimestamp(s string) (time.Time, error) {
 	return time.Parse(time.RFC3339, s)
+}
+
+// promTargetToPersistedTarget converts a runtime promforward.Target pointer
+// to its on-disk representation. Returns nil for a nil input.
+func promTargetToPersistedTarget(t *promforward.Target) *promPersistedTarget {
+	if t == nil {
+		return nil
+	}
+	return &promPersistedTarget{
+		Service:   t.Service,
+		Namespace: t.Namespace,
+		Port:      t.Port,
+	}
+}
+
+// persistedTargetToPromTarget converts an on-disk promPersistedTarget back
+// to a runtime promforward.Target pointer. Returns nil for a nil input.
+func persistedTargetToPromTarget(t *promPersistedTarget) *promforward.Target {
+	if t == nil {
+		return nil
+	}
+	return &promforward.Target{
+		Service:   t.Service,
+		Namespace: t.Namespace,
+		Port:      t.Port,
+	}
 }

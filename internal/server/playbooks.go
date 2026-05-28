@@ -183,12 +183,16 @@ func writeUserPlaybookViaSubprocess(ctx context.Context, mcpBin, dir, typeName, 
 	if !activate {
 		args = append(args, "--activate=false")
 	}
-	cmd := exec.CommandContext(ctx, mcpBin, args...)
-	cmd.Stdin = strings.NewReader(body)
 	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	runErr := cmd.Run()
+	runErr := runCmdWithETXTBSYRetry(func() *exec.Cmd {
+		stdout.Reset()
+		stderr.Reset()
+		cmd := exec.CommandContext(ctx, mcpBin, args...)
+		cmd.Stdin = strings.NewReader(body)
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		return cmd
+	})
 	var exitErr *exec.ExitError
 	if runErr != nil && !errors.As(runErr, &exitErr) {
 		return nil, fmt.Errorf("run write-user-playbook: %w (stderr: %s)", runErr, stderr.String())
@@ -234,11 +238,15 @@ func promoteProposalViaSubprocess(ctx context.Context, mcpBin, dir, proposalID s
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	args := []string{"promote-proposal", dir, proposalID}
-	cmd := exec.CommandContext(ctx, mcpBin, args...)
 	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	runErr := cmd.Run()
+	runErr := runCmdWithETXTBSYRetry(func() *exec.Cmd {
+		stdout.Reset()
+		stderr.Reset()
+		cmd := exec.CommandContext(ctx, mcpBin, args...)
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		return cmd
+	})
 	var exitErr *exec.ExitError
 	if runErr != nil && !errors.As(runErr, &exitErr) {
 		return "", "", "", false, nil, fmt.Errorf("run promote-proposal: %w (stderr: %s)", runErr, stderr.String())
@@ -279,10 +287,14 @@ func deleteProposalViaSubprocess(ctx context.Context, mcpBin, dir, proposalID st
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, mcpBin, "delete-proposal", dir, proposalID)
 	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
+	err := runCmdWithETXTBSYRetry(func() *exec.Cmd {
+		stderr.Reset()
+		cmd := exec.CommandContext(ctx, mcpBin, "delete-proposal", dir, proposalID)
+		cmd.Stderr = &stderr
+		return cmd
+	})
+	if err != nil {
 		return fmt.Errorf("delete-proposal: %w (stderr: %s)", err, stderr.String())
 	}
 	return nil
@@ -470,12 +482,16 @@ func validatePlaybookViaSubprocess(ctx context.Context, mcpBin, body string) ([]
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, mcpBin, "validate-playbook")
-	cmd.Stdin = strings.NewReader(body)
 	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	err := cmd.Run()
+	err := runCmdWithETXTBSYRetry(func() *exec.Cmd {
+		stdout.Reset()
+		stderr.Reset()
+		cmd := exec.CommandContext(ctx, mcpBin, "validate-playbook")
+		cmd.Stdin = strings.NewReader(body)
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		return cmd
+	})
 	// validate-playbook exits 1 on validation failure (still produces
 	// usable JSON on stdout), 2 on a hard error. Distinguish by exit code.
 	var exitErr *exec.ExitError

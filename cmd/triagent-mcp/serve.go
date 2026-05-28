@@ -14,6 +14,7 @@ import (
 	"github.com/sourcehawk/triagent/pkg/mcp/k8s"
 	mcpmeta "github.com/sourcehawk/triagent/pkg/mcp/meta"
 	"github.com/sourcehawk/triagent/pkg/mcp/parallel"
+	"github.com/sourcehawk/triagent/pkg/mcp/prom"
 	"github.com/sourcehawk/triagent/pkg/mcp/sessions"
 	"github.com/sourcehawk/triagent/pkg/mcp/signalingest"
 	"github.com/sourcehawk/triagent/pkg/mcp/slack"
@@ -49,6 +50,10 @@ const (
 	envSlackToken = "TRIAGENT_MCP_SLACK_TOKEN"
 
 	envIncidentioToken = "TRIAGENT_MCP_INCIDENTIO_TOKEN"
+
+	envPromURL    = "TRIAGENT_MCP_PROM_URL"
+	envPromBearer = "TRIAGENT_MCP_PROM_BEARER"
+	envPromBasic  = "TRIAGENT_MCP_PROM_BASIC"
 )
 
 type serveFlags struct {
@@ -85,6 +90,11 @@ type serveFlags struct {
 
 	// incidentio flags
 	incidentioToken string
+
+	// prom flags
+	promURL    string
+	promBearer string
+	promBasic  string
 }
 
 func serveCmd() *cobra.Command {
@@ -94,14 +104,14 @@ func serveCmd() *cobra.Command {
 		Short: "Run one of the triagent-mcp MCP servers over stdio",
 		Long: "Run one of the triagent-mcp MCP servers over stdio.\n\n" +
 			"Select the server via --kind. Supported kinds:\n" +
-			"  k8s, teleport, strategies, git, wiki, slack, incidentio, sessions, meta, agent-operator, signal-ingest, parallel",
+			"  k8s, teleport, strategies, git, wiki, slack, incidentio, sessions, meta, agent-operator, signal-ingest, parallel, prom",
 		Hidden: true,
 		Args:   cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runServe(cmd.Context(), resolveFlags(f))
 		},
 	}
-	cmd.Flags().StringVar(&f.kind, "kind", "", "which MCP server to run: k8s, teleport, strategies, git, wiki, slack, incidentio, sessions, meta, agent-operator, signal-ingest, or parallel (required)")
+	cmd.Flags().StringVar(&f.kind, "kind", "", "which MCP server to run: k8s, teleport, strategies, git, wiki, slack, incidentio, sessions, meta, agent-operator, signal-ingest, parallel, or prom (required)")
 
 	// k8s flags
 	cmd.Flags().StringVar(&f.kubeconfig, "kubeconfig", "", "path to kubeconfig (defaults to $"+envKubeconfig+", then $KUBECONFIG, then ~/.kube/config) [kind=k8s]")
@@ -134,6 +144,11 @@ func serveCmd() *cobra.Command {
 
 	// incidentio flags
 	cmd.Flags().StringVar(&f.incidentioToken, "incidentio-token", "", "incident.io API key; required (defaults to $"+envIncidentioToken+") [kind=incidentio]")
+
+	// prom flags
+	cmd.Flags().StringVar(&f.promURL, "prom-url", "", "Prometheus base URL (defaults to $"+envPromURL+") [kind=prom]")
+	cmd.Flags().StringVar(&f.promBearer, "prom-bearer", "", "Authorization: Bearer token for Prometheus (defaults to $"+envPromBearer+") [kind=prom]")
+	cmd.Flags().StringVar(&f.promBasic, "prom-basic", "", "Basic auth credentials user:pass for Prometheus (defaults to $"+envPromBasic+") [kind=prom]")
 
 	return cmd
 }
@@ -191,6 +206,15 @@ func resolveFlags(f *serveFlags) serveFlags {
 	if out.incidentioToken == "" {
 		out.incidentioToken = os.Getenv(envIncidentioToken)
 	}
+	if out.promURL == "" {
+		out.promURL = os.Getenv(envPromURL)
+	}
+	if out.promBearer == "" {
+		out.promBearer = os.Getenv(envPromBearer)
+	}
+	if out.promBasic == "" {
+		out.promBasic = os.Getenv(envPromBasic)
+	}
 	// Bool env override: only consider when the operator hasn't passed
 	// the flag explicitly. Cobra preserves the flag default (true) when
 	// unset, so we can't distinguish "operator passed --filter-prereleases=true"
@@ -237,10 +261,12 @@ func runServe(ctx context.Context, f serveFlags) error {
 		return runSignalIngest(ctx, f)
 	case "parallel":
 		return runParallel(ctx, f)
+	case "prom":
+		return runProm(ctx, f)
 	case "":
-		return fmt.Errorf("--kind is required (one of: k8s, teleport, strategies, git, wiki, slack, incidentio, sessions, meta, agent-operator, signal-ingest, parallel)")
+		return fmt.Errorf("--kind is required (one of: k8s, teleport, strategies, git, wiki, slack, incidentio, sessions, meta, agent-operator, signal-ingest, parallel, prom)")
 	default:
-		return fmt.Errorf("unknown --kind %q (want one of: k8s, teleport, strategies, git, wiki, slack, incidentio, sessions, meta, agent-operator, signal-ingest, parallel)", f.kind)
+		return fmt.Errorf("unknown --kind %q (want one of: k8s, teleport, strategies, git, wiki, slack, incidentio, sessions, meta, agent-operator, signal-ingest, parallel, prom)", f.kind)
 	}
 }
 
@@ -371,6 +397,29 @@ func runParallel(ctx context.Context, _ serveFlags) error {
 		return fmt.Errorf("build parallel mcp server: %w", err)
 	}
 	log.Info("mcp serve --kind=parallel starting")
+	return srv.Run(ctx)
+}
+
+func runProm(ctx context.Context, f serveFlags) error {
+	resolverURL := os.Getenv("TRIAGENT_MCP_PROM_RESOLVER_URL")
+	launcherToken := os.Getenv("TRIAGENT_MCP_TELEMETRY_TOKEN")
+	if f.promURL == "" && resolverURL == "" {
+		return fmt.Errorf("--prom-url is required (or set $%s or $TRIAGENT_MCP_PROM_RESOLVER_URL)", envPromURL)
+	}
+	srv, err := prom.New(prom.Options{
+		Endpoint:         f.promURL,
+		Bearer:           f.promBearer,
+		BasicAuth:        f.promBasic,
+		EndpointResolver: resolverURL,
+		LauncherToken:    launcherToken,
+	})
+	if err != nil {
+		return fmt.Errorf("build prom mcp server: %w", err)
+	}
+	log.Info("mcp serve --kind=prom starting",
+		"endpoint", f.promURL,
+		"resolver", resolverURL,
+	)
 	return srv.Run(ctx)
 }
 

@@ -98,8 +98,13 @@ func (s *Server) Warnings() []string {
 	return nil
 }
 
-// Run serves MCP requests over stdio until ctx is cancelled.
+// Run serves MCP requests over stdio until ctx is cancelled. Before
+// serving, opportunistically hydrate the active context from the
+// launcher-written <sessionDir>/active-context — when the operator
+// pre-selected a cluster on the session-start form the first agent
+// tool call sees an active context without needing switch_context.
 func (s *Server) Run(ctx context.Context) error {
+	s.toolkit.hydrateFromActiveContext()
 	return s.impl.Run(ctx, &mcp.StdioTransport{})
 }
 

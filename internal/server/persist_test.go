@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/sourcehawk/triagent/internal/auto"
+	"github.com/sourcehawk/triagent/internal/promforward"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -96,4 +97,82 @@ func TestAutoStateRoundTrip(t *testing.T) {
 	require.Equal(t, auto.PhaseStarted, inv.Auto.Phase)
 	require.Equal(t, "op-1", inv.Auto.OperatorSessionID)
 	require.Equal(t, 7, inv.Auto.LastSentSeq)
+}
+
+// TestPersistedMetadata_PromRoundTrip verifies that PromTarget and PromDisabled
+// survive a write/load cycle. This covers the rehydrate-after-restart path for
+// per-investigation prom overrides.
+func TestPersistedMetadata_PromRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	t.Run("with_target", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		s := newStore(dir)
+		t.Cleanup(s.close)
+
+		dto := InvestigationDTO{
+			ID:        "inv-prom",
+			Namespace: "ns",
+			SessionDir: dir,
+			CreatedAt: time.Now().UTC(),
+			PromTarget: &promforward.Target{
+				Service:   "prometheus-server",
+				Namespace: "monitoring",
+				Port:      9090,
+			},
+			PromDisabled: false,
+		}
+		require.NoError(t, s.writeMetadata(dto))
+
+		inv, err := loadInvestigation(dir)
+		require.NoError(t, err)
+		require.NotNil(t, inv.PromTarget, "PromTarget should survive round-trip")
+		assert.Equal(t, "prometheus-server", inv.PromTarget.Service)
+		assert.Equal(t, "monitoring", inv.PromTarget.Namespace)
+		assert.Equal(t, 9090, inv.PromTarget.Port)
+		assert.False(t, inv.PromDisabled)
+	})
+
+	t.Run("disabled", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		s := newStore(dir)
+		t.Cleanup(s.close)
+
+		dto := InvestigationDTO{
+			ID:           "inv-prom-disabled",
+			Namespace:    "ns",
+			SessionDir:   dir,
+			CreatedAt:    time.Now().UTC(),
+			PromTarget:   nil,
+			PromDisabled: true,
+		}
+		require.NoError(t, s.writeMetadata(dto))
+
+		inv, err := loadInvestigation(dir)
+		require.NoError(t, err)
+		assert.Nil(t, inv.PromTarget, "nil PromTarget should survive round-trip")
+		assert.True(t, inv.PromDisabled, "PromDisabled=true should survive round-trip")
+	})
+
+	t.Run("no_prom_configured", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		s := newStore(dir)
+		t.Cleanup(s.close)
+
+		dto := InvestigationDTO{
+			ID:        "inv-no-prom",
+			Namespace: "ns",
+			SessionDir: dir,
+			CreatedAt: time.Now().UTC(),
+		}
+		require.NoError(t, s.writeMetadata(dto))
+
+		inv, err := loadInvestigation(dir)
+		require.NoError(t, err)
+		assert.Nil(t, inv.PromTarget, "absent PromTarget should stay nil")
+		assert.False(t, inv.PromDisabled)
+	})
 }

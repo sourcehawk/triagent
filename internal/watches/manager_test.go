@@ -2,6 +2,7 @@ package watches
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -510,6 +511,184 @@ func TestAutoStart_RetriesPersistAcrossRestart(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("retry never resumed after restart")
 	}
+}
+
+// TestManager_StopWaitsForInFlightSpawnFromSignal verifies that Stop
+// blocks until any SpawnFromSignal that already passed the initial
+// stopped check has finished writing its signal row. If Stop won the
+// race while the mutator was blocked in AppendSignal, the mutator must
+// compensate the queued row with a failed-signal mutation, skip the
+// spawner creation entirely, and return ErrManagerStopped — so no
+// half-registered spawner is left in m.spawners and the audit log on
+// disk converges on the terminal "failed" outcome.
+func TestManager_StopWaitsForInFlightSpawnFromSignal(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	yaml := filepath.Join(dir, "user_watches.yaml")
+	reg := NewSourceRegistry()
+	reg.Register(&stubSource{})
+	mgr, err := NewManager(ManagerOpts{
+		UserWatchesPath: yaml,
+		Sources:         reg,
+		IDGen:           func() string { return "fixed" },
+		Create: func(_ context.Context, _ CreateRequest) (string, error) {
+			return "INV", nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mgr.Start(context.Background())
+	w, err := mgr.Create(Watch{
+		Name:      "blocked",
+		Source:    SourceConfig{Kind: SourceGitHubIssues, Owner: "o", Repo: "r"},
+		Polling:   PollingConfig{IntervalSeconds: 300},
+		AutoStart: AutoStartConfig{Enabled: true, MaxConcurrent: 1},
+		Enabled:   true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Pre-acquire the per-path mutex AppendSignal uses, so the in-flight
+	// SpawnFromSignal blocks on the disk write — emulating the slow window
+	// between the early stopped check and the spawner-creation step.
+	signalsPath := filepath.Join(WatchDir(yaml, w.ID), "signals.jsonl")
+	pathMu := lockFor(signalsPath)
+	pathMu.Lock()
+
+	spawnDone := make(chan error, 1)
+	go func() {
+		_, _, err := mgr.SpawnFromSignal(context.Background(), w.ID, SpawnFromSignalReq{
+			Briefing:     "blocked",
+			CitedItemIDs: []string{"I1"},
+			AutoMode:     true,
+		})
+		spawnDone <- err
+	}()
+
+	// Give the goroutine time to enter SpawnFromSignal and block on the
+	// AppendSignal path mutex.
+	time.Sleep(50 * time.Millisecond)
+
+	stopDone := make(chan struct{})
+	go func() {
+		mgr.Stop()
+		close(stopDone)
+	}()
+
+	// While SpawnFromSignal is mid-flight, Stop must NOT return — the
+	// in-flight mutator hasn't released its claim on the manager yet.
+	select {
+	case <-stopDone:
+		pathMu.Unlock()
+		t.Fatalf("Stop returned while an in-flight SpawnFromSignal was still blocked in AppendSignal — TOCTOU window not closed")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	// Release the disk write. SpawnFromSignal completes, then Stop returns.
+	pathMu.Unlock()
+
+	select {
+	case <-stopDone:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("Stop did not return after SpawnFromSignal drained")
+	}
+	select {
+	case err := <-spawnDone:
+		if !errors.Is(err, ErrManagerStopped) {
+			t.Fatalf("SpawnFromSignal returned err = %v, want ErrManagerStopped", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("SpawnFromSignal did not complete")
+	}
+
+	// The signal must end on a terminal Failed outcome — the queued row
+	// was already on disk when Stop won the race, and the compensation
+	// path appends a Failed mutation so the latest-row-per-id projection
+	// converges instead of leaving a dangling "queued" entry that the
+	// orphan-recovery sweep would otherwise resume on next boot.
+	sigs, err := ReadSignals(signalsPath, ReadOpts{Limit: 10})
+	if err != nil {
+		t.Fatalf("ReadSignals: %v", err)
+	}
+	if len(sigs) != 1 || sigs[0].Outcome != OutcomeFailed {
+		t.Fatalf("expected projected signal Failed; got %+v", sigs)
+	}
+
+	// And no half-created spawner should be left dangling in the
+	// in-memory map — the compensation path aborts before spawner setup.
+	mgr.mu.RLock()
+	leftover := len(mgr.spawners)
+	mgr.mu.RUnlock()
+	if leftover != 0 {
+		t.Fatalf("expected no spawners after stop-compensated mutator; got %d", leftover)
+	}
+}
+
+// TestManager_StopRefusesFutureSpawns verifies that SpawnFromSignal after
+// Stop returns ErrManagerStopped and writes no signal row — accepting work
+// after shutdown would queue a signal with no live spawner goroutine to
+// process it. Also confirms no race against spawnerWG.Wait and that a
+// second Stop is idempotent.
+func TestManager_StopRefusesFutureSpawns(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	yaml := filepath.Join(dir, "user_watches.yaml")
+	reg := NewSourceRegistry()
+	reg.Register(&stubSource{})
+	spawnCount := 0
+	mgr, err := NewManager(ManagerOpts{
+		UserWatchesPath: yaml,
+		Sources:         reg,
+		IDGen:           func() string { return "fixed" },
+		Create: func(_ context.Context, _ CreateRequest) (string, error) {
+			spawnCount++
+			return "INV", nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mgr.Start(context.Background())
+
+	// Create an auto-start watch.
+	w, err := mgr.Create(Watch{
+		Name:      "after-stop",
+		Source:    SourceConfig{Kind: SourceGitHubIssues, Owner: "o", Repo: "r"},
+		Polling:   PollingConfig{IntervalSeconds: 300},
+		AutoStart: AutoStartConfig{Enabled: true, MaxConcurrent: 1},
+		Enabled:   true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Stop the manager. After this, spawnerWG.Wait has returned.
+	mgr.Stop()
+
+	// SpawnFromSignal after Stop must reject with ErrManagerStopped before
+	// any work — writing a queued signal row when no spawner can process
+	// it would leak the signal until the next launcher restart.
+	sigID, invID, err := mgr.SpawnFromSignal(context.Background(), w.ID, SpawnFromSignalReq{
+		Briefing:     "post-stop",
+		CitedItemIDs: []string{"I1"},
+		AutoMode:     true,
+	})
+	if !errors.Is(err, ErrManagerStopped) {
+		t.Fatalf("SpawnFromSignal after Stop: err = %v, want ErrManagerStopped", err)
+	}
+	if sigID != "" || invID != "" {
+		t.Fatalf("SpawnFromSignal after Stop: sigID=%q invID=%q, want both empty", sigID, invID)
+	}
+
+	sigs, _ := ReadSignals(filepath.Join(WatchDir(yaml, w.ID), "signals.jsonl"), ReadOpts{Limit: 10})
+	if len(sigs) != 0 {
+		t.Fatalf("expected no signal rows after stop-rejected SpawnFromSignal; got %+v", sigs)
+	}
+
+	// Second Stop must be a no-op (idempotent).
+	mgr.Stop()
 }
 
 var errFakeTransient = errFake{"transient boom"}

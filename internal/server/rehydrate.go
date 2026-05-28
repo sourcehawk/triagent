@@ -59,8 +59,8 @@ func (a *apiHandlers) rehydrate(inv *Investigation) error {
 
 	// Re-derive external-state from the launcher and connections manager
 	// instead of trusting the persisted Investigation. The session's prom
-	// config IS persisted (operator can customise it per investigation)
-	// so we read that off inv.
+	// config is persisted in metadata.json (PromTarget + PromDisabled) and
+	// read back via loadInvestigation, so we pass it through from inv.
 	linked, err := a.resolvedLinkedRepos()
 	if err != nil {
 		return finishFailure(fmt.Errorf("resolve linked repos: %w", err), nil)
@@ -94,6 +94,11 @@ func (a *apiHandlers) rehydrate(inv *Investigation) error {
 		TraceID:        inv.ID,
 		TelemetryToken: a.telemetryToken,
 		Profile:        inv.Profile,
+		// Prom config is persisted in metadata.json and restored via
+		// loadInvestigation — pass it through so the rehydrated MCP config
+		// includes the correct prom server entry.
+		PromTarget:   inv.PromTarget,
+		PromDisabled: inv.PromDisabled,
 	}
 	inv.mu.Unlock()
 

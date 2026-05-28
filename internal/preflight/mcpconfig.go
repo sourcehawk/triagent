@@ -3,12 +3,14 @@ package preflight
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 
 	"github.com/sourcehawk/triagent/internal/profile"
+	"github.com/sourcehawk/triagent/internal/promforward"
 	"github.com/sourcehawk/triagent/internal/repos"
 )
 
@@ -41,6 +43,7 @@ const (
 	MCPAliasSlack      = "triagent-slack"
 	MCPAliasIncidentio = "triagent-incidentio"
 	MCPAliasParallel   = "triagent-parallel"
+	MCPAliasProm       = "triagent-prom"
 	// MCPAliasGitPrefix is prepended to a repo's effective alias to form
 	// the per-repo MCP server alias (e.g. "triagent-git-zeebe").
 	MCPAliasGitPrefix = "triagent-git-"
@@ -65,6 +68,10 @@ const (
 
 	EnvSlackToken      = "TRIAGENT_MCP_SLACK_TOKEN"
 	EnvIncidentioToken = "TRIAGENT_MCP_INCIDENTIO_TOKEN"
+
+	EnvPromResolverURL = "TRIAGENT_MCP_PROM_RESOLVER_URL"
+	EnvPromBearer      = "TRIAGENT_MCP_PROM_BEARER"
+	EnvPromBasic       = "TRIAGENT_MCP_PROM_BASIC"
 
 	EnvParallelUpstreams = "TRIAGENT_MCP_PARALLEL_UPSTREAMS"
 
@@ -111,6 +118,14 @@ type mcpConfigInputs struct {
 	TelemetryURL     string             // empty disables telemetry across the board
 	TraceID          string             // opaque correlation key (this launcher's investigation id)
 	TelemetryToken   string
+	// PromTarget is the per-investigation resolved Prometheus target. When
+	// non-nil (and PromDisabled is false), the prom MCP server entry is
+	// emitted. Replaces the old profile-level gate so each investigation
+	// carries its own target.
+	PromTarget   *promforward.Target
+	// PromDisabled explicitly suppresses the prom MCP even when PromTarget
+	// is non-nil (operator checked "disable prom MCP" in the form).
+	PromDisabled bool
 }
 
 // telemetryEnv returns the telemetry env vars to inject into a single
@@ -197,6 +212,7 @@ func writeMCPConfig(in mcpConfigInputs) (string, error) {
 			k8sEnv[passthrough] = v
 		}
 	}
+	k8sEnv[EnvSessionDir] = in.Dir
 	mergeEnv(k8sEnv, telemetryEnv(in, MCPAliasK8s))
 	mergeEnv(k8sEnv, kubeEnv(in))
 
@@ -324,6 +340,26 @@ func writeMCPConfig(in mcpConfigInputs) (string, error) {
 		}
 	}
 
+	if !in.PromDisabled && in.PromTarget != nil && in.PromTarget.Service != "" && in.TelemetryURL != "" {
+		promEnv := map[string]string{}
+		if origin := telemetryOrigin(in.TelemetryURL); origin != "" {
+			promEnv[EnvPromResolverURL] = origin + "/api/internal/prom/" + in.TraceID + "/endpoint"
+		}
+		if v := os.Getenv(EnvPromBearer); v != "" {
+			promEnv[EnvPromBearer] = v
+		}
+		if v := os.Getenv(EnvPromBasic); v != "" {
+			promEnv[EnvPromBasic] = v
+		}
+		mergeEnv(promEnv, telemetryEnv(in, MCPAliasProm))
+		mergeEnv(promEnv, kubeEnv(in))
+		servers[MCPAliasProm] = map[string]any{
+			"command": in.MCPBin,
+			"args":    []string{"serve", "--kind=prom"},
+			"env":     promEnv,
+		}
+	}
+
 	// Spawn-mode extra MCPs from the profile. These are emitted before the
 	// parallel broker so they appear in the upstreams map that the broker
 	// receives.
@@ -378,6 +414,21 @@ func writeMCPConfig(in mcpConfigInputs) (string, error) {
 		return "", err
 	}
 	return path, nil
+}
+
+// telemetryOrigin extracts scheme://host[:port] from a launcher
+// telemetry URL like "http://127.0.0.1:8080/api/internal/tool-events".
+// Empty input → empty result. Used to build the prom resolver URL
+// without pulling pkg/mcp/meta into preflight.
+func telemetryOrigin(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
 }
 
 // parallelUpstreams projects the assembled servers map into the slim

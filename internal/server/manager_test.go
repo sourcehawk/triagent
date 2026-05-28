@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/sourcehawk/triagent/internal/auto"
+	"github.com/sourcehawk/triagent/internal/promforward"
+	"github.com/sourcehawk/triagent/pkg/mcp/k8s"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -57,6 +59,7 @@ func (f *fakeAutoBackend) seenPrompts() []string {
 func TestManager_StartFromWatch_RunsSessionAndOptionalAuto(t *testing.T) {
 	root := t.TempDir()
 	mgr := NewManager(context.Background(), root)
+	t.Cleanup(mgr.Shutdown)
 	inv := mgr.RegisterForTest("inv-wf-auto")
 	require.NoError(t, os.MkdirAll(inv.SessionDir, 0o700))
 
@@ -112,6 +115,7 @@ func TestManager_StartFromWatch_RunsSessionAndOptionalAuto(t *testing.T) {
 func TestManager_StartFromWatch_ManualModeSkipsAuto(t *testing.T) {
 	root := t.TempDir()
 	mgr := NewManager(context.Background(), root)
+	t.Cleanup(mgr.Shutdown)
 	inv := mgr.RegisterForTest("inv-wf-manual")
 	require.NoError(t, os.MkdirAll(inv.SessionDir, 0o700))
 
@@ -146,6 +150,7 @@ func TestManager_StartFromWatch_ManualModeSkipsAuto(t *testing.T) {
 func TestManager_StartFromWatch_StartErrorIsLoggedNotPropagated(t *testing.T) {
 	root := t.TempDir()
 	mgr := NewManager(context.Background(), root)
+	t.Cleanup(mgr.Shutdown)
 	inv := mgr.RegisterForTest("inv-wf-fail")
 
 	startFn := func() error { return assertableError("boom") }
@@ -164,6 +169,7 @@ func (e assertableError) Error() string { return string(e) }
 func TestManager_EnableAuto_StartsAutoOperator(t *testing.T) {
 	root := t.TempDir()
 	mgr := NewManager(context.Background(), root)
+	t.Cleanup(mgr.Shutdown)
 	inv := mgr.RegisterForTest("inv-1")
 	require.NoError(t, os.MkdirAll(inv.SessionDir, 0o700))
 
@@ -201,6 +207,7 @@ func TestManager_EnableAuto_StartsAutoOperator(t *testing.T) {
 func TestManager_EnableAuto_PublishesStartedEnvelope(t *testing.T) {
 	root := t.TempDir()
 	mgr := NewManager(context.Background(), root)
+	t.Cleanup(mgr.Shutdown)
 	inv := mgr.RegisterForTest("inv-started")
 	require.NoError(t, os.MkdirAll(inv.SessionDir, 0o700))
 
@@ -235,6 +242,7 @@ func TestManager_EnableAuto_PublishesStartedEnvelope(t *testing.T) {
 // the operator. Verify the watcher's value survives operator persists.
 func TestManager_ApplyAutoState_PreservesLastSentSeqAcrossOperatorPersists(t *testing.T) {
 	mgr := NewManager(context.Background(), t.TempDir())
+	t.Cleanup(mgr.Shutdown)
 	inv := mgr.RegisterForTest("inv-last-seq")
 	require.NoError(t, os.MkdirAll(inv.SessionDir, 0o700))
 
@@ -255,6 +263,7 @@ func TestManager_ApplyAutoState_PreservesLastSentSeqAcrossOperatorPersists(t *te
 func TestManager_NotifyAutoResume_BuildsCatchupSpan(t *testing.T) {
 	root := t.TempDir()
 	mgr := NewManager(context.Background(), root)
+	t.Cleanup(mgr.Shutdown)
 	inv := mgr.RegisterForTest("inv-2")
 	require.NoError(t, os.MkdirAll(inv.SessionDir, 0o700))
 
@@ -318,6 +327,7 @@ func TestManager_NotifyAutoResume_BuildsCatchupSpan(t *testing.T) {
 func TestPublishPushState_ReachesMultiplexStream(t *testing.T) {
 	dir := t.TempDir()
 	m := NewManager(context.Background(), dir)
+	t.Cleanup(m.Shutdown)
 	inv := &Investigation{ID: "inv-push", SessionDir: dir, CreatedAt: time.Now().UTC()}
 	inv.ctx, inv.cancel = context.WithCancel(context.Background())
 	inv.manager = m
@@ -392,6 +402,47 @@ func TestLoadInvestigation_NotArchived_SetsNeedsRehydrate(t *testing.T) {
 	require.True(t, loaded.needsRehydrate, "loaded.needsRehydrate = false, want true")
 }
 
+// ActiveContext is seeded onto Investigation at preflight when the
+// operator pre-selected a cluster. After a launcher restart, the DTO
+// must still report it so the frontend can show the bound context.
+// We derive it from the canonical on-disk file (`<sessionDir>/active-context`)
+// rather than persisting a duplicate copy in metadata.json — the k8s
+// MCP and the launcher's prom resolver both read the same file.
+func TestLoadInvestigation_HydratesActiveContextFromSessionFile(t *testing.T) {
+	dir := t.TempDir()
+	st := newStore(dir)
+	t.Cleanup(st.close)
+	require.NoError(t, st.writeMetadata(InvestigationDTO{
+		ID:         "rid",
+		SessionDir: dir,
+		CreatedAt:  time.Now().UTC(),
+	}), "writeMetadata")
+	require.NoError(t, k8s.WriteActiveContextFile(dir, "camunda.teleport.sh-saas-dev-worker-2"))
+
+	loaded, err := loadInvestigation(dir)
+	require.NoError(t, err)
+	assert.Equal(t, "camunda.teleport.sh-saas-dev-worker-2", loaded.ActiveContext,
+		"ActiveContext must survive restart by deriving from <sessionDir>/active-context")
+	assert.Equal(t, "camunda.teleport.sh-saas-dev-worker-2", loaded.Snapshot().ActiveContext,
+		"DTO surface must reflect the hydrated value")
+}
+
+func TestLoadInvestigation_AbsentActiveContextFileLeavesEmpty(t *testing.T) {
+	dir := t.TempDir()
+	st := newStore(dir)
+	t.Cleanup(st.close)
+	require.NoError(t, st.writeMetadata(InvestigationDTO{
+		ID:         "rid",
+		SessionDir: dir,
+		CreatedAt:  time.Now().UTC(),
+	}), "writeMetadata")
+	// No active-context file written — preflight didn't pre-seed.
+
+	loaded, err := loadInvestigation(dir)
+	require.NoError(t, err)
+	assert.Equal(t, "", loaded.ActiveContext, "missing file is the normal no-pre-selection case")
+}
+
 func TestLoadInvestigation_Archived_DoesNotSetNeedsRehydrate(t *testing.T) {
 	dir := t.TempDir()
 	st := newStore(dir)
@@ -429,6 +480,7 @@ func TestRestore_AssignsContext_AndMarksStarted(t *testing.T) {
 	st.close()
 
 	m := NewManager(context.Background(), root)
+	t.Cleanup(m.Shutdown)
 	require.NoError(t, m.Restore(), "Restore")
 	inv := m.Get("sess-1")
 	require.NotNil(t, inv, "Restore did not load sess-1")
@@ -470,9 +522,42 @@ func TestSnapshot_Resumable(t *testing.T) {
 	}
 }
 
+// Sidebar (frontend/lib/mcps.ts) gates the prom MCP chip on
+// inv.promEnabled, which the DTO must derive — the raw promTarget and
+// promDisabled fields don't carry the boolean the UI reads. Camunda
+// session 72671546… had a non-nil PromTarget but no chip because the
+// DTO was missing PromEnabled.
+func TestSnapshot_PromEnabled(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name     string
+		target   *promforward.Target
+		disabled bool
+		want     bool
+	}{
+		{"target_and_not_disabled", &promforward.Target{Service: "thanos-query", Namespace: "thanos", Port: 9090}, false, true},
+		{"target_but_disabled", &promforward.Target{Service: "thanos-query", Namespace: "thanos", Port: 9090}, true, false},
+		{"no_target", nil, false, false},
+		{"no_target_and_disabled", nil, true, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			inv := &Investigation{
+				ID:           "x",
+				SessionDir:   t.TempDir(),
+				CreatedAt:    time.Now().UTC(),
+				PromTarget:   c.target,
+				PromDisabled: c.disabled,
+			}
+			assert.Equal(t, c.want, inv.Snapshot().PromEnabled, "PromEnabled")
+		})
+	}
+}
+
 func TestPublishRehydrateState_ReachesMultiplexStream(t *testing.T) {
 	dir := t.TempDir()
 	m := NewManager(context.Background(), dir)
+	t.Cleanup(m.Shutdown)
 	inv := &Investigation{ID: "inv-rehydrate", SessionDir: dir, CreatedAt: time.Now().UTC()}
 	inv.ctx, inv.cancel = context.WithCancel(context.Background())
 	inv.manager = m
@@ -509,6 +594,7 @@ func TestRestore_OrphanPushClearsFlag(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, fileMetadata), body, 0o600))
 
 	m := NewManager(context.Background(), root)
+	t.Cleanup(m.Shutdown)
 	require.NoError(t, m.Restore())
 	inv := m.Get("orphan")
 	require.NotNil(t, inv, "orphan investigation not loaded")
@@ -521,6 +607,7 @@ func TestRestore_OrphanPushClearsFlag(t *testing.T) {
 func TestInvestigation_Publish_ReachesMultiplexStream(t *testing.T) {
 	dir := t.TempDir()
 	m := NewManager(context.Background(), dir)
+	t.Cleanup(m.Shutdown)
 	inv := &Investigation{ID: "inv-X", SessionDir: dir, CreatedAt: time.Now().UTC()}
 	inv.ctx, inv.cancel = context.WithCancel(context.Background())
 	inv.manager = m
@@ -543,6 +630,7 @@ func TestInvestigation_Publish_ReachesMultiplexStream(t *testing.T) {
 
 func TestPublishGlobalEvent_ReachesMultiplexStream(t *testing.T) {
 	m := NewManager(context.Background(), t.TempDir())
+	t.Cleanup(m.Shutdown)
 	_, ch, _, cancel := m.SubscribeStream("tab", 0)
 	t.Cleanup(cancel)
 
@@ -569,6 +657,7 @@ func TestPersistOriginatingSignalRoundtrips(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
 	mgr := NewManager(context.Background(), tmp)
+	t.Cleanup(mgr.Shutdown)
 	sessDir := filepath.Join(tmp, "round-trip")
 	require.NoError(t, os.MkdirAll(sessDir, 0o700))
 	inv := &Investigation{
@@ -585,6 +674,7 @@ func TestPersistOriginatingSignalRoundtrips(t *testing.T) {
 	}
 	// Restore in a new manager to exercise the persist path.
 	mgr2 := NewManager(context.Background(), tmp)
+	t.Cleanup(mgr2.Shutdown)
 	if err := mgr2.Restore(); err != nil {
 		t.Fatal(err)
 	}

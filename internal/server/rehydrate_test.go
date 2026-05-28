@@ -65,6 +65,7 @@ func TestRehydrate_Success_ClearsNeedsRehydrate(t *testing.T) {
 func TestRehydrate_KubeFails_KeepsNeedsRehydrate_PublishesFailed(t *testing.T) {
 	dir := t.TempDir()
 	mgr := NewManager(context.Background(), dir)
+	t.Cleanup(mgr.Shutdown)
 	a := &apiHandlers{
 		manager:     mgr,
 		preflightFn: stubPreflight(t, nil, errors.New("namespace not found")),

@@ -1,0 +1,133 @@
+package prom
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"sync/atomic"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestCardinality_LowCardCounted(t *testing.T) {
+	t.Parallel()
+	stub := newStubProm(t, stubHandlers{
+		series: func(w http.ResponseWriter, r *http.Request) {
+			data := []map[string]string{}
+			for i := 0; i < 3; i++ {
+				data = append(data, map[string]string{"__name__": "up", "instance": itoa(i)})
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": data})
+		},
+	})
+	c := newPromClient(stub.URL, "", "", http.DefaultClient)
+	cat := emptyCatalog()
+	cat.names = []string{"up"}
+	cat.metadata = map[string]MetricMetadata{"up": {Type: "gauge"}}
+	got, err := cardinalityOf(context.Background(), c, cat, "up")
+	require.NoError(t, err)
+	assert.Equal(t, 3, got)
+}
+
+func TestCardinality_HighCardSentinel(t *testing.T) {
+	t.Parallel()
+	stub := newStubProm(t, stubHandlers{
+		series: func(w http.ResponseWriter, r *http.Request) {
+			data := []map[string]string{}
+			for i := 0; i < cardProbeLimit; i++ {
+				data = append(data, map[string]string{"__name__": "x", "instance": itoa(i)})
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": data})
+		},
+	})
+	c := newPromClient(stub.URL, "", "", http.DefaultClient)
+	cat := emptyCatalog()
+	cat.names = []string{"x"}
+	got, err := cardinalityOf(context.Background(), c, cat, "x")
+	require.NoError(t, err)
+	assert.Equal(t, -1, got, "limit-reached → high-card sentinel")
+}
+
+func TestCardinality_Cached(t *testing.T) {
+	t.Parallel()
+	var calls atomic.Int32
+	stub := newStubProm(t, stubHandlers{
+		series: func(w http.ResponseWriter, r *http.Request) {
+			calls.Add(1)
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": []map[string]string{{"__name__": "y"}}})
+		},
+	})
+	c := newPromClient(stub.URL, "", "", http.DefaultClient)
+	cat := emptyCatalog()
+	cat.names = []string{"y"}
+	_, err := cardinalityOf(context.Background(), c, cat, "y")
+	require.NoError(t, err)
+	_, err = cardinalityOf(context.Background(), c, cat, "y")
+	require.NoError(t, err)
+	assert.Equal(t, int32(1), calls.Load(), "second call must hit cache")
+}
+
+func TestCardinality_ZeroSeriesCachedAndNotReprobed(t *testing.T) {
+	t.Parallel()
+	var calls atomic.Int32
+	stub := newStubProm(t, stubHandlers{
+		series: func(w http.ResponseWriter, r *http.Request) {
+			calls.Add(1)
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": []map[string]string{}})
+		},
+	})
+	c := newPromClient(stub.URL, "", "", http.DefaultClient)
+	cat := emptyCatalog()
+	cat.names = []string{"z"}
+	got, err := cardinalityOf(context.Background(), c, cat, "z")
+	require.NoError(t, err)
+	assert.Equal(t, 0, got)
+	got, err = cardinalityOf(context.Background(), c, cat, "z")
+	require.NoError(t, err)
+	assert.Equal(t, 0, got)
+	assert.Equal(t, int32(1), calls.Load(), "zero-series cardinality must be cached, not re-probed")
+}
+
+// When the probe fails, the error must say it was a cardinality probe
+// for a specific metric — not a bare upstream URL. Without this the
+// agent can't tell which of its tool calls actually failed.
+func TestCardinality_ProbeErrorWrapsContext(t *testing.T) {
+	t.Parallel()
+	stub := newStubProm(t, stubHandlers{
+		series: func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusGatewayTimeout)
+			_, _ = w.Write([]byte("upstream timed out"))
+		},
+	})
+	c := newPromClient(stub.URL, "", "", http.DefaultClient)
+	cat := emptyCatalog()
+	cat.names = []string{"zeebe_broker_health_nodes"}
+	_, err := cardinalityOf(context.Background(), c, cat, "zeebe_broker_health_nodes")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cardinality probe", "phase must appear in the error")
+	assert.Contains(t, err.Error(), "zeebe_broker_health_nodes", "metric must appear in the error")
+}
+
+func TestCardinality_LowCardFillsLabelsCache(t *testing.T) {
+	t.Parallel()
+	stub := newStubProm(t, stubHandlers{
+		series: func(w http.ResponseWriter, r *http.Request) {
+			rows := []map[string]string{
+				{"__name__": "up", "instance": "a", "job": "n1"},
+				{"__name__": "up", "instance": "b", "job": "n1"},
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": rows})
+		},
+	})
+	c := newPromClient(stub.URL, "", "", http.DefaultClient)
+	cat := emptyCatalog()
+	cat.names = []string{"up"}
+	_, err := cardinalityOf(context.Background(), c, cat, "up")
+	require.NoError(t, err)
+	prof, ok := cat.labelsCache["up"]
+	require.True(t, ok, "labelsCache must be filled on low-card path")
+	assert.Equal(t, 2, prof.totalCardinality)
+	require.NotEmpty(t, prof.labels)
+}
