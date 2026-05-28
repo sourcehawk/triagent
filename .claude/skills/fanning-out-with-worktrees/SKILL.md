@@ -131,18 +131,24 @@ Per sub-PR, in order:
 1. **Review.** **REQUIRED SUB-SKILL:** the `review` skill — invoke it against the sub-PR number to walk the diff with
    full PR context. This review is weaker than external review (which lands at the integration PR) but stronger than
    nothing; it catches issues that would otherwise pile onto the integration PR reviewer.
-2. **Approval gate, per the state file's `sub_pr_approval` mode.**
-   - **`autonomous`** (default) — proceed straight to the merge in step 3. The operator opted out of per-sub-PR
-     gating in `developing-a-feature` Step 2.
-   - **`manual`** — pause and ask the operator for explicit approval before merging. Surface a one-line summary of
-     the review findings ("review clean" / "<N> findings, none blocking" / specific concerns) and the PR's
-     title/diff size in the prompt; wait for an explicit yes. On push-back, route the concern back to the worktree
-     subagent via `SendMessage` instead of merging.
+2. **Approval gate, per the state file's `sub_pr_approval` mode.** Every gate covers the **bundle**: merge + sub-issue
+   close + state-file update. The close-comment body is a fixed template (`"Merged via #<num> into feature/<slug>"`)
+   surfaced once in the prompt; the operator's approval covers it without a separate confirmation per close.
+   - **`autonomous`** (default) — proceed straight through the bundle in steps 3-5. The operator opted into the
+     bundle in `developing-a-feature` Step 2, including the templated close-comment, so no per-merge confirmation
+     fires.
+   - **`manual`** — pause and ask the operator for explicit approval before the bundle. The prompt MUST surface:
+     a one-line summary of the review findings ("review clean" / "<N> findings, none blocking" / specific concerns),
+     the PR's title and diff size, AND the exact `gh issue close --comment` body that will follow the merge. Wait
+     for an explicit yes. On push-back, route the concern back to the worktree subagent via `SendMessage` instead
+     of merging.
 3. **Merge into the feature branch.** `gh pr merge <num> --merge --repo sourcehawk/triagent` (or `--squash` /
    `--rebase` per project preference).
-4. **Close the sub-issue manually.** `gh issue close <sub-issue> --comment "Merged via #<num> into feature/<slug>"`.
-   Sub-PRs into a non-default branch don't trigger `Fixes`/`Closes` — manual close is the workaround. (The body's
-   `Towards #<sub-issue>` keyword left the issue open precisely so the orchestrator can close it here.)
+4. **Close the sub-issue with the templated comment.** `gh issue close <sub-issue> --repo sourcehawk/triagent
+   --comment "Merged via #<num> into feature/<slug>"`. Sub-PRs into a non-default branch don't trigger
+   `Fixes`/`Closes` — manual close is the workaround. (The body's `Towards #<sub-issue>` keyword left the issue
+   open precisely so the orchestrator can close it here. The comment body is templated and was surfaced in step 2's
+   approval gate.)
 5. **Update the state file.** Flip the row's status to `self-merged`. If the sub-PR was the realization of a
    contract (e.g. a pre-merge stub PR), flip the contract row's status to `locked` and fill in the `Realized in`
    pointer.

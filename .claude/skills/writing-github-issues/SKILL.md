@@ -139,7 +139,7 @@ needed.
 
 1. **Read the existing issue:**
    ```
-   gh issue view sourcehawk/triagent#<num> --json title,body,labels,assignees
+   gh issue view <num> --repo sourcehawk/triagent --json title,body,labels,assignees
    ```
 2. **Identify the gaps.** Compare the existing body against the matching template's section list. State each gap in
    one sentence. Pre-existing tickets are most often missing concrete acceptance criteria, verification steps, or
@@ -153,7 +153,7 @@ needed.
 
 5. **Update the issue** by piping the body through a heredoc:
    ```
-   gh issue edit sourcehawk/triagent#<num> --add-label <label> --add-assignee @me --body "$(cat <<'BODY_END'
+   gh issue edit <num> --repo sourcehawk/triagent --add-label <label> --add-assignee @me --body "$(cat <<'BODY_END'
    <body>
    BODY_END
    )"
@@ -167,7 +167,7 @@ needed.
 
    > You're not currently assigned to `sourcehawk/triagent#<num>`. Want me to add you (`@me`)?
 
-   On yes: `gh issue edit sourcehawk/triagent#<num> --add-assignee @me`. On no: leave it.
+   On yes: `gh issue edit <num> --repo sourcehawk/triagent --add-assignee @me`. On no: leave it.
 
 3. **No body changes.**
 
@@ -197,7 +197,7 @@ When working a sub-issue (or a single-feature/bug issue):
   - **Sub-PR into the feature branch** (multi-PR features) — body uses `Towards #<sub-issue>`. `Fixes` / `Closes`
     don't auto-trigger on non-default branches; `Towards` is explicit about keeping the issue open until the
     orchestrator closes it manually after the self-merge:
-    `gh issue close <sub-issue> --comment "Merged via #<sub-pr> into feature/<slug>"`.
+    `gh issue close <sub-issue> --repo sourcehawk/triagent --comment "Merged via #<sub-pr> into feature/<slug>"`.
   - **Integration PR into main** (multi-PR features) — body uses `Closes #<epic>` so the epic auto-closes when the
     feature lands.
   - **Single-PR feature → main** — body uses `Fixes #<feature-issue>` or `Closes #<feature-issue>`.
