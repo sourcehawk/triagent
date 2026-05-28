@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os/exec"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -171,6 +172,47 @@ func TestHandlePushSessionPR_AfterArchiveDoesNotPanic(t *testing.T) {
 	a.handlePushSessionPR(pushRR, pushReq)
 
 	assert.Equal(t, http.StatusAccepted, pushRR.Code, "push: got %d, want 202", pushRR.Code)
+}
+
+// Regression: when persistMetadata fails after archived=true is set,
+// the close hook used to be skipped because the handler returned 500
+// early. Subsequent archive retries took the alreadyArchived fast path
+// and the hook never fired, leaking per-investigation resources (prom
+// port-forward) until launcher shutdown. The hook must fire whenever
+// the in-memory transition to archived completes, regardless of
+// persist outcome.
+func TestHandleArchive_CloseHookFiresEvenWhenPersistFails(t *testing.T) {
+	t.Parallel()
+	// SessionDir points at a path whose parent doesn't exist, so
+	// writePersistedMetadata's WriteFile fails. Manager.Register tries
+	// (and silently logs) a write at registration; the second write at
+	// archive time fails the same way and must NOT block the hooks.
+	root := t.TempDir()
+	mgr := NewManager(context.Background(), root)
+	t.Cleanup(mgr.Shutdown)
+	var hookCalls []string
+	mgr.SetCloseHook(func(id string) {
+		hookCalls = append(hookCalls, id)
+	})
+	inv, err := mgr.Register(&Investigation{
+		ID:         "inv-persist-fail",
+		Namespace:  "default",
+		SessionDir: filepath.Join(root, "no", "such", "parent"),
+	})
+	require.NoError(t, err)
+
+	a := &apiHandlers{manager: mgr}
+	req := httptest.NewRequest(http.MethodPost, "/api/investigations/"+inv.ID+"/archive", nil)
+	req.SetPathValue("id", inv.ID)
+	rr := httptest.NewRecorder()
+	a.handleArchiveInvestigation(rr, req)
+
+	// Surface the persist failure but fire the hook anyway.
+	require.Equal(t, http.StatusInternalServerError, rr.Code, "persist failure must surface as 500")
+	require.Equal(t, []string{inv.ID}, hookCalls, "close hook must fire even when persist fails")
+	// And the in-memory archived flag must have been set so re-archive
+	// is the idempotent fast path.
+	require.True(t, inv.Snapshot().Archived)
 }
 
 func TestHandleArchive_409WhileRehydrating(t *testing.T) {

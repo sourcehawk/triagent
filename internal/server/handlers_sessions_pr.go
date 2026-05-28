@@ -34,12 +34,21 @@ func (a *apiHandlers) handleArchiveInvestigation(w http.ResponseWriter, r *http.
 		inv.mu.Lock()
 		inv.archived = true
 		inv.mu.Unlock()
-		if err := a.manager.persistMetadata(inv); err != nil {
-			writeError(w, http.StatusInternalServerError, "persist: "+err.Error())
-			return
-		}
+		// Fire the terminal + close hooks based on the in-memory
+		// transition, NOT gated on persist success. The hooks release
+		// per-investigation resources (spawner slot, prom port-forward)
+		// that match the in-memory archived state; if we skipped them
+		// when persistMetadata failed, the next archive retry would
+		// take the alreadyArchived fast path above and the port-forward
+		// would leak until launcher shutdown. The persist error still
+		// surfaces to the caller.
+		persistErr := a.manager.persistMetadata(inv)
 		a.manager.fireTerminal(inv)       // M6.4: release spawner slot on archive
 		a.manager.FireCloseHook(inv.ID) // release per-investigation resources (prom port-forward, ...)
+		if persistErr != nil {
+			writeError(w, http.StatusInternalServerError, "persist: "+persistErr.Error())
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, inv.Snapshot())
 }
