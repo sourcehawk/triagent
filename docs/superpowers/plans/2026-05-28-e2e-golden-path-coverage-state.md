@@ -23,7 +23,7 @@ Phases 1–3 shipped (harness/stubs #14→#20, Flow 1 #15→#21, Flow 2 #16→#2
 
 | Issue                  | Branch                       | Worktree path                                              | PR (→ base)                        | Status      |
 | ---------------------- | ---------------------------- | ---------------------------------------------------------- | ---------------------------------- | ----------- |
-| sourcehawk/triagent#30 | e2e-walkthrough-infra        | .claude/worktrees/e2e-golden-path-coverage--winfra         | → feature/e2e-golden-path-coverage | not-started |
+| sourcehawk/triagent#30 | e2e-walkthrough-infra        | .claude/worktrees/e2e-golden-path-coverage--winfra         | → feature/e2e-golden-path-coverage | dispatched  |
 | sourcehawk/triagent#31 | e2e-walk-investigations      | .claude/worktrees/e2e-golden-path-coverage--winv           | → feature/e2e-golden-path-coverage | blocked on #30 |
 | sourcehawk/triagent#32 | e2e-walk-playbooks           | .claude/worktrees/e2e-golden-path-coverage--wpb            | → feature/e2e-golden-path-coverage | blocked on #30 |
 | sourcehawk/triagent#33 | e2e-walk-wikis               | .claude/worktrees/e2e-golden-path-coverage--wwiki          | → feature/e2e-golden-path-coverage | blocked on #30 |
