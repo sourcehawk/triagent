@@ -99,9 +99,15 @@ the switcher UI that lets the operator pick a profile is `feature` (the headline
 
 4. **Capture the URL** and surface the number to the user.
 
-5. **If this is an epic**, file in this order:
+5. **If this is an epic**, first create a task (`TaskCreate`) for each issue you intend to file — the epic and every
+   sub-issue — so the multi-issue sequence is tracked across turns and confirmations and nothing is dropped halfway.
+   Then file in this order:
    a. **Epic first** (steps 1-4 above) so children can reference its number in their `## Context` section.
-   b. **Each sub-issue next** using the feature/task/bug template (steps 1-4 above for each).
+   b. **Each sub-issue next** using the feature/task/bug template (steps 1-4 above for each). **Draft, confirm, and
+      create them one at a time** — one issue's body per confirmation prompt, then `gh issue create`, then the next.
+      Do NOT batch several sub-issue bodies into a single "yes to all" prompt: a wall of bodies gets rubber-stamped
+      instead of read, and rewording one mid-batch forces re-pasting the whole set. One issue, one confirmation,
+      one create; mark its task complete before starting the next.
    c. **Linkage last** — once all children have numbers, link each one to the epic via the native sub-issue API
       (see §Linking sub-issues). Don't try to embed the children in the epic body manually — GitHub renders the
       progress checklist from the linkage, not from a markdown list.
@@ -216,6 +222,12 @@ When working a sub-issue (or a single-feature/bug issue):
 - **Putting design into a feature or bug issue.** The issue is "problem + how we'll know it's done." Design belongs
   in the PR description that lands the work (or in `docs/superpowers/specs/` for spec-worthy work). The epic's
   `## Design overview` is the exception — it captures the brainstorm output, not the line-level design.
+- **Referencing the design spec (or any scratch doc) from an issue.** Issues are durable GitHub artifacts; the spec
+  and plan are repo files that move, get renamed, or — in the plan's case — get deleted once the work ships. A
+  sub-issue references **only its parent epic** (GitHub's native sub-issue linkage threads it); the epic captures the
+  design context **inline** in its `## Design overview`, it does not link the spec file either. The spec is referenced
+  from the *plan*, not from any issue. A `docs/superpowers/specs/...` or `docs/superpowers/plans/...` path in an
+  issue body is the smell.
 - **Acceptance criteria written as aspirations.** Each bullet has to be a verifiable condition a reviewer can answer
   "yes / no" against at done-time. "MCPs are more reliable" is not checkable; "`get_state` returns the session after
   an MCP restart" is.
@@ -242,5 +254,7 @@ These thoughts mean you're about to mutate GitHub without a fresh confirm:
 | "They didn't object to the assignment line, so they want it" | Absence of objection ≠ consent. Ask, then act.                                               |
 | "I'll just append and they can edit later if needed"         | They shouldn't have to clean up after the agent. Confirm first.                              |
 | "An epic feels heavy; I'll fold the children into one issue" | The brainstorm says it's multi-chunk. Don't compress it just because the template feels new. |
+| "I'll link the spec in the issue's Context so readers find the design" | Issues are durable; spec/plan files move and get deleted. Sub-issues reference the epic only; the epic carries design inline. The spec is linked from the plan, not the issue. |
+| "I'll paste all the sub-issue bodies in one prompt for a single yes" | Batched bodies get rubber-stamped, not read. One sub-issue per confirmation, per create. |
 
 All of these mean: paste the proposed body and the assignment intent into chat, wait for an explicit yes, then act.

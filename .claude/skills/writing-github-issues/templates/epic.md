@@ -50,7 +50,10 @@ migrations, performance regressions, API-contract breaks, scope creep. -->
 
 <!-- A few short paragraphs (or bullets) sketching the high-level
 implementation direction surfaced by the brainstorm. NOT a detailed
-spec — that lives in `docs/superpowers/specs/` if the work earns one.
+spec — but keep it SELF-CONTAINED: capture what a reviewer needs
+inline. Do NOT link the spec or plan file (`docs/superpowers/specs/...`,
+`docs/superpowers/plans/...`) — issues are durable, those files move
+and get deleted; the spec is referenced from the plan, not the issue.
 Reviewers should be able to read this and understand the seams the
 sub-issues will sit on. -->
 
