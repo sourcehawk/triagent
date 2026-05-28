@@ -9,7 +9,7 @@ import (
 
 func TestBuildDraftPRPrompt_ContainsKeyDirectives(t *testing.T) {
 	t.Parallel()
-	p := buildDraftPRPrompt("example-org/zeebe", "https://github.com/example-org/zeebe/issues/42", "main", "only the BPMN parser, not DMN")
+	p := buildDraftPRPrompt("example-org/zeebe", "https://github.com/example-org/zeebe/issues/42", 42, "main", "only the BPMN parser, not DMN")
 	must := []string{
 		// Issue + scope
 		"https://github.com/example-org/zeebe/issues/42",
@@ -51,8 +51,11 @@ func TestBuildDraftPRPrompt_ContainsKeyDirectives(t *testing.T) {
 		"## Description",
 		"## Changes",
 		"## Testing",
-		"Don't include `Fixes #N`",
+		"first token must be `Fixes #<num>`",
 		"BODY SHAPE — draft PR",
+		// Example PR_BODY threads the actual issue number so the agent
+		// sees the literal Fixes #N it should emit.
+		"Fixes #42.",
 	}
 	for _, m := range must {
 		require.Containsf(t, p, m, "expected prompt to contain %q", m)
@@ -64,6 +67,6 @@ func TestBuildDraftPRPrompt_ContainsKeyDirectives(t *testing.T) {
 
 func TestBuildDraftPRPrompt_OmitsExtraPromptWhenEmpty(t *testing.T) {
 	t.Parallel()
-	p := buildDraftPRPrompt("o/n", "https://github.com/o/n/issues/1", "main", "")
+	p := buildDraftPRPrompt("o/n", "https://github.com/o/n/issues/1", 1, "main", "")
 	require.NotContains(t, p, "Additional scope")
 }
