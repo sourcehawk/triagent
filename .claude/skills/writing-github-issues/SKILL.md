@@ -196,8 +196,10 @@ When working a sub-issue (or a single-feature/bug issue):
 - **PR linkage depends on which branch the PR targets** (see `opening-a-pull-request`):
   - **Sub-PR into the feature branch** (multi-PR features) — body uses `Towards #<sub-issue>`. `Fixes` / `Closes`
     don't auto-trigger on non-default branches; `Towards` is explicit about keeping the issue open until the
-    orchestrator closes it manually after the self-merge:
-    `gh issue close <sub-issue> --repo sourcehawk/triagent --comment "Merged via #<sub-pr> into feature/<slug>"`.
+    orchestrator closes it manually after the self-merge: `gh issue close <sub-issue> --repo sourcehawk/triagent`.
+    The close is bodyless (no `--comment`) — GitHub already auto-cross-references the merge commit through the
+    sub-PR's `Towards` keyword, so the closing trail is preserved without a custom comment body that would itself
+    need confirmation against the user-in-the-loop rule.
   - **Integration PR into main** (multi-PR features) — body uses `Closes #<epic>` so the epic auto-closes when the
     feature lands.
   - **Single-PR feature → main** — body uses `Fixes #<feature-issue>` or `Closes #<feature-issue>`.
