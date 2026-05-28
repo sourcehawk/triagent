@@ -18,7 +18,8 @@ import (
 //	{"action":"emit","event":{"type":"assistant_message","text":"..."}}
 //	{"action":"emit","event":{"type":"tool_call","name":"summarize","args":{...}}}
 //	{"action":"emit","event":{"type":"tool_result","ok":true}}
-//	{"action":"emit","event":{"type":"end"}}
+//	{"action":"emit","event":{"type":"assistant_message","text":"...","usage":{"input_tokens":12,"output_tokens":34}}}
+//	{"action":"emit","event":{"type":"end","cost":0.12,"usage":{"input_tokens":100,"output_tokens":200}}}
 //	{"action":"expect_tool_call","name":"summarize"}
 //	{"action":"expect_tool_result"}
 //	{"action":"wait_for_signal","name":"regenerate-released"}
@@ -42,12 +43,47 @@ type action struct {
 // scriptEvent is the simplified event shape carried by an "emit" action.
 // The replayer translates it to the claude stream-json wire shape the
 // launcher parses (internal/claude/events.go::parseLine).
+//
+// Usage + Cost let a script drive the launcher's token/cost accounting:
+//   - on an "assistant_message", Usage surfaces under message.usage; the
+//     launcher folds it into investigation.usage via its per-call EventUsage
+//     carrier (the only live source for token totals).
+//   - on an "end", Cost surfaces as the result line's total_cost_usd (the
+//     launcher's only source for the cost number) and Usage rides through as
+//     the disk-replay token backstop.
+//
+// Both are pointers so an absent field emits no usage block / no cost rather
+// than a phantom all-zeros tally the launcher would fold.
 type scriptEvent struct {
-	Type string         `json:"type"`
-	Text string         `json:"text,omitempty"`
-	Name string         `json:"name,omitempty"`
-	Args map[string]any `json:"args,omitempty"`
-	OK   bool           `json:"ok,omitempty"`
+	Type  string         `json:"type"`
+	Text  string         `json:"text,omitempty"`
+	Name  string         `json:"name,omitempty"`
+	Args  map[string]any `json:"args,omitempty"`
+	OK    bool           `json:"ok,omitempty"`
+	Usage *scriptUsage   `json:"usage,omitempty"`
+	Cost  *float64       `json:"cost,omitempty"`
+}
+
+// scriptUsage is the per-turn token tally a script attaches to an
+// assistant_message or end event. Field names mirror claude's stream-json
+// wire shape (snake_case) so the emitted block round-trips through the
+// launcher's parser (internal/claude/events.go::parseAssistant /
+// extractResultUsage) unchanged.
+type scriptUsage struct {
+	InputTokens              int `json:"input_tokens"`
+	OutputTokens             int `json:"output_tokens"`
+	CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
+	CacheReadInputTokens     int `json:"cache_read_input_tokens"`
+}
+
+// wire renders the tally as the snake_case map the launcher's parser reads.
+func (u *scriptUsage) wire() map[string]any {
+	return map[string]any{
+		"input_tokens":                u.InputTokens,
+		"output_tokens":               u.OutputTokens,
+		"cache_creation_input_tokens": u.CacheCreationInputTokens,
+		"cache_read_input_tokens":     u.CacheReadInputTokens,
+	}
 }
 
 // loadScript reads and parses the JSONL script, one action per non-blank,
@@ -263,13 +299,20 @@ func emitEvent(out *bufio.Writer, raw json.RawMessage) (*scriptEvent, error) {
 func emitParsed(out *bufio.Writer, ev *scriptEvent) error {
 	switch ev.Type {
 	case "assistant_message":
+		message := map[string]any{
+			"id":      "msg-" + nextID(),
+			"content": []any{map[string]any{"type": "text", "text": ev.Text}},
+		}
+		// A scripted usage block surfaces under message.usage so the
+		// launcher folds the per-call tally (its only live source for token
+		// totals). Omitted → no block, so a phantom zero isn't summed.
+		if ev.Usage != nil {
+			message["usage"] = ev.Usage.wire()
+		}
 		return emitRaw(out, map[string]any{
 			"type":       "assistant",
 			"session_id": stubSessionID,
-			"message": map[string]any{
-				"id":      "msg-" + nextID(),
-				"content": []any{map[string]any{"type": "text", "text": ev.Text}},
-			},
+			"message":    message,
 		})
 	case "tool_call":
 		return emitRaw(out, map[string]any{
@@ -299,12 +342,23 @@ func emitParsed(out *bufio.Writer, ev *scriptEvent) error {
 			},
 		})
 	case "end":
-		return emitRaw(out, map[string]any{
+		result := map[string]any{
 			"type":       "result",
 			"subtype":    "success",
 			"session_id": stubSessionID,
 			"result":     "",
-		})
+		}
+		// Cost is the launcher's only source for the session cost number
+		// (it folds total_cost_usd from the result line). Usage rides
+		// through as the disk-replay token backstop. Both omitted → a bare
+		// result line, leaving zero-cost flows untouched.
+		if ev.Cost != nil {
+			result["total_cost_usd"] = *ev.Cost
+		}
+		if ev.Usage != nil {
+			result["usage"] = ev.Usage.wire()
+		}
+		return emitRaw(out, result)
 	default:
 		return fmt.Errorf("unknown emit event type %q", ev.Type)
 	}
