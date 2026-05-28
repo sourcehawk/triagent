@@ -137,6 +137,9 @@ func (c *Client) UsersConversations(ctx context.Context) ([]ConversationsListEnt
 			return nil, err
 		}
 		if !body.OK {
+			if body.Error == "missing_scope" {
+				return nil, ErrMissingScope
+			}
 			return nil, fmt.Errorf("users.conversations: %s", body.Error)
 		}
 		out = append(out, body.Channels...)

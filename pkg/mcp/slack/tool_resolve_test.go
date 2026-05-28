@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -88,4 +89,27 @@ func TestGetChannelID_RequiresName(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, res)
 	assert.True(t, res.IsError)
+}
+
+// TestGetChannelID_MissingScopeIsActionable verifies that when the token
+// can't enumerate joined channels, the agent gets an actionable hint
+// instead of the raw "users.conversations: missing_scope". The hint must
+// name a required scope and point at the channel-id escape hatch so the
+// operator can recover without reading the slack docs.
+func TestGetChannelID_MissingScopeIsActionable(t *testing.T) {
+	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"ok":false,"error":"missing_scope"}`))
+	}))
+	defer stub.Close()
+	srv, _ := New(Options{Token: "xoxp-x", APIBase: stub.URL, CacheDir: t.TempDir()})
+
+	res, _, err := srv.handleGetChannelID(context.Background(), nil, getChannelIDIn{Name: "incidents"})
+	require.NoError(t, err)
+	require.NotNil(t, res)
+	require.True(t, res.IsError)
+	require.Len(t, res.Content, 1)
+	tc, ok := res.Content[0].(*mcp.TextContent)
+	require.True(t, ok, "expected TextContent")
+	assert.Contains(t, tc.Text, "channels:read", "error should name a required scope")
+	assert.Contains(t, tc.Text, "channel id", "error should point the agent at the channel-id escape hatch")
 }
