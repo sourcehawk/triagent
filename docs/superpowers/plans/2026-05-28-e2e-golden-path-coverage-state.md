@@ -7,7 +7,7 @@ feature_branch: feature/e2e-golden-path-coverage
 feature_worktree: .claude/worktrees/e2e-golden-path-coverage
 sub_pr_approval: autonomous                   # confirmed at developing-a-feature Step 2
 integration_pr:                               # filled in once the feature → main PR opens
-status: foundational-wave
+status: consumer-wave
 ---
 
 # End-to-end golden-path test suite — orchestration state
@@ -43,6 +43,7 @@ status: foundational-wave
 
 ## Bubble-up log
 
+- **2026-05-28 — wave-1 checkpoint: intermittent race-suite flake (watch item).** `make test-go` FAILed once on the integrated feature branch, then passed 4 consecutive full `-race` runs; the failing run's output was truncated before naming a package. #14's changes are additive (`/healthz` + `--port`), so this reads as a pre-existing intermittent, not new drift. Resolution: not a blocker for wave 2; watch for recurrence — if it reproduces and points at e2e/#14 code, file a follow-up sub-issue. `make lint` 0 issues, `make test-e2e` green.
 - **2026-05-28 — #14 contract refinements (propagate to wave 2/3 dispatch prompts).** The foundation subagent locked these concrete details on top of the plan's Contracts table; consumers must use them verbatim:
   1. `triagent start` gained a real `--port` flag (`127.0.0.1:<port>`; `0` = random). Flow 1 (#15) asserts it exists.
   2. `/healthz` version comes from a new `server.Options.Version` (threaded from `cmd/triagent`; defaults to `"dev"` locally). `/healthz` is **unauthenticated** (exempted in `authMiddleware`).
