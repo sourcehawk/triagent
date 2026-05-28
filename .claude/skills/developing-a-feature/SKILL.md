@@ -15,16 +15,23 @@ ad-hoc fixes — those go directly through `superpowers:test-driven-development`
 
 ## Workflow
 
-### 1. Read plan + spec
+### 1. Read the state file first, then plan + spec
 
-Open both `docs/superpowers/plans/<date>-<slug>-plan.md` and `docs/superpowers/specs/<date>-<slug>-design.md`. Note:
+The orchestration state file (`docs/superpowers/plans/<date>-<slug>-state.md`, created by `planning-a-feature` Step 7)
+is the entry point — it points at the plan, the spec, the tracking issue, the open PRs, the worktrees, and any
+bubble-up concerns logged so far. Read it in full before anything else; follow the file's "Resume checklist"
+section to verify reality against the recorded state.
+
+Then open the plan and spec it references. Note:
 
 - The PR breakdown (one PR or multiple).
 - The contract table in the plan's `## Contracts` section (if any).
 - The dependency ordering — what must land first.
+- Each contract's Realization strategy (pre-merge stub PR / stub-on-producer-branch / data-only).
 
-If the plan is missing or stale (spec evolved without the plan being updated), STOP and re-invoke
-`planning-a-feature` Step 6. Don't implement against a stale plan.
+If the plan is missing, stale, or the state file's recorded state doesn't match reality (a PR's actual status has
+drifted from the row), STOP and reconcile — re-invoke `planning-a-feature` Step 6 if the plan needs to change, or
+update the state file's rows to match reality before continuing.
 
 ### 2. Decide: sequential or parallel?
 
@@ -97,6 +104,22 @@ How to propagate the resolution:
 A concern raised by one subagent and not propagated to the others is how this whole pattern fails. The orchestrator
 owns propagation.
 
+**Keep the state file current.** The orchestrator updates `docs/superpowers/plans/<date>-<slug>-state.md` as
+reality moves:
+
+- When a subagent gets its worktree → fill in the branch + worktree path columns for its row.
+- When a subagent opens a PR → fill in the PR number + status (`draft` / `ready`).
+- When a contract's realization completes (stub PR merges, producer branch ships its stub) → flip the contract row's
+  status to `locked` and fill in the `Realized in` pointer.
+- When a bubble-up concern is raised and resolved → append a dated entry to the `## Bubble-up log` (newest at top)
+  naming the concern, the resolution, and the propagation path used (`SendMessage`, re-dispatch, next-wave prompt).
+- When a PR merges → flip the row's status to `merged`.
+- When phase 1 completes and phase 2 dispatches → flip `status:` in the frontmatter (`foundational-wave` →
+  `consumer-wave` → `review` → `merged`).
+
+A stale state file is worse than no state file — a resumed session reads it as ground truth. Commit state-file
+updates with each phase transition; don't let a session end with the file out of sync.
+
 ### 4. Implement (sequential work, or per-subagent)
 
 **REQUIRED SUB-SKILL:** `superpowers:test-driven-development` for every code change. Tests first, watch them fail for
@@ -128,6 +151,13 @@ GitHub's sub-issue progress bar tracks it without manual state.
 
 When all parallel PRs are ready, merge in the order the plan defines (producers before consumers). The orchestrator
 is responsible for the merge order; the subagents don't merge themselves.
+
+### 8. Tear down the planning artifacts
+
+Once every sub-issue is closed and the feature has shipped (the epic auto-closes via the sub-issue progress bar),
+delete the plan + state file in a final commit (`chore(<slug>): remove plan + state, feature shipped`). The spec
+stays — it's the durable ADR. The plan and state file are scratch; leaving them committed past readiness pollutes
+the repo with stale operational state that future `grep`s have to wade through.
 
 ## Anti-patterns
 

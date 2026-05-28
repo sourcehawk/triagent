@@ -112,9 +112,22 @@ scope, or dependencies shifted. When several issues need diff-sized edits at onc
 confirmation: present every affected issue's gap list + proposed body in a single chat turn and wait for one "yes
 to all" or per-issue redirection, instead of round-tripping the user N times.
 
-### 7. Hand off to implementation
+### 7. Initialize the orchestration state file
 
-Plan committed, issues aligned, contracts written → invoke `developing-a-feature` to start the work.
+Before handing off, create `docs/superpowers/plans/YYYY-MM-DD-<slug>-state.md` from
+`templates/feature-state.md`. This is the **orchestration state** — phases, PRs, worktrees, contract realization,
+bubble-up log. It's what a future Claude session reads first to resume the work without a massive user prompt.
+
+The state file is scratch (same lifecycle as the plan): tracked in git so it survives sessions / worktrees /
+machines, and deleted in the orchestrator's last commit once every sub-issue is closed and the feature has shipped.
+Update it as the work progresses — see `developing-a-feature` for the update choreography.
+
+Commit the spec, the plan, and the state file together as the planning artifact set.
+
+### 8. Hand off to implementation
+
+Spec + plan + state file committed, issues aligned, contracts written → invoke `developing-a-feature` to start the
+work. The state file is the entry-point artifact for every session that touches this feature afterward.
 
 ## Anti-patterns
 
