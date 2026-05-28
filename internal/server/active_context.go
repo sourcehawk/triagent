@@ -18,8 +18,9 @@ import (
 // input, list failure, no match, or matched cluster without a
 // KubeContext): the launcher degrades to the standard switch_context
 // flow rather than failing preflight on a discovery hiccup. Matches
-// by ID first, then by Name, so a value typed verbatim into the
-// text field works alongside picker-driven selection.
+// by ID first, then by Name in a second pass — the picker sends c.id
+// (full_id), so a colliding name on a different cluster must not beat
+// the authoritative ID match.
 func resolveActiveContext(ctx context.Context, provider auth.Provider, clusterID string) string {
 	if provider == nil || clusterID == "" {
 		return ""
@@ -29,7 +30,12 @@ func resolveActiveContext(ctx context.Context, provider auth.Provider, clusterID
 		return ""
 	}
 	for _, c := range clusters {
-		if c.ID == clusterID || c.Name == clusterID {
+		if c.ID == clusterID {
+			return c.KubeContext
+		}
+	}
+	for _, c := range clusters {
+		if c.Name == clusterID {
 			return c.KubeContext
 		}
 	}

@@ -48,6 +48,24 @@ func TestResolveActiveContext_MatchesByID(t *testing.T) {
 	assert.Equal(t, "camunda.teleport.sh-saas-dev-worker-2", got)
 }
 
+// When the operator's cluster_id collides — one cluster's Name equals
+// another cluster's ID — ID must win, regardless of iteration order.
+// The picker sends `c.id` (full_id), so the ID match is the
+// authoritative selection; falling back to a name-match on an earlier
+// cluster would seed the wrong context. This test reproduces the
+// collision with the ID-bearing cluster placed later in the slice so a
+// single-pass `||` would incorrectly take the name-match first.
+func TestResolveActiveContext_IDWinsOverNameWhenBothExist(t *testing.T) {
+	t.Parallel()
+	p := &stubClusterProvider{clusters: []auth.Cluster{
+		{Name: "shared-token", ID: "first-cluster", KubeContext: "ctx-name-match"},
+		{Name: "second", ID: "shared-token", KubeContext: "ctx-id-match"},
+	}}
+	got := resolveActiveContext(context.Background(), p, "shared-token")
+	assert.Equal(t, "ctx-id-match", got,
+		"ID match must win over a name match on an earlier cluster")
+}
+
 func TestResolveActiveContext_MatchesByName(t *testing.T) {
 	t.Parallel()
 	p := &stubClusterProvider{clusters: []auth.Cluster{
