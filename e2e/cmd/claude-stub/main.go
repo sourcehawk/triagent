@@ -63,13 +63,15 @@ func run(argv []string, stdin *os.File, stdout *os.File) error {
 
 	in := bufio.NewReader(stdin)
 	out := bufio.NewWriter(stdout)
-	defer out.Flush()
+	defer func() { _ = out.Flush() }()
 
 	code, err := replay(actions, in, out, tr)
 	if err != nil {
 		return err
 	}
-	out.Flush()
+	if err := out.Flush(); err != nil {
+		return err
+	}
 	if code != 0 {
 		os.Exit(code)
 	}

@@ -76,7 +76,9 @@ func TestReplay_TranslatesEmitToStreamJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("replay: %v", err)
 	}
-	out.Flush()
+	if err := out.Flush(); err != nil {
+		t.Fatalf("flush: %v", err)
+	}
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0", code)
 	}
