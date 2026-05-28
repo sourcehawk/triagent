@@ -112,22 +112,31 @@ Append a dated entry to the state file's `## Bubble-up log` (newest at top) nami
 the propagation path used. The orchestrator owns propagation; a concern raised by one subagent and not propagated to
 the others is how this whole pattern fails.
 
-### 5. Per-sub-PR ripening: orchestrator-review → self-merge → close
+### 5. Per-sub-PR ripening — all orchestrator-driven
 
 When a sub-PR is ready (subagent reports `ready` and the relevant verification commands pass), the **orchestrator**
-(not the worktree subagent) handles ripening. The subagent that produced the diff is not the right reviewer for its
-own work; the orchestrator's distance from the implementation is the whole point. Per sub-PR:
+takes over for the rest of the lifecycle. Every action below — review, merge, sub-issue close, state-file update —
+is the orchestrator's, not the worktree subagent's. Three reasons this is the right division of labour:
 
-1. **Orchestrator-driven review.** **REQUIRED SUB-SKILL:** the `review` skill — invoke it against the sub-PR number
-   to walk the diff with full PR context. The worktree subagent does NOT review its own PR. This review is weaker
-   than external review (which lands at the integration PR) but stronger than nothing; it catches issues that would
-   otherwise pile onto the integration PR reviewer.
-2. **Self-merge** into the feature branch: `gh pr merge <num> --merge --repo sourcehawk/triagent` (or `--squash` /
-   `--rebase` per project preference). "Self-merge" here means orchestrator-merge — the orchestrator owns this
-   action, not the subagent.
-3. **Close the sub-issue manually**: `gh issue close <sub-issue> --comment "Merged via #<num> into feature/<slug>"`.
-   Sub-PRs into a non-default branch don't trigger `Fixes`/`Closes` — manual close is the workaround.
-4. **Update the state file**: flip the row's status to `self-merged`. If the sub-PR was the realization of a
+- **Review independence.** The subagent that wrote the code is the wrong reviewer for the same code; the
+  orchestrator's distance from the implementation is the whole point.
+- **Global view.** Only the orchestrator holds the merge-order context (which contract rows are `locked`, which
+  sibling PRs are still in flight, which wave we're in). A subagent merging on its own would commit to ordering it
+  can't see.
+- **Worktree topology.** Subagents live in their per-sub-PR worktrees; only the orchestrator's main feature worktree
+  has `feature/<slug>` checked out, so the merge naturally happens on the orchestrator's side.
+
+Per sub-PR, in order:
+
+1. **Review.** **REQUIRED SUB-SKILL:** the `review` skill — invoke it against the sub-PR number to walk the diff with
+   full PR context. This review is weaker than external review (which lands at the integration PR) but stronger than
+   nothing; it catches issues that would otherwise pile onto the integration PR reviewer.
+2. **Merge into the feature branch.** `gh pr merge <num> --merge --repo sourcehawk/triagent` (or `--squash` /
+   `--rebase` per project preference).
+3. **Close the sub-issue manually.** `gh issue close <sub-issue> --comment "Merged via #<num> into feature/<slug>"`.
+   Sub-PRs into a non-default branch don't trigger `Fixes`/`Closes` — manual close is the workaround. (The body's
+   `Towards #<sub-issue>` keyword left the issue open precisely so the orchestrator can close it here.)
+4. **Update the state file.** Flip the row's status to `self-merged`. If the sub-PR was the realization of a
    contract (e.g. a pre-merge stub PR), flip the contract row's status to `locked` and fill in the `Realized in`
    pointer.
 
