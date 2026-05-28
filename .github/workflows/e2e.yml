@@ -1,0 +1,54 @@
+name: E2E
+
+# The end-to-end suite drives the real triagent binary against scripted
+# claude/gh stubs. It runs only on pull requests targeting main, in
+# parallel with the unit-test job — sub-PRs into a feature branch skip it,
+# keeping the multi-PR loop fast; this job gates the integration PR to main
+# (and any direct-to-main PR).
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: E2E (golden path)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.tool-versions'
+
+      # Playwright browsers (~300MB) are pulled by the browser harness
+      # (#16); cache them so the install is near-free on subsequent runs.
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('e2e/browser/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-
+
+      # envtest's apiserver + etcd bundle (~80MB) is fetched by setup-envtest
+      # for the k8s round-trip flow (#17); cache the versioned bundle.
+      - name: Cache envtest binaries
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/kubebuilder-envtest/
+          key: ${{ runner.os }}-envtest-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-envtest-
+
+      - name: Run e2e suite
+        run: make test-e2e
