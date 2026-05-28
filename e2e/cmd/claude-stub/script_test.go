@@ -72,7 +72,7 @@ func TestReplay_TranslatesEmitToStreamJSON(t *testing.T) {
 	out := bufio.NewWriter(&outBuf)
 	in := bufio.NewReader(strings.NewReader(""))
 
-	code, err := replay(actions, in, out, tr)
+	code, err := replay(actions, in, out, tr, replayDeps{})
 	if err != nil {
 		t.Fatalf("replay: %v", err)
 	}

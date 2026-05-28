@@ -35,7 +35,7 @@ func TestReplay_WaitForSignalBlocksUntilFileAppears(t *testing.T) {
 
 	done := make(chan int, 1)
 	go func() {
-		code, err := replay(actions, in, out, tr)
+		code, err := replay(actions, in, out, tr, replayDeps{})
 		if err != nil {
 			t.Errorf("replay: %v", err)
 		}
@@ -63,12 +63,15 @@ func TestReplay_WaitForSignalBlocksUntilFileAppears(t *testing.T) {
 	}
 }
 
-// expect_tool_call / expect_tool_result yield the loop by reading one stdin
-// line; at EOF they resolve to an empty event and the trace records the
-// wait so a test can confirm the round-trip slot ran.
-func TestReplay_ExpectActionsRecordStdin(t *testing.T) {
+// expect_tool_call records the expectation for the trace. expect_tool_result,
+// when no MCP config is wired (the non-k8s degrade path), yields the loop by
+// reading one stdin line and records the wait so a test can confirm the slot
+// ran. The k8s flow's real round-trip is exercised end to end in
+// investigation_k8s_test.go, where an MCP config is present.
+func TestReplay_ExpectActionsRecordTrace(t *testing.T) {
 	actions := []action{
 		{Action: "expect_tool_call", Name: "list_namespaces"},
+		{Action: "expect_tool_result"},
 		{Action: "exit", Code: 0},
 	}
 
@@ -78,10 +81,14 @@ func TestReplay_ExpectActionsRecordStdin(t *testing.T) {
 	out := bufio.NewWriter(&outBuf)
 	in := bufio.NewReader(strings.NewReader("")) // immediate EOF
 
-	if _, err := replay(actions, in, out, tr); err != nil {
+	if _, err := replay(actions, in, out, tr, replayDeps{}); err != nil {
 		t.Fatalf("replay: %v", err)
 	}
-	if !strings.Contains(traceBuf.String(), `"event":"stdin"`) {
-		t.Errorf("trace did not record the stdin wait: %s", traceBuf.String())
+	got := traceBuf.String()
+	if !strings.Contains(got, `"event":"expect_tool_call"`) {
+		t.Errorf("trace did not record the expect_tool_call: %s", got)
+	}
+	if !strings.Contains(got, `"event":"stdin"`) {
+		t.Errorf("trace did not record the expect_tool_result stdin yield: %s", got)
 	}
 }

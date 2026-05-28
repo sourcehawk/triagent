@@ -65,7 +65,7 @@ func run(argv []string, stdin *os.File, stdout *os.File) error {
 	out := bufio.NewWriter(stdout)
 	defer func() { _ = out.Flush() }()
 
-	code, err := replay(actions, in, out, tr)
+	code, err := replay(actions, in, out, tr, replayDeps{mcpConfigPath: flags.mcpConfig})
 	if err != nil {
 		return err
 	}
