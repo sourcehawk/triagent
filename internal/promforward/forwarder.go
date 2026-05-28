@@ -89,8 +89,16 @@ func resolveTarget(ctx context.Context, cs kubernetes.Interface, target Target) 
 	if len(pods.Items) == 0 {
 		return resolveTargetResult{}, fmt.Errorf("no pods match selector %q for service %s/%s", selector, target.Namespace, target.Service)
 	}
+	// Require both Running phase and Ready=True. Ready is the same
+	// signal kube-proxy uses to route Service traffic; a pod that is
+	// Running but still failing startup/readiness probes is excluded
+	// from the Service endpoints, so port-forwarding to it would bind
+	// the prom MCP to a backend the Service itself wouldn't trust.
 	for _, p := range pods.Items {
 		if p.Status.Phase != corev1.PodRunning {
+			continue
+		}
+		if !isPodReady(&p) {
 			continue
 		}
 		podPort, err := resolvePodPort(&p, svcPort.TargetPort)
@@ -103,7 +111,19 @@ func resolveTarget(ctx context.Context, cs kubernetes.Interface, target Target) 
 			podPort:      podPort,
 		}, nil
 	}
-	return resolveTargetResult{}, fmt.Errorf("no running pods for service %s/%s", target.Namespace, target.Service)
+	return resolveTargetResult{}, fmt.Errorf("no ready running pods for service %s/%s", target.Namespace, target.Service)
+}
+
+// isPodReady reports whether the pod has its PodReady condition set to
+// True. Mirrors k8s.io/kubernetes/pkg/api/v1/pod.IsPodReady without
+// pulling in the kube-internal dependency.
+func isPodReady(p *corev1.Pod) bool {
+	for _, c := range p.Status.Conditions {
+		if c.Type == corev1.PodReady && c.Status == corev1.ConditionTrue {
+			return true
+		}
+	}
+	return false
 }
 
 // resolvePodPort converts a ServicePort.TargetPort to a numeric pod

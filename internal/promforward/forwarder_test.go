@@ -29,7 +29,7 @@ func TestResolveTarget_ServiceSelectorMatchesPod(t *testing.T) {
 				Name: "prometheus-0", Namespace: "monitoring",
 				Labels: map[string]string{"app": "prometheus"},
 			},
-			Status: corev1.PodStatus{Phase: corev1.PodRunning},
+			Status: corev1.PodStatus{Phase: corev1.PodRunning, Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}}},
 		},
 	)
 	res, err := resolveTarget(context.Background(), cs, Target{Service: "prometheus", Namespace: "monitoring", Port: 9090})
@@ -82,7 +82,69 @@ func TestResolveTarget_PodNotRunning(t *testing.T) {
 	)
 	_, err := resolveTarget(context.Background(), cs, Target{Service: "prometheus", Namespace: "monitoring", Port: 9090})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "no running pods")
+	assert.Contains(t, err.Error(), "no ready running pods")
+}
+
+// Regression: a Running pod with PodReady != True is excluded from
+// Service endpoints by kube-proxy. The forwarder must mirror that
+// filter so the prom MCP isn't pointed at an unready backend.
+func TestResolveTarget_PodRunningButNotReady(t *testing.T) {
+	t.Parallel()
+	cs := fake.NewSimpleClientset(
+		&corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{Name: "prometheus", Namespace: "monitoring"},
+			Spec: corev1.ServiceSpec{
+				Selector: map[string]string{"app": "prometheus"},
+				Ports: []corev1.ServicePort{
+					{Name: "web", Port: 9090, TargetPort: intstr.FromInt(9090)},
+				},
+			},
+		},
+		&corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: "prometheus-0", Namespace: "monitoring", Labels: map[string]string{"app": "prometheus"}},
+			Status: corev1.PodStatus{
+				Phase:      corev1.PodRunning,
+				Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionFalse}},
+			},
+		},
+	)
+	_, err := resolveTarget(context.Background(), cs, Target{Service: "prometheus", Namespace: "monitoring", Port: 9090})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no ready running pods")
+}
+
+// Regression: when one matching pod is Running-only and a later one is
+// Running+Ready, the resolver must pick the Ready one.
+func TestResolveTarget_PrefersReadyPodOverRunningOnly(t *testing.T) {
+	t.Parallel()
+	cs := fake.NewSimpleClientset(
+		&corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{Name: "prometheus", Namespace: "monitoring"},
+			Spec: corev1.ServiceSpec{
+				Selector: map[string]string{"app": "prometheus"},
+				Ports: []corev1.ServicePort{
+					{Name: "web", Port: 9090, TargetPort: intstr.FromInt(9090)},
+				},
+			},
+		},
+		&corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: "prometheus-0", Namespace: "monitoring", Labels: map[string]string{"app": "prometheus"}},
+			Status: corev1.PodStatus{
+				Phase:      corev1.PodRunning,
+				Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionFalse}},
+			},
+		},
+		&corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: "prometheus-1", Namespace: "monitoring", Labels: map[string]string{"app": "prometheus"}},
+			Status: corev1.PodStatus{
+				Phase:      corev1.PodRunning,
+				Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}},
+			},
+		},
+	)
+	res, err := resolveTarget(context.Background(), cs, Target{Service: "prometheus", Namespace: "monitoring", Port: 9090})
+	require.NoError(t, err)
+	assert.Equal(t, "prometheus-1", res.podName, "Ready pod must be preferred over Running-only pod")
 }
 
 func TestResolveTarget_TargetPortInt(t *testing.T) {
@@ -102,7 +164,7 @@ func TestResolveTarget_TargetPortInt(t *testing.T) {
 			Spec: corev1.PodSpec{Containers: []corev1.Container{
 				{Name: "prom", Ports: []corev1.ContainerPort{{Name: "http", ContainerPort: 8080}}},
 			}},
-			Status: corev1.PodStatus{Phase: corev1.PodRunning},
+			Status: corev1.PodStatus{Phase: corev1.PodRunning, Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}}},
 		},
 	)
 	res, err := resolveTarget(context.Background(), cs, Target{Service: "prometheus", Namespace: "monitoring", Port: 9090})
@@ -127,7 +189,7 @@ func TestResolveTarget_TargetPortNamed(t *testing.T) {
 			Spec: corev1.PodSpec{Containers: []corev1.Container{
 				{Name: "prom", Ports: []corev1.ContainerPort{{Name: "http", ContainerPort: 9999}}},
 			}},
-			Status: corev1.PodStatus{Phase: corev1.PodRunning},
+			Status: corev1.PodStatus{Phase: corev1.PodRunning, Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}}},
 		},
 	)
 	res, err := resolveTarget(context.Background(), cs, Target{Service: "prometheus", Namespace: "monitoring", Port: 9090})
