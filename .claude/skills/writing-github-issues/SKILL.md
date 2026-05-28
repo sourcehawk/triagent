@@ -1,8 +1,8 @@
 ---
 name: writing-github-issues
 description:
-  Issue description shape for triagent. Use any time you're about to
-  call `gh issue create` or `gh issue edit` against sourcehawk/triagent.
+  Use when about to call `gh issue create` or `gh issue edit` against
+  sourcehawk/triagent.
 ---
 
 # writing-github-issues

@@ -1,8 +1,8 @@
 ---
 name: opening-a-pull-request
 description:
-  PR description shape for triagent. Use any time you're about to call
-  `gh pr create` or `gh pr edit` against sourcehawk/triagent.
+  Use when about to call `gh pr create` or `gh pr edit` against
+  sourcehawk/triagent.
 ---
 
 # opening-a-pull-request
