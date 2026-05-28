@@ -43,6 +43,18 @@ acknowledge the others in the body — don't try to encode both in the title.
 chip carries the lifecycle state. A single title that survives from open through merge avoids renames and avoids
 shipping stale wording into the merged record.
 
+## Linking the tracking issue
+
+When the PR has a tracking issue, link it via a GitHub auto-close keyword as the **first line of the body's opening
+section** — `## What lands here` for draft, `## Description` for ready. Use `Fixes #<num>` for bug-fix issues and
+`Closes #<num>` for feature/task issues; both trigger the issue auto-close on merge. Don't carry the issue link as a
+bold-line metadata header at the top of the body — the keyword form is what GitHub uses to thread the cross-link
+and it reads as a natural opener to the implementation summary. If there is no tracking issue, drop the line entirely
+and open the section with prose.
+
+Other related PRs / issues (siblings, follow-ups, prior art) belong under `## Related` — that section is **only** for
+links that aren't the tracking issue, since the tracking issue is already cross-linked via Fixes/Closes.
+
 ## Core principle: user-in-the-loop for every GitHub mutation
 
 Don't run `gh pr create` or `gh pr edit` without an explicit confirmation **for the specific body about to land**.

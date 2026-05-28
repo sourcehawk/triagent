@@ -2,24 +2,25 @@
 Ready-for-review PR description template. See
 .claude/skills/opening-a-pull-request/SKILL.md for the choreography.
 
-NOTE ON FRONTMATTER: PR bodies use bold-line metadata, not YAML
-frontmatter — GitHub renders frontmatter as a literal --- + key/value
-list in PR bodies.
-
 This replaces the draft body when marking the PR ready (or is the
 opening body for PRs that go straight to ready).
 -->
 
-- **Tracking issue:** sourcehawk/triagent#<num> <!-- omit the whole line if there is no tracking issue -->
-
 ## Description
 
 <!--
-Short, human-readable, accessible to a dev coming in without context.
-Not overly technical. Two-to-four sentences answering: what does this
-PR achieve, and why now. Lean on Changes (below) for the "what
-specifically".
+Open with `Fixes #<num>` (bug-fix tracking issue) or `Closes #<num>`
+(feature/task tracking issue) as the FIRST line of this section, so
+GitHub auto-closes the issue on merge. Omit the line entirely if
+there is no tracking issue.
+
+Then follow with a short, human-readable summary accessible to a dev
+coming in without context. Not overly technical. Two-to-four
+sentences answering: what does this PR achieve, and why now. Lean on
+Changes (below) for the "what specifically".
 -->
+
+Fixes #<num>
 
 ## Changes
 
@@ -42,11 +43,10 @@ no story to tell here.
 ## Related
 
 <!--
-Tracking issue plus any directly-related PRs or issues. Skip the
-section entirely if there is nothing to link.
+Any directly-related PRs or issues OTHER than the tracking issue
+(which is already linked via Fixes/Closes in the Description). Skip
+the section entirely if there is nothing else to link.
 -->
-
-- sourcehawk/triagent#<num> (tracking issue)
 
 ## Testing
 
