@@ -69,11 +69,15 @@ func buildPrefixIndex(names []string) map[string]int {
 }
 
 // labelProfile is what describe_metric returns about a metric's labels.
-// Filled lazily by the series probe (Task 7).
+// Filled lazily by the series probe (Task 7). truncated is true when the
+// probe hit cardProbeLimit — per-label cardinality and sample_values are
+// then drawn from a partial sample and must not be read as the full
+// distribution.
 type labelProfile struct {
 	labels           []labelInfo
 	relatedMetrics   []string
 	totalCardinality int
+	truncated        bool
 }
 
 type labelInfo struct {

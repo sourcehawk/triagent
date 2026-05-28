@@ -6,7 +6,11 @@ import (
 	"sort"
 )
 
-// DescribeResult is the JSON shape returned to the agent.
+// DescribeResult is the JSON shape returned to the agent. When Truncated
+// is true, the per-label `cardinality` and `sample_values` come from the
+// first `cardinality_total` series the upstream returned and do not
+// describe the full distribution — labels reported with cardinality 1
+// may have many more distinct values in untruncated series.
 type DescribeResult struct {
 	Name             string      `json:"name"`
 	Type             string      `json:"type"`
@@ -15,6 +19,7 @@ type DescribeResult struct {
 	Labels           []labelInfo `json:"labels"`
 	Related          []string    `json:"related,omitempty"`
 	CardinalityTotal int         `json:"cardinality_total"`
+	Truncated        bool        `json:"truncated,omitempty"`
 }
 
 // describeMetric assembles a DescribeResult, lazily probing the series
@@ -42,6 +47,7 @@ func describeMetric(ctx context.Context, c *promClient, cat *catalog, name strin
 		Labels:           append([]labelInfo(nil), prof.labels...), // copy so callers can't mutate the cached entry
 		Related:          prof.relatedMetrics,
 		CardinalityTotal: prof.totalCardinality,
+		Truncated:        prof.truncated,
 	}, nil
 }
 

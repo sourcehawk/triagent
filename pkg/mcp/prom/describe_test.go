@@ -52,6 +52,74 @@ func TestDescribe_UnknownMetric(t *testing.T) {
 	require.Error(t, err)
 }
 
+// When the probe hits cardProbeLimit, the per-label cardinality and
+// sample_values are derived from a truncated sample and must not be
+// trusted as the full picture. DescribeResult signals this via a
+// top-level Truncated flag so the agent can avoid treating
+// `cardinality: 1` on a label as proof of uniqueness.
+func TestDescribe_TruncatedWhenAtProbeLimit(t *testing.T) {
+	t.Parallel()
+	stub := newStubProm(t, stubHandlers{
+		series: func(w http.ResponseWriter, r *http.Request) {
+			rows := make([]map[string]string, 0, cardProbeLimit)
+			for i := 0; i < cardProbeLimit; i++ {
+				rows = append(rows, map[string]string{"__name__": "huge", "instance": itoa(i)})
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": rows})
+		},
+	})
+	c := newPromClient(stub.URL, "", "", http.DefaultClient)
+	cat := emptyCatalog()
+	cat.names = []string{"huge"}
+	cat.metadata = map[string]MetricMetadata{"huge": {Type: "gauge"}}
+	res, err := describeMetric(context.Background(), c, cat, "huge")
+	require.NoError(t, err)
+	assert.True(t, res.Truncated, "probe at limit must set Truncated=true")
+	assert.Equal(t, cardProbeLimit, res.CardinalityTotal)
+}
+
+func TestDescribe_NotTruncatedBelowProbeLimit(t *testing.T) {
+	t.Parallel()
+	stub := newStubProm(t, stubHandlers{
+		series: func(w http.ResponseWriter, r *http.Request) {
+			rows := []map[string]string{
+				{"__name__": "small", "instance": "a"},
+				{"__name__": "small", "instance": "b"},
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": rows})
+		},
+	})
+	c := newPromClient(stub.URL, "", "", http.DefaultClient)
+	cat := emptyCatalog()
+	cat.names = []string{"small"}
+	cat.metadata = map[string]MetricMetadata{"small": {Type: "gauge"}}
+	res, err := describeMetric(context.Background(), c, cat, "small")
+	require.NoError(t, err)
+	assert.False(t, res.Truncated, "probe below limit must leave Truncated=false")
+}
+
+func TestDescribe_TruncatedSerializesAsTopLevelField(t *testing.T) {
+	t.Parallel()
+	stub := newStubProm(t, stubHandlers{
+		series: func(w http.ResponseWriter, r *http.Request) {
+			rows := make([]map[string]string, 0, cardProbeLimit)
+			for i := 0; i < cardProbeLimit; i++ {
+				rows = append(rows, map[string]string{"__name__": "huge", "instance": itoa(i)})
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": rows})
+		},
+	})
+	c := newPromClient(stub.URL, "", "", http.DefaultClient)
+	cat := emptyCatalog()
+	cat.names = []string{"huge"}
+	cat.metadata = map[string]MetricMetadata{"huge": {Type: "gauge"}}
+	res, err := describeMetric(context.Background(), c, cat, "huge")
+	require.NoError(t, err)
+	out, err := json.Marshal(res)
+	require.NoError(t, err)
+	assert.Contains(t, string(out), `"truncated":true`)
+}
+
 func TestDescribe_CacheHitSkipsProbe(t *testing.T) {
 	t.Parallel()
 	var calls atomic.Int32

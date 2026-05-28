@@ -162,7 +162,7 @@ func (s *Server) register() {
 
 	mcp.AddTool(s.impl, &mcp.Tool{
 		Name:        "prom_describe_metric",
-		Description: "Return label keys, sample values, related sibling metrics, and total cardinality for a known metric. Use after prom_list_metrics to learn the scope keys before querying. The first call against a fresh metric pays one HTTP round-trip; subsequent calls are cached.",
+		Description: "Return label keys, sample values, related sibling metrics, and total cardinality for a known metric. Use after prom_list_metrics to learn the scope keys before querying. The first call against a fresh metric pays one HTTP round-trip; subsequent calls are cached. When `truncated: true` in the response, the per-label `cardinality` and `sample_values` reflect a 200-series probe sample, not the full set — a label reported with cardinality 1 may have many more values in the broader population. Treat truncated results as a starting point and verify with `prom_query` (e.g. `count by (label) (metric)`) before assuming uniqueness.",
 	}, telemetry.Wrap("prom_describe_metric", s.handleDescribeMetric))
 
 	mcp.AddTool(s.impl, &mcp.Tool{

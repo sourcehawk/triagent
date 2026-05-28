@@ -31,10 +31,12 @@ func probeAndCache(ctx context.Context, c *promClient, cat *catalog, name string
 	if err != nil {
 		return labelProfile{}, err
 	}
+	truncated := len(rows) >= cardProbeLimit
 	prof := buildLabelProfile(rows, cat, name)
+	prof.truncated = truncated
 	cat.mu.Lock()
 	defer cat.mu.Unlock()
-	if len(rows) >= cardProbeLimit {
+	if truncated {
 		cat.cardEst[name] = -1
 	} else {
 		cat.cardEst[name] = len(rows)
