@@ -542,9 +542,17 @@ export function PlaybookList({ onOpen, onNew, refreshNonce, onMutated }: Props) 
               )}
             </div>
           ) : (
-            <ul className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <ul
+              data-testid="triagent-playbook-list"
+              className="grid grid-cols-1 gap-3 md:grid-cols-2"
+            >
               {paginated?.map((p) => (
-                <li key={p.id} className="relative">
+                <li
+                  key={p.id}
+                  data-testid="triagent-playbook-card"
+                  data-playbook-id={p.id}
+                  className="relative"
+                >
                   {/* Card body — div with role=button so the in-card
                       copy button can sit as a sibling without nested
                       <button> (invalid HTML). Keyboard handler keeps

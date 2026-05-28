@@ -1207,6 +1207,9 @@ function PlaybookPendingProposals({
           {visibleItems.map((p) => (
             <li key={p.proposal_id}>
               <Link
+                data-testid="triagent-playbook-proposal"
+                data-playbook-id={p.playbook_id}
+                data-proposal-id={p.proposal_id}
                 href={`/playbooks?playbook=${encodeURIComponent(p.playbook_id)}&proposal=${encodeURIComponent(p.proposal_id)}&tab=proposal`}
                 className="group flex w-full flex-col items-start gap-0.5 rounded px-2 py-1.5 text-left transition hover:bg-zinc-900"
               >
@@ -1221,11 +1224,17 @@ function PlaybookPendingProposals({
                     </span>
                   </span>
                   {p.is_new ? (
-                    <span className="shrink-0 rounded bg-emerald-900/40 px-1 py-0.5 text-[9px] font-mono text-emerald-300">
+                    <span
+                      data-testid="triagent-playbook-proposal-badge"
+                      className="shrink-0 rounded bg-emerald-900/40 px-1 py-0.5 text-[9px] font-mono text-emerald-300"
+                    >
                       new
                     </span>
                   ) : (
-                    <span className="shrink-0 rounded bg-amber-900/40 px-1 py-0.5 text-[9px] font-mono text-amber-300">
+                    <span
+                      data-testid="triagent-playbook-proposal-badge"
+                      className="shrink-0 rounded bg-amber-900/40 px-1 py-0.5 text-[9px] font-mono text-amber-300"
+                    >
                       update
                     </span>
                   )}

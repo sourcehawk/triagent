@@ -763,7 +763,7 @@ export function WikiEditor(props: WikiEditorProps) {
     props.rootKind === "incident" ? "incidents" : "entities";
 
   return (
-    <div className="flex h-full flex-col px-6 py-6">
+    <div data-testid="triagent-wiki-editor" className="flex h-full flex-col px-6 py-6">
       {/* Breadcrumb */}
       <nav className="mb-3 flex items-center gap-3 text-xs text-zinc-500">
         <Link

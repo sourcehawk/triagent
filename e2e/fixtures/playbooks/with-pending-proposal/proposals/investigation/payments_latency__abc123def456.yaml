@@ -1,0 +1,58 @@
+id: payments_latency
+schema_version: 1
+type: investigation
+active: true
+symptom: "Payments API p99 latency spiking past SLO during checkout"
+description: |
+  AI-proposed revision: adds a downstream-dependency check before the
+  hot-path isolation so a slow dependency is ruled in or out early.
+entrypoint: confirm_breach
+nodes:
+  confirm_breach:
+    description: |
+      Confirm the p99 latency breach is real and ongoing before
+      digging into causes. Pull the SLO dashboard and the current p99.
+    expected_findings:
+      - breach_confirmed
+    next:
+      - condition: "breach confirmed and ongoing"
+        goto: check_downstream
+      - condition: "no breach — transient spike already recovered"
+        goto: terminal_no_breach
+  check_downstream:
+    description: |
+      Check the latency of the payment processor and the ledger
+      service. Rule a slow downstream dependency in or out before
+      blaming the payments service itself.
+    expected_findings:
+      - downstream_verdict
+    next:
+      - condition: "downstream healthy — look inward"
+        goto: isolate_hot_path
+      - condition: "downstream is the bottleneck"
+        goto: terminal_downstream
+  isolate_hot_path:
+    description: |
+      Identify which payments endpoint owns the latency. Compare the
+      per-route latency breakdown and name the hot path.
+    expected_findings:
+      - hot_path
+    next:
+      - condition: "hot path identified"
+        goto: terminal_isolated
+  terminal_isolated:
+    description: |
+      Report the isolated hot path and the most likely cause class.
+    terminal_advice: |
+      Summarise the confirmed breach, the hot path, and the leading
+      cause class.
+  terminal_downstream:
+    description: |
+      A downstream dependency owns the latency. Report it.
+    terminal_advice: |
+      Name the slow dependency and its measured latency contribution.
+  terminal_no_breach:
+    description: |
+      No active breach. Record the transient spike and stand down.
+    terminal_advice: |
+      State that the spike already recovered and no action is needed.

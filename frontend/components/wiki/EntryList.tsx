@@ -20,7 +20,7 @@ export function EntryList({ hits, isFiltering }: Props) {
   }
 
   return (
-    <div className="space-y-2">
+    <div data-testid="triagent-wiki-entry-list" className="space-y-2">
       {hits.map((hit) => (
         <EntryRow key={hit.id || hit.path} hit={hit} />
       ))}

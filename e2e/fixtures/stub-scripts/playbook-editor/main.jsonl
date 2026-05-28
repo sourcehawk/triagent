@@ -1,0 +1,4 @@
+{"action":"record_args"}
+{"action":"emit","event":{"type":"assistant_message","text":"PLAYBOOK-EDITOR-STUB-REPLY: I reviewed payments_latency and drafted a downstream-dependency check before hot-path isolation."}}
+{"action":"emit","event":{"type":"end"}}
+{"action":"exit","code":0}
