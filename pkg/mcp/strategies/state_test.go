@@ -1,9 +1,13 @@
 package strategies
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -40,4 +44,29 @@ func TestStore_PersistsMultipleSessionsAcrossRestart(t *testing.T) {
 	gotB, err := s2.get("bbb")
 	require.NoError(t, err, "session bbb must survive restart")
 	require.Equal(t, "stream_capture", gotB.CurrentNode, "latest snapshot of bbb must be recovered")
+}
+
+// TestStore_MigratesLegacyStrategyJSON pins the upgrade path from the
+// pre-per-session-file layout. A user who upgrades mid-walk has a single
+// legacy `strategy.json` on disk; the new store must read it on first
+// load, re-snapshot it under the per-session filename, and remove the
+// legacy file so subsequent restarts see only the new layout.
+func TestStore_MigratesLegacyStrategyJSON(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	legacy := &Session{ID: "legacy123", PlaybookID: "investigation", CurrentNode: "n1", Visited: []string{"n1"}, StartedAt: time.Now().UTC()}
+	data, err := json.MarshalIndent(legacy, "", "  ")
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "strategy.json"), data, 0o600))
+
+	s := newStore(dir)
+	got, err := s.get("legacy123")
+	require.NoError(t, err, "legacy session must be recovered")
+	require.Equal(t, "investigation", got.PlaybookID)
+
+	_, err = os.Stat(filepath.Join(dir, "strategy.json"))
+	assert.True(t, os.IsNotExist(err), "legacy strategy.json should be removed after migration")
+	_, err = os.Stat(filepath.Join(dir, "strategy-legacy123.json"))
+	assert.NoError(t, err, "session should be re-snapshotted under the per-session filename")
 }

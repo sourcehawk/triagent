@@ -89,6 +89,21 @@ func (s *store) loadFromDisk() {
 	if s.dir == "" {
 		return
 	}
+	// One-shot migration from the pre-per-session-file layout: a launcher
+	// that was mid-walk when it upgraded has a single `strategy.json` on
+	// disk under the active session dir. Read it, re-snapshot under the
+	// per-session filename, and remove the legacy file so the next restart
+	// sees only the new layout.
+	legacyPath := filepath.Join(s.dir, "strategy.json")
+	if data, err := os.ReadFile(legacyPath); err == nil {
+		var sess Session
+		if json.Unmarshal(data, &sess) == nil && sess.ID != "" {
+			s.byID[sess.ID] = &sess
+			if s.snapshot(&sess) == nil {
+				_ = os.Remove(legacyPath)
+			}
+		}
+	}
 	matches, err := filepath.Glob(filepath.Join(s.dir, sessionFilePrefix+"*"+sessionFileSuffix))
 	if err != nil {
 		return
