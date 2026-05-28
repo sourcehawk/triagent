@@ -1,0 +1,9 @@
+{
+  "proposal_id": "prop-gateway-issue-2",
+  "repo": "acme/gateway",
+  "issue_url": "https://github.com/acme/gateway/issues/43",
+  "issue_number": 43,
+  "summary": "Document the gateway's retry budget; on-call had to read the source.",
+  "investigation_id": "inv-flow5-gateway-bbbb",
+  "created_at": "2026-05-21T09:30:00Z"
+}

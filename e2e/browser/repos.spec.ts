@@ -3,21 +3,34 @@ import {
   REPO_NAME,
   REPO_OWNER,
   REPO_WITH_SUMMARY,
+  BASE_URL,
   gotoAuthed,
   openRepo,
+  repoActivityPanel,
+  repoActivityRow,
+  repoActivityRows,
   repoRowInGroup,
   reposGroup,
   repoTestids,
 } from "./helpers/triagent";
 
-// Flow 5 browser assertions. The Go harness boots the launcher against the
-// "mixed" repos fixture (two linked defaults, two user-local, one of the
-// four with a pre-baked summary) and a regenerate stub whose completion is
-// gated on a signal the harness releases on a short delay. This spec owns
-// the DOM half: the linked + user-local groups render with their repos,
-// the summary-present vs empty-state views diverge, and clicking
-// regenerate on the empty repo lands a rendered summary. The single-flight
-// invariant is pinned server-side in repos_test.go.
+// Flow 5 — the repos operator walkthrough, browser-driven end to end.
+//
+// The Go harness boots the launcher against the "mixed" repos fixture:
+// two linked defaults (acme/payments, acme/billing), two user-local
+// repos (acme/gateway, acme/notifier), exactly one (acme/payments) with
+// a pre-baked summary, a seeded local clone for the regenerate target
+// (acme/gateway) so the summary worker runs offline, and two seeded
+// codefix proposals scoped to acme/gateway so the activity panel has
+// agent-opened issues/PRs to render. The regenerate worker's claude
+// sub-agent is gated on a signal the harness releases ~2s after launch.
+//
+// This spec drives the whole flow from the DOM: land on /repos and read
+// the reconciled groups, see the summary-present vs empty-state divergence,
+// read the RepoActivityPanel, then regenerate the empty repo — observing
+// the in-flight window (button disabled, "generating…"), proving
+// single-flight (a concurrent refresh POST returns 409), and landing the
+// rendered summary once the worker finishes.
 test.describe("repos Flow 5", () => {
   const regenTarget = `${REPO_OWNER}/${REPO_NAME}`;
 
@@ -31,8 +44,8 @@ test.describe("repos Flow 5", () => {
   }) => {
     await gotoAuthed(page, "/repos");
 
-    // Both groups render. acme/payments + acme/billing are the linked
-    // (defaults) repos; acme/gateway + acme/notifier are user-local.
+    // Four-source reconciliation as rendered: the profile's linked_repos
+    // surface under "defaults", the user_repos.yaml under "user".
     await expect(reposGroup(page, "defaults")).toBeVisible();
     await expect(reposGroup(page, "user")).toBeVisible();
 
@@ -46,14 +59,14 @@ test.describe("repos Flow 5", () => {
     page,
   }) => {
     // The pre-baked repo renders its summary markdown, carrying the seed
-    // marker — proving the cache vault was read.
+    // marker — proving the cache vault was read, not synthesized.
     await openRepo(page, REPO_WITH_SUMMARY);
     const summary = page.getByTestId(repoTestids.summary);
     await expect(summary).toBeVisible({ timeout: 15_000 });
     await expect(summary).toContainText("TRIAGENT-E2E-FLOW5-PAYMENTS-SUMMARY-MARKER");
 
     // The regenerate target is empty-state: no summary article, the
-    // empty-state block instead, with a regenerate button present.
+    // empty-state block instead, with a refresh button present.
     await openRepo(page, regenTarget);
     await expect(page.getByTestId(repoTestids.emptyState)).toBeVisible({
       timeout: 15_000,
@@ -62,20 +75,70 @@ test.describe("repos Flow 5", () => {
     await expect(page.getByTestId(repoTestids.regenerate)).toBeVisible();
   });
 
-  test("regenerate on the empty repo lands a rendered summary", async ({
+  test("activity panel renders the agent-opened issues + PRs for the focused repo", async ({
+    page,
+  }) => {
+    // Focus the regenerate target; the sidenav RepoActivityPanel scopes
+    // itself to acme/gateway via ?repo=… and lists the two seeded
+    // proposals: an issue+PR row and an issue-only row.
+    await openRepo(page, regenTarget);
+    await expect(repoActivityPanel(page)).toBeVisible({ timeout: 15_000 });
+
+    // Both seeded proposals render as rows, newest-first per the list
+    // handler's sort.
+    await expect(repoActivityRows(page)).toHaveCount(2);
+
+    // The issue+PR proposal surfaces its PR link; the issue-only one its
+    // issue link with the "no PR" marker.
+    const prRow = repoActivityRow(page, "prop-gateway-pr-1");
+    await expect(prRow).toBeVisible();
+    await expect(prRow).toContainText("PR #42");
+    await expect(prRow).toContainText("#41");
+
+    const issueRow = repoActivityRow(page, "prop-gateway-issue-2");
+    await expect(issueRow).toBeVisible();
+    await expect(issueRow).toContainText("issue #43");
+    await expect(issueRow).toContainText("no PR");
+  });
+
+  test("regenerate is single-flight; the completed summary renders", async ({
     page,
   }) => {
     await openRepo(page, regenTarget);
+    const regenerate = page.getByTestId(repoTestids.regenerate);
     await expect(page.getByTestId(repoTestids.emptyState)).toBeVisible({
       timeout: 15_000,
     });
+    await expect(regenerate).toBeEnabled();
+    await expect(regenerate).toHaveText("refresh");
 
-    // Click regenerate. The worker's sub-agent is gated on a signal the
-    // harness releases on a short delay; the view flips to in-flight, then
-    // — on the success SSE event — re-fetches and renders the summary with
-    // the regenerated marker.
-    await page.getByTestId(repoTestids.regenerate).click();
+    // Click refresh. The worker's sub-agent is gated on a signal the
+    // harness releases ~2s after launch; the button flips to the
+    // disabled in-flight state, proving the launcher admitted the
+    // generation and the UI observed it.
+    await regenerate.click();
+    await expect(regenerate).toHaveText("generating…", { timeout: 15_000 });
+    await expect(regenerate).toBeDisabled();
 
+    // Single-flight: while the first worker is gated, a concurrent
+    // refresh POST is rejected with 409 (no second worker admitted).
+    // page.request shares the browser context's auth cookie, so this is
+    // the same authenticated surface the disabled button guards. The
+    // status endpoint corroborates the in-flight state independently.
+    const refresh = await page.request.post(
+      `${BASE_URL}/api/repos/${REPO_OWNER}/${REPO_NAME}/summary/refresh`,
+      { data: { kind: "freeform" } },
+    );
+    expect(refresh.status()).toBe(409);
+
+    const status = await page.request.get(
+      `${BASE_URL}/api/repos/${REPO_OWNER}/${REPO_NAME}/summary/status`,
+    );
+    expect(status.status()).toBe(200);
+    expect(((await status.json()) as { inFlight: boolean }).inFlight).toBe(true);
+
+    // The harness releases the gate ~2s in; on the success SSE event the
+    // view re-fetches and renders the regenerated summary with its marker.
     const summary = page.getByTestId(repoTestids.summary);
     await expect(summary).toBeVisible({ timeout: 60_000 });
     await expect(summary).toContainText("TRIAGENT-E2E-FLOW5-REGENERATED-MARKER");

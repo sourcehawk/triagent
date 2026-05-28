@@ -117,6 +117,13 @@ export const repoTestids = {
   summary: "triagent-repo-summary",
   // The "no cached summary yet" block on the per-repo view.
   emptyState: "triagent-repo-empty-state",
+  // The repository-activity panel wrapper in the repos sidenav
+  // (RepoActivityPanel). Lists the issues/PRs the agent opened across
+  // investigations; scopes to the focused repo when ?repo=... is set.
+  activityPanel: "triagent-repo-activity-panel",
+  // One per issue/PR row in the activity panel; data-proposal-id
+  // carries the codefix proposal id.
+  activityRow: "triagent-repo-activity-row",
 } as const;
 
 // reposGroup returns the index-page section for a group ("defaults" |
@@ -144,4 +151,24 @@ export function repoRowInGroup(
 // RepoArchitectureView the same way a row click does.
 export async function openRepo(page: Page, ownerName: string): Promise<void> {
   await gotoAuthed(page, `/repos?repo=${encodeURIComponent(ownerName)}`);
+}
+
+// repoActivityPanel returns the RepoActivityPanel wrapper in the repos
+// sidenav. Present on every /repos view (index + focused).
+export function repoActivityPanel(page: Page): Locator {
+  return page.getByTestId(repoTestids.activityPanel);
+}
+
+// repoActivityRows returns every issue/PR row in the activity panel, in
+// DOM order (newest first per the list handler's sort).
+export function repoActivityRows(page: Page): Locator {
+  return repoActivityPanel(page).getByTestId(repoTestids.activityRow);
+}
+
+// repoActivityRow returns the activity row for a specific codefix
+// proposal id, scoped to the panel.
+export function repoActivityRow(page: Page, proposalID: string): Locator {
+  return repoActivityPanel(page).locator(
+    `[data-testid="${repoTestids.activityRow}"][data-proposal-id="${proposalID}"]`,
+  );
 }
