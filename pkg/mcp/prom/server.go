@@ -170,17 +170,17 @@ func (s *Server) register() {
 
 	mcp.AddTool(s.impl, &mcp.Tool{
 		Name:        "prom_query",
-		Description: "Run an instant PromQL query. Scalar-first: prefer expressions that aggregate or top-N down to a small result. Hard cap of 50 series — over-cap responses are rejected with a corrective hint, never silently truncated. High-cardinality metrics MUST carry a non-`__name__` label matcher; unscoped references are rejected before the HTTP round-trip. Use prom_describe_metric to learn the scope keys for a given metric.",
+		Description: "Run an instant PromQL query. Scope a high-cardinality metric either by (a) a non-`__name__` label matcher (`metric{namespace=\"…\", job=\"…\"}`) or (b) wrapping with `topk(N, …)` / `bottomk(N, …)` / `limitk(N, …)` — both bound the response. Default 50-series cap; pass `max_series` (up to 500) for a deliberate fleet aggregation. Zero matches returns `{\"result_type\":\"vector\",\"samples\":[]}` — that is success, not an error. Use prom_describe_metric to learn scope keys.",
 	}, telemetry.Wrap("prom_query", s.handleQuery))
 
 	mcp.AddTool(s.impl, &mcp.Tool{
 		Name:        "prom_recent_value",
-		Description: "Read the current value of `metric` for the exact label set `labels`. Returns a single value or a structured error (no data / multiple-series-matched-narrow-the-label-set). Preferred over composing PromQL when you know the labels.",
+		Description: "Read the current value of `metric` for an exact label set that identifies one series. On a multi-match the error names the labels that vary across results so you know which one to narrow on. On a zero-match the error names the label values absent from the live sample (or flags the combination as the issue when each value exists individually). Use this when you know the scope; reach for prom_query for aggregations.",
 	}, telemetry.Wrap("prom_recent_value", s.handleRecentValue))
 
 	mcp.AddTool(s.impl, &mcp.Tool{
 		Name:        "prom_query_range",
-		Description: "Run a range query when shape-over-time matters. Default response is a per-series summary (min/max/mean/percentiles/first/last + 20-cell sparkline). Step is auto-computed from range / max_points to stay inside the point budget. Series cap is 10 by default, hard ceiling 25. Same scope-enforcement rules as prom_query. Prefer prom_query for scalar/threshold questions; reach for this only when you genuinely need the time-shape.",
+		Description: "Run a range query when shape-over-time matters. Default response is a per-series summary (min/max/mean/percentiles/first/last + 20-cell sparkline). Step is auto-computed from range / max_points to stay inside the point budget. Default 10-series cap; pass `max_series` (up to 500) for a deliberate fleet sweep. Same scope rules as prom_query — label matcher OR topk/bottomk/limitk wrapper. Prefer prom_query for scalar/threshold questions; reach for this only when you genuinely need the time-shape.",
 	}, telemetry.Wrap("prom_query_range", s.handleQueryRange))
 }
 

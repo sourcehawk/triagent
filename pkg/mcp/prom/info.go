@@ -78,6 +78,8 @@ func toolGuidanceBlock() string {
 Discovery:
   - prom_list_metrics(query)         search by name or HELP text
   - prom_describe_metric(name)       labels, sample values, related metrics
+                                     (sample is historical — when truncated:true,
+                                      verify with count by (label) (metric))
 
 Query:
   - prom_recent_value(metric, labels)        current value for exact labels
@@ -85,7 +87,13 @@ Query:
   - prom_query_range(promql, range)          time-shape; summary stats per series
 
 Conventions:
-  - Always pass at least one scope matcher (namespace, service, job, …).
-  - Prefer threshold checks and topk() to broad selections.
+  - Scope a high-cardinality metric with EITHER a label matcher
+    ({namespace="…"}) OR a bounding wrapper (topk(N, …) / bottomk(N, …) /
+    limitk(N, …)). Both satisfy the scope guard.
+  - Default series cap is 50 (prom_query) / 10 (prom_query_range). Pass
+    max_series (up to 500) for a deliberate fleet aggregation; the cap
+    exists to keep the conversation cheap, not to forbid wide queries.
+  - A query that matches no series returns {"result_type":"vector",
+    "samples":[]}. That is a successful empty result, not an error.
 `
 }
