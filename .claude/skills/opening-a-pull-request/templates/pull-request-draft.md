@@ -9,9 +9,6 @@ would render as a literal --- + key/value list to reviewers.
 A draft PR is the stable surface that further commits push onto while
 work is in flight. Open it with this body; finalize when you're ready
 for review using templates/pull-request-ready.md.
-
-Fill in each section, then DELETE every HTML guidance comment before
-publishing.
 -->
 
 - **Tracking issue:** sourcehawk/triagent#<num> <!-- omit the whole line if there is no tracking issue -->

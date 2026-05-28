@@ -30,10 +30,13 @@ user). Surface the assignment in the same confirmation prompt; if they decline, 
 Every confirmation shows the user:
 
 - The exact target (`sourcehawk/triagent`, or `sourcehawk/triagent#<num>` for updates).
-- The full proposed body (post-comment-strip: what GitHub will actually render).
+- The full proposed body.
 - Whether you intend to assign them (default: yes).
 
 Wait for an explicit "yes" before any `gh issue create` / `gh issue edit` call. Treat absence of objection as a no.
+
+GitHub doesn't render HTML comments, so leaving the template guidance in place is harmless — don't burn a step
+removing it.
 
 ## Steps
 
@@ -50,35 +53,31 @@ Does an issue for this already exist?
 1. **Draft the issue body** from `templates/github-issue.md` into a staging file (e.g. `/tmp/issue.md`). The issue is
    read by people outside the immediate work, so each section earns its keep:
    - **Title**: a human-readable sentence a no-context reader can parse.
-   - **Description**: 2-3 sentences max, oriented at a no-context reader.
-   - **Why**: the user/operational problem, no solution.
+   - **Description**: a few sentences oriented at a no-context reader, opening with the elevator pitch (the what)
+     and then stating the problem or operational reason it matters (the why). No solution; the fix belongs in the
+     PR description.
    - **Acceptance criteria**: bulleted, verifiable conditions a reviewer can answer "yes / no" against at done-time.
      Each bullet names a concrete, observable change.
    - **Out of scope** (optional): include only when there is a non-goal worth fencing off for future readers; omit the
      whole section otherwise.
 
-2. **Strip the guidance comments:**
-   ```
-   sed '/^<!--/,/^-->/d' /tmp/issue.md > /tmp/issue.md.cleaned
-   ```
-
-3. **Confirm with the user, with the body inline:**
+2. **Confirm with the user, with the body inline:**
 
    > About to create an issue in `sourcehawk/triagent` with the body below, and assign you (`@me`). Confirm?
    >
    > ```
-   > [paste /tmp/issue.md.cleaned]
+   > [paste /tmp/issue.md]
    > ```
 
-   Wait for an explicit yes. If they push back on specific wording, edit `/tmp/issue.md`, re-strip, re-present.
+   Wait for an explicit yes. If they push back on specific wording, edit `/tmp/issue.md`, re-present.
 
-4. **Create the issue:**
+3. **Create the issue:**
    ```
-   gh issue create --repo sourcehawk/triagent --body-file /tmp/issue.md.cleaned --assignee @me
+   gh issue create --repo sourcehawk/triagent --body-file /tmp/issue.md --assignee @me
    ```
-   Drop `--assignee @me` if they declined assignment in step 3.
+   Drop `--assignee @me` if they declined assignment in step 2.
 
-5. **Capture the URL** and surface it to the user.
+4. **Capture the URL** and surface it to the user.
 
 ### Step 2B: Issue exists but is missing context (update)
 
@@ -86,25 +85,24 @@ Does an issue for this already exist?
    ```
    gh issue view sourcehawk/triagent#<num> --json title,body,assignees
    ```
-2. **Identify the gaps.** Compare the existing body against the template sections (description, why, acceptance
+2. **Identify the gaps.** Compare the existing body against the template sections (description, acceptance
    criteria; out-of-scope when relevant). State each gap in one sentence.
 3. **Draft the updated body** in `/tmp/issue.md`. Preserve content from the existing issue that the user wants to keep;
    merge in what's missing. Use `templates/github-issue.md` for sections that need them.
-4. **Strip the comments:** `sed '/^<!--/,/^-->/d' /tmp/issue.md > /tmp/issue.md.cleaned`.
-5. **Confirm with the user, surfacing both the gap list and the proposed body:**
+4. **Confirm with the user, surfacing both the gap list and the proposed body:**
 
    > The issue at `sourcehawk/triagent#<num>` is missing: <one-line gap list>. About to update its body to the version
    > below, and assign you (`@me`) if you're not already. Confirm?
    >
    > ```
-   > [paste /tmp/issue.md.cleaned]
+   > [paste /tmp/issue.md]
    > ```
 
    Wait for an explicit yes. On push-back, edit and re-present.
 
-6. **Update the issue:**
+5. **Update the issue:**
    ```
-   gh issue edit sourcehawk/triagent#<num> --body-file /tmp/issue.md.cleaned --add-assignee @me
+   gh issue edit sourcehawk/triagent#<num> --body-file /tmp/issue.md --add-assignee @me
    ```
    Drop `--add-assignee @me` if declined.
 
@@ -123,7 +121,7 @@ Does an issue for this already exist?
 
 - **Inventing a feature-id-style slug as the title.** Issue titles are human-readable sentences. Slugs belong on
   branches and PR titles, not in the issue heading a reviewer reads first.
-- **Putting design into the issue.** The issue is "description, why, acceptance criteria." Design belongs in the PR
+- **Putting design into the issue.** The issue is "description, acceptance criteria." Design belongs in the PR
   description that lands the work; the issue body should not grow approach paragraphs, diagrams, or code over time —
   it should grow links.
 - **Acceptance criteria written as aspirations.** Each bullet has to be a verifiable condition a reviewer can answer
@@ -137,8 +135,6 @@ Does an issue for this already exist?
   yes; the cost of waiting is low, the cost of an unwanted public mutation is high.
 - **Skipping the assignee question.** Default is to assign the user. If they decline once, note it and move on; don't
   keep asking on later edits.
-- **Publishing with `<!-- -->` guidance comments still in the body.** Always run the `sed` strip and publish the
-  cleaned file.
 
 ## Red flags: STOP and re-confirm
 

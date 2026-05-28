@@ -23,15 +23,9 @@ Two templates carry the shape and the per-section guidance:
 - `templates/pull-request-ready.md`: ready-for-review PR body.
 
 Copy the appropriate template into a staging file (e.g. `/tmp/pr-body.md`), fill in each section per its `<!-- -->`
-guidance, then strip the guidance comments before publishing:
-
-```
-sed '/^<!--/,/^-->/d' /tmp/pr-body.md > /tmp/pr-body.md.cleaned
-```
-
-Pass `/tmp/pr-body.md.cleaned` to `gh pr create --body-file` (opening) or `gh pr edit --body-file` (flipping or editing).
-The HTML comments render invisibly on GitHub but pollute the raw-markdown view that reviewers see in their editor —
-always publish the cleaned form.
+guidance, then pass the file to `gh pr create --body-file` (opening) or `gh pr edit --body-file` (flipping or editing).
+GitHub doesn't render HTML comments, so leaving the template guidance in place is harmless — don't burn a step
+removing it.
 
 ## PR title
 
@@ -57,7 +51,7 @@ Generic intent earlier ("yes please open a PR") is not standing consent for the 
 Every confirmation shows the user:
 
 - The exact target (`sourcehawk/triagent`, or `#<num>` for edits).
-- The full proposed body (post-comment-strip: what GitHub will actually render).
+- The full proposed body.
 
 Wait for an explicit "yes" before any `gh pr` call. Treat absence of objection as a no.
 
@@ -72,8 +66,6 @@ Wait for an explicit "yes" before any `gh pr` call. Treat absence of objection a
 
 - **Lifecycle suffix in PR titles** (`... wip`, `... draft`, `... scaffolding`). The title outlives the state that
   named it. The body and GitHub's chip carry lifecycle; the title doesn't need to.
-- **Publishing a PR description with `<!-- -->` guidance comments still in it.** They pollute the raw-markdown view.
-  Always run the `sed` strip (or its equivalent) and publish the cleaned file.
 - **Flipping ready with the draft body unchanged.** Different shape, different audience. Rewrite from the ready
   template.
 - **Marking ready before the Testing section is filled in.** That section is what gives the reviewer confidence the
@@ -90,8 +82,6 @@ These thoughts mean the PR isn't actually ready to publish or flip:
 | "The draft description is fine, no need to rewrite"                | Different shape, different audience. Rewrite from `templates/pull-request-ready.md`.                                                   |
 | "Marking ready now, will fix the body in a follow-up edit"         | The body is what the reviewer reads in the first 10 seconds. Fix it first, then `gh pr ready`.                                         |
 | "The user said yes a turn ago, this is the same thing"             | Bodies change between turns. Confirm the exact body about to land.                                                                     |
-| "The HTML comments will be invisible, no need to strip"            | They render invisibly on GitHub but show in every reviewer's raw-markdown editor view. Publish the cleaned file.                       |
 | "I'll just append a note and they can edit later if needed"        | They shouldn't have to clean up after the agent. Confirm first.                                                                        |
 
-All of these mean: rewrite the body from the right template, strip the comments, paste it inline in chat, and wait
-for an explicit yes.
+All of these mean: rewrite the body from the right template, paste it inline in chat, and wait for an explicit yes.

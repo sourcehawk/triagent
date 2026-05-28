@@ -7,8 +7,7 @@ metadata rather than YAML frontmatter because GitHub renders
 frontmatter as a literal --- + key/value list in issue bodies.
 
 Create the issue with `gh issue create --repo sourcehawk/triagent`,
-passing this body. Fill in each section, then DELETE every HTML
-guidance comment before posting.
+passing this body.
 -->
 
 # <plain-english-title>
@@ -19,14 +18,12 @@ restart". -->
 
 ## Description
 
-<!-- 2-3 sentences. After reading this, a no-context reader can
-answer "what is this issue about?". No motivation, no deliverable —
-just the elevator pitch. -->
-
-## Why
-
-<!-- The user problem or operational reason. Include user stories if
-they sharpen the motivation. No solution, no implementation shape. -->
+<!-- A few sentences. After reading this, a no-context reader can
+answer "what is this issue about, and why does it matter?". Open with
+the elevator pitch (the what), then state the problem or operational
+reason it matters (the why). User stories are welcome here when they
+sharpen the motivation. No solution and no implementation shape — the
+fix belongs in the PR description that lands the work. -->
 
 ## Acceptance criteria
 

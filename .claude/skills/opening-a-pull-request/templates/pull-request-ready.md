@@ -7,8 +7,7 @@ frontmatter — GitHub renders frontmatter as a literal --- + key/value
 list in PR bodies.
 
 This replaces the draft body when marking the PR ready (or is the
-opening body for PRs that go straight to ready). Fill in each section,
-then DELETE every HTML guidance comment before publishing.
+opening body for PRs that go straight to ready).
 -->
 
 - **Tracking issue:** sourcehawk/triagent#<num> <!-- omit the whole line if there is no tracking issue -->
