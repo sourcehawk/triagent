@@ -25,9 +25,18 @@ export const editorTestids = {
 
 // ── Playbook surface ──────────────────────────────────────────────
 
-// openPlaybooks navigates to the playbooks index (no subject selected).
+// openPlaybooks navigates to the playbooks index (no subject selected)
+// and selects the "all" type tab so playbooks of every type slot render
+// — the list defaults to the "investigation" tab, which would hide a
+// general-type fixture.
 export async function openPlaybooks(page: Page): Promise<void> {
   await gotoAuthed(page, "/playbooks");
+  // The list mounts on the investigation tab; switch to "all" so cards
+  // of every type render. The button label carries a trailing count
+  // ("all (N)"), hence the prefix-anchored name match.
+  const allTab = page.getByRole("button", { name: /^all\b/ });
+  await expect(allTab).toBeVisible({ timeout: 30_000 });
+  await allTab.click();
 }
 
 // playbookCards returns every playbook card in the main-pane grid, in
@@ -44,10 +53,17 @@ export function playbookCard(page: Page, id: string): Locator {
   );
 }
 
-// waitForPlaybookCards waits until at least `count` cards have rendered
-// — the list fetches over REST after mount, so the spec must wait.
-export async function waitForPlaybookCards(page: Page, count: number): Promise<void> {
-  await expect(playbookCards(page)).toHaveCount(count, { timeout: 30_000 });
+// findPlaybookCard narrows the list to a single id via the search box
+// (which resets pagination), then waits for that card to render. The
+// list paginates at 8 and the launcher's bundled system metas pad the
+// "all" bucket past one page, so searching is how the spec reliably
+// surfaces a specific fixture card.
+export async function findPlaybookCard(page: Page, id: string): Promise<Locator> {
+  const search = page.getByRole("searchbox", { name: "search playbooks" });
+  await search.fill(id);
+  const card = playbookCard(page, id);
+  await expect(card).toBeVisible({ timeout: 30_000 });
+  return card;
 }
 
 // playbookProposal returns the sidenav pending-proposal row for a
@@ -66,10 +82,11 @@ export function playbookProposalBadge(page: Page, playbookID: string): Locator {
   );
 }
 
-// openPlaybookEditor clicks a playbook card and waits for the editor
-// pane to mount at ?playbook=<id>.
+// openPlaybookEditor finds a playbook card (via search) and clicks it,
+// then waits for the editor pane to mount at ?playbook=<id>.
 export async function openPlaybookEditor(page: Page, id: string): Promise<void> {
-  await playbookCard(page, id).click();
+  const card = await findPlaybookCard(page, id);
+  await card.click();
   await expect(page).toHaveURL(new RegExp(`[?&]playbook=${escapeRegExp(id)}(?:&|$)`));
   await expect(page.getByTestId(editorTestids.playbookEditor)).toBeVisible({
     timeout: 30_000,
