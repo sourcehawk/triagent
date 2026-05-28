@@ -46,18 +46,19 @@ var (
 )
 
 // k8sSetup is what setupK8s hands back to Launch: the path to the static
-// kubeconfig the launcher must point KUBECONFIG at, and the per-test namespace
-// the fixtures were applied into.
+// kubeconfig the launcher must point KUBECONFIG at.
 type k8sSetup struct {
 	kubeconfigPath string
-	namespace      string
 }
 
-// envtestUnavailable returns a non-empty reason when the kubebuilder
+// EnvtestUnavailable returns a non-empty reason when the kubebuilder
 // apiserver+etcd assets can't be located, so k8s tests skip cleanly on a
 // runner that hasn't fetched them rather than failing the suite. An explicit
 // KUBEBUILDER_ASSETS wins; otherwise the default setup-envtest cache path
-// (~/.local/share/kubebuilder-envtest/k8s/<ver>) is probed.
+// (~/.local/share/kubebuilder-envtest/k8s/<ver>) is probed. Exported so the
+// e2e package's k8s test gates on the same probe the harness uses.
+func EnvtestUnavailable() string { return envtestUnavailable() }
+
 func envtestUnavailable() string {
 	if dir := os.Getenv("KUBEBUILDER_ASSETS"); dir != "" {
 		if _, err := os.Stat(filepath.Join(dir, "kube-apiserver")); err == nil {
@@ -132,13 +133,13 @@ func stopSharedEnv() {
 	}
 }
 
-// setupK8s boots the shared envtest (if needed), creates a fresh namespace
-// (unused by the fixtures, but registered for cleanup symmetry), applies the
-// requested fixture manifests, and writes a static kubeconfig into stateDir.
-// Namespace cleanup is registered on t.Cleanup. The static kubeconfig carries
-// a single context (e2eKubeContext) pointing at envtest's apiserver with its
-// CA + client credentials inlined, so the launcher discovers it the normal way
-// (no Teleport in the loop).
+// setupK8s boots the shared envtest (if needed), applies the requested fixture
+// manifests (which create their own namespaces), and writes a static
+// kubeconfig into stateDir. Every namespace the fixtures touched is deleted on
+// t.Cleanup so reruns within one process start clean. The static kubeconfig
+// carries a single context (e2eKubeContext) pointing at envtest's apiserver
+// with its CA + client credentials inlined, so the launcher discovers it the
+// normal way (no Teleport in the loop).
 func setupK8s(t *testing.T, stateDir string, opts Options) (k8sSetup, error) {
 	cfg, err := bootSharedEnv()
 	if err != nil {

@@ -9,9 +9,18 @@ import (
 	"io"
 	"net/http"
 	"net/http/cookiejar"
+	"net/url"
 	"testing"
 	"time"
 )
+
+// tokenCookie matches the launcher's SPA auth cookie name
+// (internal/server/server.go::tokenCookie). The harness seeds it directly so
+// authenticated requests carry the cookie from the first call — without it a
+// POST that relied on the ?token= query param would hit the launcher's
+// token→cookie 303 redirect, which Go's client downgrades to a GET, dropping
+// the body and yielding a spurious 405.
+const tokenCookie = "triagent_token"
 
 // Client is the HTTP helper bound to a launcher. It carries a cookie jar so
 // the launch-token cookie set on the first authenticated request persists
@@ -32,10 +41,21 @@ func newClient(baseURL string) *Client {
 	}
 }
 
-// setToken records the per-launch token. Subsequent authenticated requests
-// attach it as the ?token= query param on the first call, which the
-// launcher converts to a cookie for the rest of the session.
-func (c *Client) setToken(token string) { c.token = token }
+// setToken records the per-launch token and seeds it into the cookie jar for
+// the launcher's base URL, so every authenticated request — GET or POST —
+// carries the cookie the SPA middleware expects. Seeding the cookie (rather
+// than relying on the ?token= query param + 303 redirect) keeps POST bodies
+// intact: the redirect path turns a POST into a GET in Go's client.
+func (c *Client) setToken(token string) {
+	c.token = token
+	if u, err := url.Parse(c.baseURL); err == nil {
+		c.http.Jar.SetCookies(u, []*http.Cookie{{
+			Name:  tokenCookie,
+			Value: token,
+			Path:  "/",
+		}})
+	}
+}
 
 // Get issues an authenticated GET and returns the status + body. The caller
 // asserts; Get never fails the test itself so negative cases stay testable.
@@ -56,14 +76,10 @@ func (c *Client) PostJSON(t *testing.T, path string, body any) (int, []byte) {
 
 func (c *Client) do(t *testing.T, method, path string, body []byte) (int, []byte) {
 	t.Helper()
+	// Auth rides on the seeded cookie (see setToken), so no ?token= query
+	// param is appended — that param triggers a 303 token→cookie redirect the
+	// HTTP client downgrades to a GET, which would drop a POST body.
 	url := c.baseURL + path
-	if c.token != "" {
-		sep := "?"
-		if bytes.ContainsRune([]byte(path), '?') {
-			sep = "&"
-		}
-		url += sep + "token=" + c.token
-	}
 	var rdr io.Reader
 	if body != nil {
 		rdr = bytes.NewReader(body)
