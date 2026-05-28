@@ -12,6 +12,8 @@ export function EntryRow({ hit }: Props) {
   const fm = hit.frontmatter;
   return (
     <Link
+      data-testid="triagent-wiki-entry-row"
+      data-entry-id={hit.id}
       href={`/wiki/entries/?slug=${encodeURIComponent(hit.id)}`}
       className="group block rounded-md border border-zinc-800 bg-zinc-900/40 px-4 py-3 transition hover:border-zinc-700 hover:bg-zinc-900"
     >

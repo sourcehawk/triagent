@@ -1,0 +1,42 @@
+id: broker_ooms
+schema_version: 1
+type: investigation
+active: true
+symptom: "Zeebe broker pods OOM-killed under sustained load"
+description: |
+  Triage repeated broker OOM kills: confirm the kill signal, check the
+  heap vs limit headroom, and decide between a limit bump and a
+  workload shed.
+entrypoint: confirm_oom
+nodes:
+  confirm_oom:
+    description: |
+      Confirm the pods were OOM-killed (exit 137 / reason OOMKilled)
+      rather than evicted or crash-looped for another reason.
+    expected_findings:
+      - oom_confirmed
+    next:
+      - condition: "OOM kill confirmed"
+        goto: check_headroom
+      - condition: "not an OOM kill"
+        goto: terminal_not_oom
+  check_headroom:
+    description: |
+      Compare working-set memory against the container limit. Decide
+      whether the limit is too tight or the workload is unbounded.
+    expected_findings:
+      - headroom_verdict
+    next:
+      - condition: "headroom verdict reached"
+        goto: terminal_verdict
+  terminal_verdict:
+    description: |
+      Report the headroom verdict and the recommended remediation.
+    terminal_advice: |
+      State whether to bump the limit or shed load, with the numbers
+      that justify it.
+  terminal_not_oom:
+    description: |
+      Not an OOM kill — redirect to the right triage path.
+    terminal_advice: |
+      Name the actual kill reason and point at the matching playbook.

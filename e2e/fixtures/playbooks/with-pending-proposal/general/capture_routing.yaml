@@ -1,0 +1,30 @@
+id: capture_routing
+schema_version: 1
+type: general
+active: true
+symptom: "Route a finished investigation to the right capture surface (wiki / playbook / codefix)"
+description: |
+  Meta-playbook that walks the operator's capture choice after an
+  investigation lands, branching to the matching proposal flow.
+entrypoint: pick_surface
+nodes:
+  pick_surface:
+    description: |
+      Ask which capture surface the finding belongs on and branch to it.
+    expected_findings:
+      - capture_choice
+    next:
+      - condition: "operator picked a surface"
+        goto: terminal_routed
+      - condition: "operator declined to capture"
+        goto: terminal_skip
+  terminal_routed:
+    description: |
+      Confirm the chosen surface and hand off to its proposal flow.
+    terminal_advice: |
+      Name the chosen capture surface and proceed to draft it.
+  terminal_skip:
+    description: |
+      Operator skipped capture. Stand down.
+    terminal_advice: |
+      Acknowledge the skip and close the loop.

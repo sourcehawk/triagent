@@ -1030,7 +1030,7 @@ export function PlaybookEditor({ id, onBack, onMutated, onOpenPlaybook }: Props)
   const showContent = load.kind === "loaded";
 
   return (
-    <div className="flex h-full flex-col gap-3 px-6 py-6">
+    <div data-testid="triagent-playbook-editor" className="flex h-full flex-col gap-3 px-6 py-6">
       {showLoading && (
         <div className="flex items-center gap-2 text-sm text-zinc-400">
           <Spinner /> loading playbook…
