@@ -24,10 +24,13 @@ shows up specifically in:
    reaches the proposal step of a real investigation.
 3. **Editor surfaces.** The polymorphic `editor.Session` is shared
    between playbooks and wiki, with a chat panel that proposes edits
-   and a manual-edit path that round-trips through `yaml.v3` with
-   frontmatter preservation. Unit tests cover each layer; nothing
-   tests the through-line "open editor → chat → AI proposal → accept
-   → file on disk reflects the change."
+   and a manual-edit path. Wiki entries are frontmatter+body documents
+   whose frontmatter bytes are preserved verbatim on save (comments
+   survive); playbooks are plain YAML that round-trips through a
+   `yaml.v3` marshal — semantically faithful but lossy on comments.
+   Unit tests cover each layer; nothing tests the through-line "open
+   editor → chat → AI proposal → accept → file on disk reflects the
+   change."
 4. **Repos page composition.** The repos page reconciles config
    `linked_repos`, user-local repos, cached `gh` metadata, and the
    repo-summary vault — four sources with independent failure modes.
@@ -349,8 +352,10 @@ per knob. Verifies each documented flag and env var has its effect:
 - `XDG_CONFIG_HOME` redirects state dir
 - `XDG_CACHE_HOME` redirects cache dir
 - `--cwd` effect on session working dir reported in transcript
+  (**deferred — flag not yet implemented; tracked by #27**)
 - `--launch-browser=false` (no browser tab opened — covered by absence
-  of `open` / `xdg-open` invocation)
+  of `open` / `xdg-open` invocation) (**deferred — flag not yet
+  implemented; tracked by #27**)
 - Telemetry token plumbing: `TRIAGENT_MCP_TELEMETRY_TOKEN` reachable
   from a spawned MCP child via the loopback contract
 
@@ -452,8 +457,10 @@ result back to claude → next script action runs.
 - Open chat panel → send message → wait for `end`.
 - `ProposalPreview` tab populates with the AI-proposed diff.
 - Apply a manual edit via the editor's textarea → save → playbook YAML
-  on disk reflects the change AND retains frontmatter comments
-  (round-trip through the wiki/playbook YAML helper).
+  on disk reflects the change (edited fields round-trip through
+  `WriteUserPlaybook` → `yaml.v3` marshal; playbooks are plain YAML, so
+  comments are not preserved — frontmatter-comment preservation is a
+  wiki-entry property, asserted in Flow 4, not here).
 - Accept the AI proposal → playbook file updates, ledger entry cleared.
 
 ### Flow 4 — wiki editor
@@ -470,35 +477,42 @@ Shares ~80% of selectors / helpers with Flow 3 via
 ### Flow 5 — repos page
 
 **File:** `repos_test.go` + `browser/repos.spec.ts`. **Browser:** yes.
-**Claude-stub:** yes (for regenerate-summary path). **Gh-stub:** yes.
+**Claude-stub:** yes (the regenerate worker's summary sub-agent).
+**Gh-stub:** no — the regenerate path never shells out to `gh`.
 
 **Setup:**
 - Profile `with-linked-repos` listing two linked repos.
 - Repo fixture `fixtures/repos/mixed/`: two user-local repos under the
-  launcher's user-repos directory; repo summaries vault with a summary
-  present for one of the four, absent for the other three;
-  `gh-scripts/repos-mixed/responses.json` returning canned issues and
-  PRs for the four repos.
-- Stub script for the "regenerate summary" path: when the launcher
-  invokes a fresh claude session for the summary worker, emit a
-  `tool_call: write_repo_summary` and `end`.
+  launcher's user-repos directory; repo summaries vault (under
+  `${XDG_CACHE_HOME}/triagent-mcp/<profile>/git/summaries`) with a
+  summary present for one repo, absent for the others; a seeded local
+  git clone with a `file://` origin so the regenerate worker's
+  `EnsureClone` → `git fetch` succeeds offline.
+- Stub script for the regenerate path: the launcher's
+  `triagent-mcp generate-architecture-summary` spawns a claude
+  sub-agent for the summary; the stub emits the summary body between
+  the worker's `<<<BEGIN_SUMMARY` / `SUMMARY>>>` sentinels and gates
+  its `end` on `wait_for_signal`.
 
 **Assertions:**
 - Navigate to repos page.
 - Linked-repos group lists the two config repos.
 - User-local group lists the two local repos.
-- Issues sidenav shows the fixture issues from gh-stub.
-- Repo with summary → details page renders the summary text;
-  "Regenerate" button present.
-- Repo without summary → details renders empty state; "Regenerate"
-  button visible.
-- Click "Regenerate" on the empty repo → wait for SSE completion →
-  summary text appears.
-- Click "Regenerate" again immediately while in-flight → no second
-  worker spawned (single-flight contract). The stub gates its `end`
-  on `wait_for_signal`; the test releases the signal after the second
-  click is observed (second `POST /regenerate` returns already-running
-  status), making the in-flight no-op deterministic.
+- The repository-activity panel (`RepoActivityPanel`) renders the
+  issues/PRs the agent opened across investigations (it is NOT a
+  general gh-fed issues list).
+- Repo with summary → details page renders the summary text; the
+  refresh button is present.
+- Repo without summary → details renders empty state; the refresh
+  button is visible.
+- Click refresh on the empty repo → wait for the SSE
+  `repo_summary_state` phase=success event → summary text appears.
+- Click refresh again immediately while in-flight → no second worker
+  spawned (single-flight contract). The stub gates its `end` on
+  `wait_for_signal`; the second `POST /api/repos/<o>/<n>/summary/refresh`
+  returns **409** (and the status endpoint reports `inFlight=true`),
+  proving the duplicate was never admitted; the test then releases the
+  signal to let the one worker finish.
 
 ## CI integration
 
