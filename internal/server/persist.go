@@ -373,6 +373,15 @@ func loadInvestigation(dir string) (*Investigation, error) {
 		inv.CreatedAt = t
 	}
 
+	// Hydrate ActiveContext from the on-disk file rather than from a
+	// duplicate metadata field. The file is canonical — the k8s MCP
+	// writes it on switch_context and the launcher's prom resolver
+	// already reads it through readActiveContext. Errors and missing
+	// files mean "no pre-selection" and leave ActiveContext empty.
+	if name, err := readActiveContext(inv.SessionDir); err == nil {
+		inv.ActiveContext = name
+	}
+
 	// Replay events into the backlog. New subscribers replay it on connect,
 	// so the sidebar's "open" click renders the transcript exactly the way
 	// the live session did.

@@ -11,6 +11,7 @@ import (
 
 	"github.com/sourcehawk/triagent/internal/auto"
 	"github.com/sourcehawk/triagent/internal/promforward"
+	"github.com/sourcehawk/triagent/pkg/mcp/k8s"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -399,6 +400,47 @@ func TestLoadInvestigation_NotArchived_SetsNeedsRehydrate(t *testing.T) {
 	require.NoError(t, err, "loadInvestigation")
 	require.False(t, loaded.archived, "loaded.archived = true, want false (not explicitly archived)")
 	require.True(t, loaded.needsRehydrate, "loaded.needsRehydrate = false, want true")
+}
+
+// ActiveContext is seeded onto Investigation at preflight when the
+// operator pre-selected a cluster. After a launcher restart, the DTO
+// must still report it so the frontend can show the bound context.
+// We derive it from the canonical on-disk file (`<sessionDir>/active-context`)
+// rather than persisting a duplicate copy in metadata.json — the k8s
+// MCP and the launcher's prom resolver both read the same file.
+func TestLoadInvestigation_HydratesActiveContextFromSessionFile(t *testing.T) {
+	dir := t.TempDir()
+	st := newStore(dir)
+	t.Cleanup(st.close)
+	require.NoError(t, st.writeMetadata(InvestigationDTO{
+		ID:         "rid",
+		SessionDir: dir,
+		CreatedAt:  time.Now().UTC(),
+	}), "writeMetadata")
+	require.NoError(t, k8s.WriteActiveContextFile(dir, "camunda.teleport.sh-saas-dev-worker-2"))
+
+	loaded, err := loadInvestigation(dir)
+	require.NoError(t, err)
+	assert.Equal(t, "camunda.teleport.sh-saas-dev-worker-2", loaded.ActiveContext,
+		"ActiveContext must survive restart by deriving from <sessionDir>/active-context")
+	assert.Equal(t, "camunda.teleport.sh-saas-dev-worker-2", loaded.Snapshot().ActiveContext,
+		"DTO surface must reflect the hydrated value")
+}
+
+func TestLoadInvestigation_AbsentActiveContextFileLeavesEmpty(t *testing.T) {
+	dir := t.TempDir()
+	st := newStore(dir)
+	t.Cleanup(st.close)
+	require.NoError(t, st.writeMetadata(InvestigationDTO{
+		ID:         "rid",
+		SessionDir: dir,
+		CreatedAt:  time.Now().UTC(),
+	}), "writeMetadata")
+	// No active-context file written — preflight didn't pre-seed.
+
+	loaded, err := loadInvestigation(dir)
+	require.NoError(t, err)
+	assert.Equal(t, "", loaded.ActiveContext, "missing file is the normal no-pre-selection case")
 }
 
 func TestLoadInvestigation_Archived_DoesNotSetNeedsRehydrate(t *testing.T) {
