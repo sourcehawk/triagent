@@ -63,7 +63,7 @@ func TestReplay_ProposalPostsStartAndEndToolEvents(t *testing.T) {
 	out := bufio.NewWriter(&outBuf)
 	in := bufio.NewReader(strings.NewReader(""))
 
-	if _, err := replayWith(actions, in, out, tr, p); err != nil {
+	if _, err := replay(actions, in, out, tr, replayDeps{poster: p}); err != nil {
 		t.Fatalf("replay: %v", err)
 	}
 
@@ -104,7 +104,7 @@ func TestReplay_ProposalWithNilPosterIsStreamOnly(t *testing.T) {
 	out := bufio.NewWriter(&outBuf)
 	in := bufio.NewReader(strings.NewReader(""))
 
-	if _, err := replayWith(actions, in, out, tr, nil); err != nil {
+	if _, err := replay(actions, in, out, tr, replayDeps{}); err != nil {
 		t.Fatalf("replay: %v", err)
 	}
 	if err := out.Flush(); err != nil {
@@ -133,7 +133,7 @@ func TestReplay_RecordPromptCapturesFullStdin(t *testing.T) {
 	out := bufio.NewWriter(&outBuf)
 	in := bufio.NewReader(strings.NewReader(prompt))
 
-	if _, err := replayWith(actions, in, out, tr, nil); err != nil {
+	if _, err := replay(actions, in, out, tr, replayDeps{}); err != nil {
 		t.Fatalf("replay: %v", err)
 	}
 	if !strings.Contains(traceBuf.String(), "FIRST-LINE-MARKER") {

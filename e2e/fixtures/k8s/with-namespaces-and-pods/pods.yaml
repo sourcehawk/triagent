@@ -1,0 +1,47 @@
+# Three pods across the two fixture namespaces; api-1 in team-a is Failed.
+# envtest has no kubelet, so status never moves on its own — the harness
+# applies these objects, then patches status.phase onto each pod via the
+# status subresource so list_resources(kind=Pod) reports the phase the
+# fixture declares. The status.phase field below is the source of truth
+# the harness reads back when patching.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: api-1
+  namespace: team-a
+  labels:
+    app: api
+spec:
+  containers:
+    - name: api
+      image: registry.example/api:1
+status:
+  phase: Failed
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: api-2
+  namespace: team-a
+  labels:
+    app: api
+spec:
+  containers:
+    - name: api
+      image: registry.example/api:1
+status:
+  phase: Running
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: worker-1
+  namespace: team-b
+  labels:
+    app: worker
+spec:
+  containers:
+    - name: worker
+      image: registry.example/worker:1
+status:
+  phase: Running

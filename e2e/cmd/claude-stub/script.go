@@ -86,12 +86,28 @@ func loadScript(path string) ([]action, error) {
 // so the launcher can capture it and pass --resume on the next turn.
 const stubSessionID = "claude-stub-session"
 
-// replayWith runs the action loop. It returns the scripted exit code (0
-// unless an "exit" action sets otherwise). out is flushed by the caller.
-// When p is non-nil, "proposal" actions POST a start/end tool-event
-// round-trip through it (the real path proposals reach the transcript);
-// when p is nil they emit only the stream tool_use line.
-func replayWith(actions []action, in *bufio.Reader, out *bufio.Writer, tr *trace, p *poster) (int, error) {
+// k8sServerAlias is the per-session MCP server the k8s round-trip drives. It
+// mirrors preflight.MCPAliasK8s; the stub can't import internal/preflight, so
+// the literal is pinned here and the e2e k8s test asserts the wire path end to
+// end (a drift in the alias surfaces as a "no server" round-trip failure).
+const k8sServerAlias = "triagent-k8s"
+
+// replayDeps carries the side inputs the action loop needs beyond the script
+// itself. mcpConfigPath is the --mcp-config the launcher passed; the
+// expect_tool_result action uses it to spawn the real MCP server and perform
+// the genuine tool round-trip. Empty disables the round-trip (the action then
+// degrades to the #14 stdin-yield, keeping non-k8s flows unaffected). poster,
+// when non-nil, is the tool-event telemetry path "proposal" actions POST a
+// start/end round-trip through (the only path proposals reach the transcript);
+// a nil poster makes proposal actions stream-only.
+type replayDeps struct {
+	mcpConfigPath string
+	poster        *poster
+}
+
+// replay runs the action loop. It returns the scripted exit code (0 unless
+// an "exit" action sets otherwise). out is flushed by the caller.
+func replay(actions []action, in *bufio.Reader, out *bufio.Writer, tr *trace, deps replayDeps) (int, error) {
 	// Always open with a system/init line so the launcher captures the
 	// session id, mirroring the real CLI's first stream-json line.
 	if err := emitRaw(out, map[string]any{
@@ -102,16 +118,35 @@ func replayWith(actions []action, in *bufio.Reader, out *bufio.Writer, tr *trace
 		return 0, err
 	}
 
+	// lastToolCall tracks the most recent tool_call emit so expect_tool_result
+	// knows which tool (and args) to drive against the real MCP server.
+	var lastToolCall *scriptEvent
+
+	// One MCP client pool per replay; reused across every expect_tool_result so
+	// a switch_context binding survives into the later list_* calls. Closed at
+	// the end so no MCP child outlives the stub (keeps the subprocess registry
+	// clean at test end).
+	var pool *mcpPool
+	if deps.mcpConfigPath != "" {
+		pool = newMCPPool(deps.mcpConfigPath)
+		defer pool.closeAll()
+	}
+
 	for _, a := range actions {
 		switch a.Action {
 		case "record_args":
 			tr.record(map[string]any{"event": "record_args"})
 		case "emit":
-			if err := emitEvent(out, a.Event); err != nil {
+			ev, err := emitEvent(out, a.Event)
+			if err != nil {
 				return 0, err
 			}
+			if ev != nil && ev.Type == "tool_call" {
+				captured := *ev
+				lastToolCall = &captured
+			}
 		case "proposal":
-			if err := emitProposal(out, tr, p, a); err != nil {
+			if err := emitProposal(out, tr, deps.poster, a); err != nil {
 				return 0, err
 			}
 		case "record_prompt":
@@ -120,13 +155,36 @@ func replayWith(actions []action, in *bufio.Reader, out *bufio.Writer, tr *trace
 			// can assert the profile-derived system prompt reached the agent.
 			prompt, _ := io.ReadAll(in)
 			tr.record(map[string]any{"event": "stdin", "action": "record_prompt", "stdin": string(prompt)})
-		case "expect_tool_call", "expect_tool_result":
-			// Block until the launcher feeds the next stdin event. In this
-			// suite stdin carries only the opening prompt (one read, then
-			// EOF); the real MCP round-trip wiring lands with #17. Record
-			// whatever arrived (or EOF) so the trace shows the wait resolved.
-			ev := readStdinEvent(in)
-			tr.record(map[string]any{"event": "stdin", "action": a.Action, "stdin": ev})
+		case "expect_tool_call":
+			// Marks that the launcher is expected to dispatch the tool the
+			// stub just emitted. With the stub acting as the MCP client, the
+			// dispatch is realized by the paired expect_tool_result; this
+			// action only records the expectation for the trace.
+			tr.record(map[string]any{"event": "expect_tool_call", "name": a.Name})
+		case "expect_tool_result":
+			// The real round-trip: spawn the MCP server from the launcher's
+			// per-session config and call the last-emitted tool against it
+			// (against envtest, for the k8s flow). Record the result so the
+			// test can assert the returned namespaces / pods. With no MCP
+			// config (non-k8s flows), degrade to the #14 stdin yield.
+			if pool == nil || lastToolCall == nil {
+				ev := readStdinEvent(in)
+				tr.record(map[string]any{"event": "stdin", "action": a.Action, "stdin": ev})
+				break
+			}
+			res, err := pool.call(k8sServerAlias, lastToolCall.Name, lastToolCall.Args)
+			if err != nil {
+				tr.record(map[string]any{"event": "tool_result", "tool": lastToolCall.Name, "error": err.Error()})
+				return 0, fmt.Errorf("tool round-trip %q: %w", lastToolCall.Name, err)
+			}
+			tr.record(map[string]any{
+				"event":      "tool_result",
+				"tool":       res.Tool,
+				"server":     res.Server,
+				"isError":    res.IsError,
+				"text":       res.Text,
+				"structured": res.Structured,
+			})
 		case "wait_for_signal":
 			waitForSignal(a.Name)
 			tr.record(map[string]any{"event": "signal", "name": a.Name})
@@ -190,12 +248,19 @@ func emitProposal(out *bufio.Writer, tr *trace, p *poster, a action) error {
 }
 
 // emitEvent translates one simplified script event to its stream-json wire
-// shape and writes it. "end" emits the closing result line.
-func emitEvent(out *bufio.Writer, raw json.RawMessage) error {
+// shape and writes it. "end" emits the closing result line. It returns the
+// parsed event so the caller can track the most recent tool_call for the
+// expect_tool_result round-trip.
+func emitEvent(out *bufio.Writer, raw json.RawMessage) (*scriptEvent, error) {
 	var ev scriptEvent
 	if err := json.Unmarshal(raw, &ev); err != nil {
-		return fmt.Errorf("invalid emit event: %w", err)
+		return nil, fmt.Errorf("invalid emit event: %w", err)
 	}
+	return &ev, emitParsed(out, &ev)
+}
+
+// emitParsed writes the wire shape for an already-parsed script event.
+func emitParsed(out *bufio.Writer, ev *scriptEvent) error {
 	switch ev.Type {
 	case "assistant_message":
 		return emitRaw(out, map[string]any{

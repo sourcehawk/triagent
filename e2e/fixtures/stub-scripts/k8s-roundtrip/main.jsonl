@@ -1,0 +1,27 @@
+// Flow 2b — real k8s MCP round-trip via envtest.
+//
+// The stub is the MCP client here (the role the real claude CLI plays): each
+// emitted tool_call is recorded by the launcher into the transcript, and the
+// paired expect_tool_result drives that tool against the real
+// triagent-mcp --kind=k8s the launcher wired into --mcp-config (backed by the
+// envtest apiserver). The pool keeps one k8s MCP session across all three
+// calls so switch_context's binding survives into list_namespaces /
+// list_resources.
+//
+// switch_context binds the kubeconfig context the harness wrote (named "e2e").
+// Without Teleport in the loop the launcher can't pre-seed active-context, so
+// the agent binds it explicitly — the standard switch_context flow.
+{"action": "record_args"}
+{"action": "emit", "event": {"type": "assistant_message", "text": "Binding the cluster context and surveying namespaces."}}
+{"action": "emit", "event": {"type": "tool_call", "name": "switch_context", "args": {"name": "e2e"}}}
+{"action": "expect_tool_call", "name": "switch_context"}
+{"action": "expect_tool_result"}
+{"action": "emit", "event": {"type": "tool_call", "name": "list_namespaces", "args": {}}}
+{"action": "expect_tool_call", "name": "list_namespaces"}
+{"action": "expect_tool_result"}
+{"action": "emit", "event": {"type": "tool_call", "name": "list_resources", "args": {"kind": "Pod", "namespace": "team-a"}}}
+{"action": "expect_tool_call", "name": "list_resources"}
+{"action": "expect_tool_result"}
+{"action": "emit", "event": {"type": "assistant_message", "text": "team-a has a Failed pod; surfacing it."}}
+{"action": "emit", "event": {"type": "end"}}
+{"action": "exit", "code": 0}

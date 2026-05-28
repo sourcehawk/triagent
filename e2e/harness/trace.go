@@ -22,6 +22,21 @@ type Trace struct {
 	AllowedTools []string
 	MCPConfig    json.RawMessage
 	StdinEvents  []string
+	// ToolResults are the real MCP tool round-trips the stub performed for
+	// expect_tool_result actions (#17 k8s flow), in order. Empty for flows
+	// that never drive a round-trip.
+	ToolResults []ToolResult
+}
+
+// ToolResult is one MCP tool call the stub drove against a launcher-wired MCP
+// server, with the structured result body the server returned. Structured is
+// the JSON the test parses to assert namespaces / pods.
+type ToolResult struct {
+	Tool       string
+	Server     string
+	IsError    bool
+	Text       string
+	Structured json.RawMessage
 }
 
 // traceLine is the on-disk shape the stub writes (one JSON object per line).
@@ -32,6 +47,11 @@ type traceLine struct {
 	AllowedTools []string        `json:"allowedTools,omitempty"`
 	MCPConfig    string          `json:"mcpConfig,omitempty"`
 	Stdin        string          `json:"stdin,omitempty"`
+	Tool         string          `json:"tool,omitempty"`
+	Server       string          `json:"server,omitempty"`
+	IsError      bool            `json:"isError,omitempty"`
+	Text         string          `json:"text,omitempty"`
+	Structured   json.RawMessage `json:"structured,omitempty"`
 	Raw          json.RawMessage `json:"-"`
 }
 
@@ -64,6 +84,14 @@ func (h *Harness) StubTrace(t *testing.T, role string) Trace {
 			}
 		case "stdin":
 			tr.StdinEvents = append(tr.StdinEvents, l.Stdin)
+		case "tool_result":
+			tr.ToolResults = append(tr.ToolResults, ToolResult{
+				Tool:       l.Tool,
+				Server:     l.Server,
+				IsError:    l.IsError,
+				Text:       l.Text,
+				Structured: l.Structured,
+			})
 		}
 	}
 	return tr
