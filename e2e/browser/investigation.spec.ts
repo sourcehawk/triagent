@@ -1,7 +1,5 @@
 import { expect, test } from "@playwright/test";
 import {
-  INVESTIGATION_ID,
-  openInvestigation,
   proposalCardKinds,
   proposalCardOfKind,
   proposalCards,
@@ -9,44 +7,141 @@ import {
   waitForAssistantText,
   waitForProposalCards,
 } from "./helpers/triagent";
-import { activityPanel, mcpStatusBar } from "./helpers/walkthrough";
+import {
+  activityRows,
+  clickNewInvestigation,
+  composerSend,
+  fillAndSubmitInvestigationForm,
+  gotoRoot,
+  investigationRow,
+  investigationRows,
+  mcpChip,
+  waitForUsageReadout,
+} from "./helpers/walkthrough";
 
-// Flow 2 browser assertions. The Go harness has already driven a live
-// investigation (four proposals staged, a follow-up turn answered) and
-// passed its id in via env; this spec opens the investigation in the real
-// embedded SPA and asserts the rendered transcript: four proposal cards in
-// order, each with a non-empty preview, and the follow-up turn.
-test.describe("investigation Flow 2", () => {
-  test.skip(!INVESTIGATION_ID, "no investigation id supplied by the harness");
+// Flow 2, the investigations operator walkthrough: the browser drives the
+// whole golden path rather than reading a transcript the Go harness pre-baked.
+// It seeds off the fixture investigation, creates a fresh one through the real
+// InvestigationForm, watches the kickoff turn render (assistant reply →
+// summary block → the four proposal cards in order), verifies the ambient
+// panels (active MCP chips, activity rows, the token/cost readout), then sends
+// a follow-up and confirms the second turn answers. Backend invariants
+// (allowed-tools, system prompt, gh issue body, transcript order) stay pinned
+// in TestInvestigation_BackendInvariants; this spec owns the rendered SPA.
 
-  test("renders the four proposal cards in order, with previews and a follow-up turn", async ({
+// The id the in-progress session fixture seeds; deterministic, so the spec
+// asserts the seed row by id without the harness threading it through env.
+const SEED_INVESTIGATION_ID = "inv-flow2-fixture";
+
+test.describe("investigation Flow 2 walkthrough", () => {
+  test("seeds, creates, drives the kickoff turn, and answers a follow-up", async ({
     page,
   }) => {
-    await openInvestigation(page, INVESTIGATION_ID);
+    // ── Seed ───────────────────────────────────────────────────────────
+    // The pre-baked fixture investigation is listed in the sidebar before
+    // any live work.
+    await gotoRoot(page);
+    await expect(investigationRow(page, SEED_INVESTIGATION_ID)).toBeVisible({
+      timeout: 30_000,
+    });
+    const seedCount = await investigationRows(page).count();
 
-    // All four proposals render as cards in the transcript.
+    // ── Create ─────────────────────────────────────────────────────────
+    // Open the new-investigation form, fill the profile's one input (the
+    // optional "Notes" textarea), and run preflight. The
+    // with-prompts-and-linked-repo profile makes every input optional, so a
+    // value here is exercising the field, not satisfying a requirement.
+    await clickNewInvestigation(page);
+    await fillAndSubmitInvestigationForm(page, {
+      Notes: "payments pods are crash-looping after the latest rollout",
+    });
+
+    // Preflight pushes to /investigations/?id=<new>; the new session view
+    // mounts and SessionWorkspace auto-starts the kickoff turn. Wait for the
+    // composer (only present on a mounted session view) to confirm we landed.
+    await expect(page.getByTestId("triagent-composer-input")).toBeVisible({
+      timeout: 30_000,
+    });
+
+    // The new investigation now appears in the sidebar alongside the seed.
+    await gotoRoot(page);
+    await expect
+      .poll(async () => investigationRows(page).count(), { timeout: 30_000 })
+      .toBeGreaterThan(seedCount);
+    // Re-open the freshly-created session (gotoRoot navigated away from it).
+    const newId = await investigationRows(page)
+      .evaluateAll(
+        (els, seed) =>
+          els
+            .map((el) => el.getAttribute("data-investigation-id") ?? "")
+            .filter((id) => id && id !== seed),
+        SEED_INVESTIGATION_ID,
+      )
+      .then((ids) => ids[0]);
+    expect(newId, "a non-seed investigation row should exist").toBeTruthy();
+    await investigationRow(page, newId!).click();
+
+    // ── Ambient: active MCP chips ────────────────────────────────────────
+    // The profile wired a linked repo, which surfaces as the
+    // triagent-git-payments chip in the status bar; the core strategies
+    // server (the walker the kickoff turn drives) is always present. The
+    // profile's reference-mode extra MCP (org-docs) is wired into the
+    // agent's allowed-tools but isn't spawned as a server entry, so
+    // activeMCPs doesn't render a chip for it — the backend test pins that
+    // allowed-tools wiring instead (assertAllowedToolsCover).
+    await expect(mcpChip(page, "triagent-git-payments")).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(mcpChip(page, "triagent-strategies")).toBeVisible();
+
+    // ── Operate: the kickoff turn renders ────────────────────────────────
+    // Assistant opener, then the summary block (the amber card the
+    // strategies summarize tool drives — labelled "summary", carrying the
+    // verdict markdown), then the four proposal cards.
+    await waitForAssistantText(page, "Staging four follow-ups");
+    await expect(
+      page
+        .locator('[data-testid="triagent-transcript-list"]')
+        .getByText("crash-loops the pods", { exact: false }),
+    ).toBeVisible({ timeout: 30_000 });
+
     await waitForProposalCards(page, 4);
-
-    // …in the staged order: playbook, wiki, codefix, github_issue.
     await expect(proposalCards(page)).toHaveCount(4);
     expect(await proposalCardKinds(page)).toEqual([...proposalKindsInOrder]);
-
-    // Each card shows a non-empty body preview (the proposal payload the
-    // tool returned), not just an empty frame.
     for (const kind of proposalKindsInOrder) {
       const card = proposalCardOfKind(page, kind);
       await expect(card).toBeVisible();
       const text = (await card.innerText()).trim();
-      expect(text.length, `proposal card "${kind}" preview should be non-empty`).toBeGreaterThan(0);
+      expect(
+        text.length,
+        `proposal card "${kind}" preview should be non-empty`,
+      ).toBeGreaterThan(0);
     }
 
-    // The follow-up turn's assistant reply renders.
-    await waitForAssistantText(page, "isolated to the payments config");
+    // ── Ambient: activity panel + usage readout ──────────────────────────
+    // Every proposal round-trip lands as a tool-call row in the activity
+    // panel (the summarize call plus the four proposals → at least five).
+    await expect
+      .poll(async () => activityRows(page).count(), { timeout: 30_000 })
+      .toBeGreaterThanOrEqual(5);
 
-    // Ambient panels mount alongside the transcript (full coverage is #31's
-    // job; this asserts the shared walkthrough helpers resolve their testids
-    // against the real SPA).
-    await expect(mcpStatusBar(page)).toBeVisible();
-    await expect(activityPanel(page)).toBeVisible();
+    // The kickoff turn carried usage + cost, so the readout renders non-zero.
+    await waitForUsageReadout(page);
+    const readout = (
+      await page.getByTestId("triagent-usage-readout").innerText()
+    ).trim();
+    expect(readout, "usage readout should show a token tally").toMatch(/tok/);
+    expect(readout, "usage readout should show a non-zero token tally").not.toMatch(
+      /^0 tok/,
+    );
+
+    // ── Follow-up turn ───────────────────────────────────────────────────
+    // The operator asks a follow-up via the composer; the resumed session
+    // answers with a single assistant reply.
+    await composerSend(
+      page,
+      "Confirm the regression is isolated to the payments config.",
+    );
+    await waitForAssistantText(page, "isolated to the payments config");
   });
 });
