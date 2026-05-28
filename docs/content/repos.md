@@ -72,7 +72,7 @@ Each summary covers, in order:
 Soft target ~300 lines, hard cap 500. The sub-agent uses canonical names from the actual code, never paraphrased, so
 when an incident report mentions a specific string, the summary surfaces it.
 
-### Lifecycle
+### Summary lifecycle
 
 - **Auto-generated when you add a repo.** The launcher kicks off generation in the background as soon as you add an
   entry through the **manage** modal. It can take up to 15 minutes for large repos. Close the window or navigate
@@ -148,7 +148,7 @@ After at least one `summarize` call has landed, the **request codefix** button a
 
 If multiple repos are affected, the agent runs the cycle once per repo, **pausing between repos** to ask "proceed to repo B?" so you can spot a misframed scope before more PRs compound.
 
-### Lifecycle
+### Card lifecycle
 
 The card transitions through:
 
