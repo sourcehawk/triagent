@@ -321,6 +321,12 @@ type InvestigationDTO struct {
 	// PromDisabled, when true, explicitly opts this investigation out of
 	// the prom MCP regardless of profile defaults.
 	PromDisabled bool `json:"promDisabled,omitempty"`
+	// PromEnabled is the rendered boolean the frontend reads to decide
+	// whether to show the prom MCP chip in the sidebar. Derived from
+	// PromTarget and PromDisabled — kept as its own field because the
+	// frontend's Investigation type contracts on `promEnabled`, not on
+	// the raw target / disabled inputs.
+	PromEnabled bool `json:"promEnabled,omitempty"`
 	// Resumable is true for restored sessions whose claude conversation
 	// can be picked up via --resume on the next follow-up. False once
 	// rehydrated, when archived, or when no session id was captured.
@@ -391,6 +397,7 @@ func (i *Investigation) Snapshot() InvestigationDTO {
 		OriginatingSignal:  i.OriginatingSignal,
 		PromTarget:         i.PromTarget,
 		PromDisabled:       i.PromDisabled,
+		PromEnabled:        i.PromTarget != nil && !i.PromDisabled,
 		Resumable:          !i.archived && i.ClaudeSessionID != "" && i.needsRehydrate,
 		Slug:            computeSessionSlug(i.CreatedAt, i.Namespace, i.ID),
 		SyncState: sessionSyncStateFor(sessionSyncStateInputs{

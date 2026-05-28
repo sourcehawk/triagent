@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/sourcehawk/triagent/internal/auto"
+	"github.com/sourcehawk/triagent/internal/promforward"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -475,6 +476,38 @@ func TestSnapshot_Resumable(t *testing.T) {
 				needsRehydrate:  c.needs,
 			}
 			assert.Equal(t, c.want, inv.Snapshot().Resumable, "Resumable")
+		})
+	}
+}
+
+// Sidebar (frontend/lib/mcps.ts) gates the prom MCP chip on
+// inv.promEnabled, which the DTO must derive — the raw promTarget and
+// promDisabled fields don't carry the boolean the UI reads. Camunda
+// session 72671546… had a non-nil PromTarget but no chip because the
+// DTO was missing PromEnabled.
+func TestSnapshot_PromEnabled(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name     string
+		target   *promforward.Target
+		disabled bool
+		want     bool
+	}{
+		{"target_and_not_disabled", &promforward.Target{Service: "thanos-query", Namespace: "thanos", Port: 9090}, false, true},
+		{"target_but_disabled", &promforward.Target{Service: "thanos-query", Namespace: "thanos", Port: 9090}, true, false},
+		{"no_target", nil, false, false},
+		{"no_target_and_disabled", nil, true, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			inv := &Investigation{
+				ID:           "x",
+				SessionDir:   t.TempDir(),
+				CreatedAt:    time.Now().UTC(),
+				PromTarget:   c.target,
+				PromDisabled: c.disabled,
+			}
+			assert.Equal(t, c.want, inv.Snapshot().PromEnabled, "PromEnabled")
 		})
 	}
 }
