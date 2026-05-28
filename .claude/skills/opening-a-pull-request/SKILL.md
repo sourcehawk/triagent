@@ -45,15 +45,24 @@ shipping stale wording into the merged record.
 
 ## Linking the tracking issue
 
-When the PR has a tracking issue, link it via a GitHub auto-close keyword as the **first line of the body's opening
-section** — `## What lands here` for draft, `## Description` for ready. Use `Fixes #<num>` for bug-fix issues and
-`Closes #<num>` for feature/task issues; both trigger the issue auto-close on merge. Don't carry the issue link as a
-bold-line metadata header at the top of the body — the keyword form is what GitHub uses to thread the cross-link
-and it reads as a natural opener to the implementation summary. If there is no tracking issue, drop the line entirely
-and open the section with prose.
+When the PR has a tracking issue, link it as the **first line of the body's opening section** — `## What lands here`
+for draft, `## Description` for ready. The exact keyword depends on **which branch the PR targets**:
+
+- **PR targets `main` (the default branch)** — use `Fixes #<num>` for bug-fix issues, `Closes #<num>` for
+  feature/task issues. Both trigger GitHub's issue auto-close on merge.
+- **PR targets a feature branch** (`feature/<slug>` in the multi-PR feature-branch model — see `developing-a-feature`)
+  — use `Refs #<num>`. `Fixes` / `Closes` keywords only auto-trigger on merge to the default branch, so writing them
+  on a feature-branch-bound PR creates a misleading promise that nothing will fulfill. The sub-issue is closed
+  manually by the orchestrator after the self-merge. The integration PR (feature → main) is the one that gets the
+  auto-close keyword (`Closes #<epic>`) because that PR does merge to main.
+
+If there is no tracking issue, drop the line entirely and open the section with prose.
+
+Don't carry the issue link as a bold-line metadata header at the top of the body — the keyword form is what GitHub
+uses to thread the cross-link and it reads as a natural opener to the implementation summary.
 
 Other related PRs / issues (siblings, follow-ups, prior art) belong under `## Related` — that section is **only** for
-links that aren't the tracking issue, since the tracking issue is already cross-linked via Fixes/Closes.
+links that aren't the tracking issue, since the tracking issue is already cross-linked via the keyword above.
 
 ## Core principle: user-in-the-loop for every GitHub mutation
 

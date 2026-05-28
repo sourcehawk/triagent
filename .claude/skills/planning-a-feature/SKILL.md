@@ -48,11 +48,16 @@ read is a draft, and drafts don't get tickets filed against them.
 
 Decide whether the work ships as:
 
-- **One PR** — single self-contained change, one reviewer pass, one merge.
-- **Multiple PRs** — multiple feature-sized chunks, each independently reviewable, possibly parallelizable.
+- **One PR** — single self-contained change, one reviewer pass, one merge to main.
+- **Multiple PRs** — multiple feature-sized chunks, each independently reviewable, possibly parallelizable. Multi-PR
+  features land via the **feature-branch model**: a long-lived `feature/<slug>` branch off main; every sub-PR is a
+  real GitHub PR targeting `feature/<slug>` (not main); when every sub-PR has been self-merged into the feature
+  branch, a final **integration PR** from `feature/<slug>` to main collects the whole feature for external review.
+  Main stays shippable throughout the work; each sub-PR retains full GitHub visibility (comments, reviews, history).
 
-The decision is a judgment call grounded in **reviewer cost**: a 2000-line PR is unreviewable even if the work is
-"one thing". If you can name two independent surfaces that ship value separately, that's two PRs.
+The PR-shape judgment is grounded in **reviewer cost**: a 2000-line PR is unreviewable even if the work is "one
+thing". If you can name two independent surfaces that ship value separately, that's two PRs and the feature-branch
+model applies.
 
 The decision is noted in chat (or as a one-line `## Implementation breakdown` paragraph in the spec naming the PRs —
 NOT the contracts between them). The spec stays a clean ADR otherwise.
@@ -88,10 +93,11 @@ producer's implementation. "TBD" is not a contract — block on it until it's co
 exist as code or as data before either side starts. Pick one per row and put it in the Realization column:
 
 - **Pre-merge stub PR** — file a tiny scaffold PR that exports the symbol the consumers need (Go interface or
-  function signature with `panic("unimplemented")` body, TypeScript type, HTTP path constant) and merge it to main
-  BEFORE the implementation PRs branch off. Producer and consumers then all branch from main and import the real
-  symbol. Best default for code-shaped contracts (Go signatures, TS types); costs one trivial extra PR; payoff is
-  both sides compile from day one. Reference the stub PR's number in the Realization column once it's open.
+  function signature with `panic("unimplemented")` body, TypeScript type, HTTP path constant). It targets the
+  feature branch (in multi-PR features) or main (in single-PR features) and merges BEFORE the implementation PRs
+  branch off. Producer and consumers then all branch from the post-stub state and import the real symbol. Best
+  default for code-shaped contracts (Go signatures, TS types); costs one trivial extra PR; payoff is both sides
+  compile from day one. Reference the stub PR's number in the Realization column once it's open.
 - **Stub-on-producer-branch** — the producer's own PR opens with just the interface + panic-bodies; consumers branch
   from the producer's branch (not main) and rebase as the producer fills in the body. Avoids the extra PR but
   couples consumers to the producer's branch lifetime — rebase pain when the interface evolves. Use only when the

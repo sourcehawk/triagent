@@ -18,6 +18,9 @@ feature: <slug>
 spec: docs/superpowers/specs/YYYY-MM-DD-<slug>-design.md
 plan: docs/superpowers/plans/YYYY-MM-DD-<slug>-plan.md
 tracking_issue: sourcehawk/triagent#<epic-num>
+feature_branch: feature/<slug>                # omit for single-PR features
+feature_worktree: .claude/worktrees/<slug>    # the main integration worktree; omit for single-PR
+integration_pr: sourcehawk/triagent#<pr>      # filled in once the feature → main PR opens
 status: planning
 ---
 
@@ -38,16 +41,25 @@ collapse to one phase with one issue.
 ## PRs / worktrees
 
 <!--
-One row per sub-issue. Branch and worktree are filled in when the
-work starts; PR and status are filled in as the work progresses.
-Keep this in sync with reality — a stale row is worse than no row.
+One row per sub-issue. For multi-PR features each sub-PR targets the
+feature branch (NOT main) and the orchestrator self-merges it after a
+self-review; sub-issues close manually because Fixes/Closes only auto-
+fires on merge to the default branch. The integration PR
+(feature → main, tracked via the `integration_pr` frontmatter field)
+is the one that uses `Closes #<epic>` to auto-close the epic.
 
-Status values: not-started | in-progress | draft | ready | merged.
+Branch and worktree are filled in when the work starts; PR and status
+are filled in as the work progresses. Keep this in sync with reality
+— a stale row is worse than no row.
+
+Status values: not-started | in-progress | draft | ready |
+self-merged (multi-PR, into feature branch) | merged (single-PR or
+integration PR into main).
 -->
 
-| Issue                       | Branch                | Worktree path                    | PR                          | Status        |
-| --------------------------- | --------------------- | -------------------------------- | --------------------------- | ------------- |
-| sourcehawk/triagent#<n1>    | <branch-name>         | .claude/worktrees/<name>         | sourcehawk/triagent#<pr>    | not-started   |
+| Issue                       | Branch                       | Worktree path                            | PR (→ base)                          | Status        |
+| --------------------------- | ---------------------------- | ---------------------------------------- | ------------------------------------ | ------------- |
+| sourcehawk/triagent#<n1>    | <sub-branch-name>            | .claude/worktrees/<slug>--<sub-name>     | sourcehawk/triagent#<pr> → feature/<slug> | not-started   |
 
 ## Contracts
 

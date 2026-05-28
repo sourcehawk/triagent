@@ -33,12 +33,25 @@ If the plan is missing, stale, or the state file's recorded state doesn't match 
 drifted from the row), STOP and reconcile — re-invoke `planning-a-feature` Step 6 if the plan needs to change, or
 update the state file's rows to match reality before continuing.
 
-### 2. Decide: sequential or parallel?
+### 2. Decide: single-PR or multi-PR (feature-branch model)
 
-- **Sequential** (single PR, or PRs that strictly depend on each other in order) → one worktree, one Claude session,
-  one PR at a time. Skip to Step 4.
-- **Parallel** (multiple PRs the plan marks parallelizable, with contracts defined) → dispatch parallel subagents
-  (Step 3).
+- **Single PR** → one worktree off main, one Claude session, one PR targeting main. Skip the feature-branch setup
+  and the integration-PR step at the end.
+- **Multi-PR** → feature-branch model:
+  - The orchestrator first creates a `feature/<slug>` branch off main and a corresponding integration worktree at
+    `.claude/worktrees/<slug>` (recorded as `feature_branch` + `feature_worktree` in the state file's frontmatter).
+  - Every sub-PR is a real GitHub PR targeting `feature/<slug>`, not main. Each sub-worktree is created off the
+    feature branch with `git worktree add .claude/worktrees/<slug>--<sub-name> -b <sub-branch> feature/<slug>`
+    (raw git is the simplest path here; `EnterWorktree` defaults to branching from origin/main).
+  - When a sub-PR is ready, the orchestrator runs a self-review pass, then **self-merges** the sub-PR into
+    `feature/<slug>`. The dispatching agent owns this merge — sub-agents don't merge their own PRs.
+  - Sub-issue closure: `Fixes #<sub-issue>` / `Closes #<sub-issue>` only auto-fires on merge to the **default
+    branch**. Sub-PRs into the feature branch therefore use `Refs #<sub-issue>` (no auto-close); the orchestrator
+    runs `gh issue close <sub-issue>` after each self-merge.
+  - When every sub-PR has been self-merged into the feature branch, the orchestrator opens the **integration PR**
+    `feature/<slug>` → `main`, with `Closes #<epic>` in its body, for external review and the final merge.
+
+For sequential single-PR work, skip to Step 4. For multi-PR work, dispatch parallel subagents in Step 3.
 
 ### 3. Fan out (parallel work only)
 
@@ -141,23 +154,51 @@ cross-package wiring breaks on edits that look local.
 
 ### 6. Open the PR
 
-**REQUIRED SUB-SKILL:** `opening-a-pull-request` — draft or ready, body opens with `Fixes #<sub-issue>` so the issue
-auto-closes on merge.
+**REQUIRED SUB-SKILL:** `opening-a-pull-request` — draft or ready. PR base + body shape depend on which model is in
+play:
 
-For epic-tracked work: the PR closes the sub-issue, not the epic. The epic stays open until every sub-issue closes;
-GitHub's sub-issue progress bar tracks it without manual state.
+- **Single-PR feature** → PR targets `main`. Body opens with `Fixes #<feature-issue>` (bug) or `Closes #<feature-issue>`
+  (feature/task) so the issue auto-closes on merge.
+- **Multi-PR feature** → PR targets the feature branch (`gh pr create --base feature/<slug>`). Body opens with
+  `Refs #<sub-issue>` — `Fixes` / `Closes` keywords don't auto-trigger on merges to non-default branches, so don't
+  pretend they will. The sub-issue is closed manually by the orchestrator at self-merge time (Step 7).
 
-### 7. Land in dependency order
+### 7. Self-review, self-merge, close (multi-PR only)
 
-When all parallel PRs are ready, merge in the order the plan defines (producers before consumers). The orchestrator
-is responsible for the merge order; the subagents don't merge themselves.
+For every sub-PR against the feature branch:
 
-### 8. Tear down the planning artifacts
+1. **Self-review.** The orchestrator runs a code-review pass over the sub-PR diff (use the `code-review` slash command
+   or `superpowers:requesting-code-review`) before merging. Self-review is weaker than external review but stronger
+   than nothing; the integration PR (Step 8) is where external review lands.
+2. **Self-merge into the feature branch** (`gh pr merge <num> --merge` or whatever style the project prefers).
+3. **Close the sub-issue** manually: `gh issue close <sub-issue> --repo sourcehawk/triagent --comment "Merged via
+   sourcehawk/triagent#<sub-pr> into feature/<slug>"`.
+4. **Update the state file**: flip the row's status to `self-merged` and record the sub-PR number under the
+   `## Bubble-up log` if anything was learned during review.
 
-Once every sub-issue is closed and the feature has shipped (the epic auto-closes via the sub-issue progress bar),
-delete the plan + state file in a final commit (`chore(<slug>): remove plan + state, feature shipped`). The spec
-stays — it's the durable ADR. The plan and state file are scratch; leaving them committed past readiness pollutes
-the repo with stale operational state that future `grep`s have to wade through.
+For single-PR features, skip this step — the final merge to main (Step 8) is the only merge.
+
+### 8. Open the integration PR (multi-PR only) / merge to main
+
+- **Multi-PR feature**: when every sub-PR has been self-merged into the feature branch, open the integration PR:
+  - `gh pr create --base main --head feature/<slug>` via `opening-a-pull-request`.
+  - Body opens with `Closes #<epic>` so the epic auto-closes on merge.
+  - This is the PR that gets external review. The diff is the feature as a whole, not one chunk.
+- **Single-PR feature**: skip — Step 6's PR already targets main and Step 7 doesn't apply.
+
+When the integration PR (or the single PR) merges to main, the orchestrator's merge order is implicit — it's the
+single integration merge. Sub-PR merge order within the feature branch is the orchestrator's responsibility
+(producers before consumers).
+
+### 9. Tear down the planning artifacts
+
+Once the integration PR (or the single-PR feature) merges to main and the epic has auto-closed via its `Closes #N`
+keyword, delete the plan + state file. For multi-PR features the cleanest path is to include the deletion as part
+of the integration PR itself (last commit on the feature branch before opening the integration PR): one diff,
+reviewed alongside the feature. For single-PR features, fold the deletion into the same PR's diff.
+
+The spec stays — it's the durable ADR. The plan and state file are scratch; leaving them committed past readiness
+pollutes the repo with stale operational state that future `grep`s have to wade through.
 
 ## Anti-patterns
 
