@@ -22,8 +22,8 @@ Two templates carry the shape and the per-section guidance:
 - `templates/pull-request-draft.md`: draft PR body.
 - `templates/pull-request-ready.md`: ready-for-review PR body.
 
-Copy the appropriate template into a staging file (e.g. `/tmp/pr-body.md`), fill in each section per its `<!-- -->`
-guidance, then pass the file to `gh pr create --body-file` (opening) or `gh pr edit --body-file` (flipping or editing).
+Copy the appropriate template, fill in each section per its `<!-- -->` guidance, then pass the body to
+`gh pr create` (opening) or `gh pr edit` (flipping or editing) via a `--body "$(cat <<'EOF' ... EOF)"` heredoc.
 GitHub doesn't render HTML comments, so leaving the template guidance in place is harmless — don't burn a step
 removing it.
 

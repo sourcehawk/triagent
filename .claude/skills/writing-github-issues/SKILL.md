@@ -50,8 +50,8 @@ Does an issue for this already exist?
 
 ### Step 2A: No issue yet (create)
 
-1. **Draft the issue body** from `templates/github-issue.md` into a staging file (e.g. `/tmp/issue.md`). The issue is
-   read by people outside the immediate work, so each section earns its keep:
+1. **Draft the issue body** from `templates/github-issue.md`. The issue is read by people outside the immediate
+   work, so each section earns its keep:
    - **Title**: a human-readable sentence a no-context reader can parse.
    - **Description**: a few sentences oriented at a no-context reader, opening with the elevator pitch (the what)
      and then stating the problem or operational reason it matters (the why). No solution; the fix belongs in the
@@ -61,19 +61,16 @@ Does an issue for this already exist?
    - **Out of scope** (optional): include only when there is a non-goal worth fencing off for future readers; omit the
      whole section otherwise.
 
-2. **Confirm with the user, with the body inline:**
+2. **Confirm with the user, with the body inline.** Paste the drafted body into chat under a "About to create an
+   issue in `sourcehawk/triagent` with the body below, and assign you (`@me`). Confirm?" line. Wait for an explicit
+   yes. If they push back on specific wording, redraft and re-present.
 
-   > About to create an issue in `sourcehawk/triagent` with the body below, and assign you (`@me`). Confirm?
-   >
-   > ```
-   > [paste /tmp/issue.md]
-   > ```
-
-   Wait for an explicit yes. If they push back on specific wording, edit `/tmp/issue.md`, re-present.
-
-3. **Create the issue:**
+3. **Create the issue** by piping the body through a heredoc:
    ```
-   gh issue create --repo sourcehawk/triagent --body-file /tmp/issue.md --assignee @me
+   gh issue create --repo sourcehawk/triagent --title "<title>" --assignee @me --body "$(cat <<'EOF'
+   <body>
+   EOF
+   )"
    ```
    Drop `--assignee @me` if they declined assignment in step 2.
 
@@ -87,22 +84,19 @@ Does an issue for this already exist?
    ```
 2. **Identify the gaps.** Compare the existing body against the template sections (description, acceptance
    criteria; out-of-scope when relevant). State each gap in one sentence.
-3. **Draft the updated body** in `/tmp/issue.md`. Preserve content from the existing issue that the user wants to keep;
-   merge in what's missing. Use `templates/github-issue.md` for sections that need them.
-4. **Confirm with the user, surfacing both the gap list and the proposed body:**
+3. **Draft the updated body.** Preserve content from the existing issue that the user wants to keep; merge in what's
+   missing. Use `templates/github-issue.md` for sections that need them.
+4. **Confirm with the user, surfacing both the gap list and the proposed body.** Paste the drafted body into chat
+   under a "The issue at `sourcehawk/triagent#<num>` is missing: <one-line gap list>. About to update its body to the
+   version below, and assign you (`@me`) if you're not already. Confirm?" line. Wait for an explicit yes. On
+   push-back, redraft and re-present.
 
-   > The issue at `sourcehawk/triagent#<num>` is missing: <one-line gap list>. About to update its body to the version
-   > below, and assign you (`@me`) if you're not already. Confirm?
-   >
-   > ```
-   > [paste /tmp/issue.md]
-   > ```
-
-   Wait for an explicit yes. On push-back, edit and re-present.
-
-5. **Update the issue:**
+5. **Update the issue** by piping the body through a heredoc:
    ```
-   gh issue edit sourcehawk/triagent#<num> --body-file /tmp/issue.md --add-assignee @me
+   gh issue edit sourcehawk/triagent#<num> --add-assignee @me --body "$(cat <<'EOF'
+   <body>
+   EOF
+   )"
    ```
    Drop `--add-assignee @me` if declined.
 
