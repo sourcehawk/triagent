@@ -18,7 +18,7 @@ type draftPRIn struct {
 	IssueURL string `json:"issue_url" jsonschema:"the GH issue URL the PR will reference. Must be in this repo."`
 	// ExtraPrompt is appended verbatim to the sub-agent prompt — see
 	// schema for the intended-use rules.
-	ExtraPrompt string `json:"extra_prompt,omitempty" jsonschema:"OPTIONAL — typically empty or 1-2 sentences. The sub-agent operates in a fresh worktree of THIS repo only; the worktree IS its sandbox. It cannot read code or files in any other repo, cannot run commands against other repos, cannot dereference 'verify this by reading X/Y/main.go' in a sibling. The sub-agent also reads the full issue body via 'gh issue view' — so DO NOT (a) restate the issue's Description / Why / What & Impact / Evidence here (context waste; symptom that the issue itself is under-specified), (b) reference any file path / repo / commit outside this MCP's scoped repo, (c) embed cross-repo guardrails ('do not touch repo X') which are redundant since the sub-agent has no access regardless. Legitimate uses: scope narrowing within this repo ('only the BPMN parser, not DMN'); retry context ('prior draft_pr errored host-side, re-execute from issue body'); operator clarification that arrived after filing. If the change depends on knowledge from a sibling repo, file that prerequisite as a separate issue against the sibling's own triagent-git-<alias> MCP and link via cross_repo_refs — do not paper over the dependency in extra_prompt."`
+	ExtraPrompt string `json:"extra_prompt,omitempty" jsonschema:"OPTIONAL — typically empty or 1-2 sentences. The sub-agent operates in a fresh worktree of THIS repo only; the worktree IS its sandbox. It cannot read code or files in any other repo, cannot run commands against other repos, cannot dereference 'verify this by reading X/Y/main.go' in a sibling. The sub-agent also reads the full issue body via 'gh issue view' — so DO NOT (a) restate the issue's Description / Acceptance Criteria / Evidence here (context waste; symptom that the issue itself is under-specified), (b) reference any file path / repo / commit outside this MCP's scoped repo, (c) embed cross-repo guardrails ('do not touch repo X') which are redundant since the sub-agent has no access regardless. Legitimate uses: scope narrowing within this repo ('only the BPMN parser, not DMN'); retry context ('prior draft_pr errored host-side, re-execute from issue body'); operator clarification that arrived after filing. If the change depends on knowledge from a sibling repo, file that prerequisite as a separate issue against the sibling's own triagent-git-<alias> MCP and link via cross_repo_refs — do not paper over the dependency in extra_prompt."`
 	BaseRef     string `json:"base_ref,omitempty" jsonschema:"git ref the PR targets (default 'main')"`
 }
 
@@ -142,7 +142,7 @@ func (s *Server) draftPR(ctx context.Context, _ *mcp.CallToolRequest, in draftPR
 	defer cancel()
 
 	parentID := telemetry.CurrentToolID(ctx)
-	prompt := buildDraftPRPrompt(s.repoFull(), in.IssueURL, baseRef, in.ExtraPrompt)
+	prompt := buildDraftPRPrompt(s.repoFull(), in.IssueURL, issueNum, baseRef, in.ExtraPrompt)
 	out.PromptSent = prompt
 
 	// sessionID threads claude's conversation id across sub-agent calls.
@@ -366,7 +366,7 @@ func (s *Server) draftPR(ctx context.Context, _ *mcp.CallToolRequest, in draftPR
 		// something useful when the agent skipped the marker.
 		bodyContent = firstLine(cleanProse)
 	}
-	body := fmt.Sprintf("Fixes #%d.\n\n%s\n\n---\n🤖 Drafted by triagent-proposal.\n", issueNum, bodyContent)
+	body := fmt.Sprintf("%s\n\n---\n🤖 Drafted by triagent-proposal.\n", bodyContent)
 	prArgs := []string{
 		"pr", "create", "--draft",
 		"--repo", s.repoFull(),

@@ -209,9 +209,10 @@ Fixed the workflow typo on README.md line 212.
 // TestDraftPR_UsesStructuredTitleAndBodyMarkers asserts that when
 // the sub-agent emits <<<PR_TITLE>>> / <<<PR_BODY>>> markers, the
 // host uses them verbatim for the PR title (with "triagent-proposal: "
-// prepended) and PR body (with Fixes #N + trailer wrapped around)
-// — instead of falling back to the first line of conversational
-// prose.
+// prepended) and PR body (with the trailer appended) — instead of
+// falling back to the first line of conversational prose. The agent
+// owns the `Fixes #N` line inside the Description; the host does not
+// add it.
 func TestDraftPR_UsesStructuredTitleAndBodyMarkers(t *testing.T) {
 	t.Parallel()
 	cacheDir, repoDir := initFixtureRepo(t, "o", "n")
@@ -237,7 +238,7 @@ func TestDraftPR_UsesStructuredTitleAndBodyMarkers(t *testing.T) {
 			return subagent.Result{
 				Summary: withCitations("I'll fix the typo on line 238 — small README change.\n\n" +
 					"<<<PR_TITLE\nFix typo: rbase -> rebase in README\nPR_TITLE>>>\n\n" +
-					"<<<PR_BODY\nThe README at line 238 had \"rbase\"; replaced with \"rebase\". One-char fix.\nPR_BODY>>>"),
+					"<<<PR_BODY\n## Description\nFixes #42. The README at line 238 had \"rbase\"; replaced with \"rebase\". One-char fix.\nPR_BODY>>>"),
 			}, nil
 		},
 	}
@@ -248,7 +249,8 @@ func TestDraftPR_UsesStructuredTitleAndBodyMarkers(t *testing.T) {
 	require.NoError(t, err)
 
 	// Title must come from the marker, with `triagent-proposal: ` prepended.
-	// Body must wrap the marker content in `Fixes #N` + trailer.
+	// Body must carry the agent's marker content (including its own `Fixes #N`)
+	// with only the trailer appended by the host.
 	var titleArg, bodyArg string
 	for _, c := range stubGhInst.calls {
 		if len(c) >= 2 && c[0] == "pr" && c[1] == "create" {

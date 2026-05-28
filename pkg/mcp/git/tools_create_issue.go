@@ -14,7 +14,7 @@ import (
 
 type createIssueIn struct {
 	Title         string   `json:"title" jsonschema:"plain-English issue title — a human-readable sentence the reviewer reads in their inbox, not a slug. Under 70 chars. Example: 'Job timeout regression on the BPMN parser'."`
-	BodyMarkdown  string   `json:"body_markdown" jsonschema:"full issue body as markdown — citations rendered inline as links. See the tool description for the required body shape (Description / Why / What & Impact / Evidence / Out of scope)."`
+	BodyMarkdown  string   `json:"body_markdown" jsonschema:"full issue body as markdown — citations rendered inline as links. See the tool description for the required body shape (Description / Acceptance Criteria / Evidence / optional Out of scope)."`
 	Labels        []string `json:"labels,omitempty" jsonschema:"defaults to [\"triagent-proposal\"]; pass extra labels to add"`
 	IssueType     string   `json:"issue_type,omitempty" jsonschema:"GitHub Issue Type to assign (e.g. 'Bug', 'Feature'). Call list_issue_types first to see what's available on this repo — when issue_types.enabled=false, omit this field entirely."`
 	CrossRepoRefs []string `json:"cross_repo_refs,omitempty" jsonschema:"URLs of sibling issues filed in other linked repos for the same investigation"`

@@ -10,7 +10,7 @@ import (
 // baseRef. Skill use/exclude lists are explicit so the sub-agent's
 // using-superpowers bootstrap doesn't pull in worktree management or
 // branch-finishing skills (which the host already owns).
-func buildDraftPRPrompt(repoFull, issueURL, baseRef, extraPrompt string) string {
+func buildDraftPRPrompt(repoFull, issueURL string, issueNum int, baseRef, extraPrompt string) string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, `You are drafting a PR for the GitHub issue: %s
 Repository: %s
@@ -69,18 +69,18 @@ Do NOT invoke these skills even if they appear applicable:
 
 You MUST emit three labelled blocks at the end of your reply, in this order: PR_TITLE, PR_BODY, then CITATIONS. The host parses them out to construct the actual GitHub PR. The natural prose you write outside the blocks is what the operator sees in the chat-side summary card — keep it to one sentence describing what your commit changes (under 30 words).
 
-The PR title — single line, imperative mood, NO leading "triagent-proposal:" prefix (the host adds it). Under 70 chars. Describes the change, not your reasoning or your conversational framing. Good: ` + "`Fix typo: rbase → rebase in README`" + `. Bad: ` + "`I'll fix the typo on line 238`" + `.
+The PR title — single line, imperative mood, NO leading "triagent-proposal:" prefix (the host adds it). Under 70 chars. Describes the change, not your reasoning or your conversational framing. Good: `+"`Fix typo: rbase → rebase in README`"+`. Bad: `+"`I'll fix the typo on line 238`"+`.
 
 <<<PR_TITLE
 Fix typo: rbase → rebase in README
 PR_TITLE>>>
 
-The PR body — markdown, multi-line. Follow the body shape below. Keep it short for trivial changes; expand for substantive ones.
+The PR body — markdown, multi-line. Follow the body shape below. Keep it short for trivial changes; expand for substantive ones. The Description MUST open with `+"`Fixes #%d`"+` so GitHub links the PR back to the issue and auto-closes it on merge — the host no longer prepends this for you.
 
-` + prBodyShape + `
+`+prBodyShape+`
 <<<PR_BODY
 ## Description
-The README intro carried a typo where "rbase" should read "rebase". One-character fix.
+Fixes #%d. The README intro carried a typo where "rbase" should read "rebase". One-character fix.
 
 ## Changes
 - Corrected the misspelled "rbase" on line 238 of README.
@@ -96,7 +96,7 @@ Citations — every concrete claim in your prose marked [N], with the matching e
   {"kind":"github_file","repo":"%s","path":"<relpath>","ref":"HEAD","line_start":<n>,"line_end":<m>},
   {"kind":"github_pr","repo":"%s","pr_num":<n>}
 ]
-CITATIONS>>>`, repoFull, repoFull, repoFull)
+CITATIONS>>>`, issueNum, issueNum, repoFull, repoFull, repoFull)
 
 	return sb.String()
 }

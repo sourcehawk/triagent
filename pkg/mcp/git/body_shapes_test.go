@@ -12,15 +12,14 @@ func TestIssueBodyShape_Sections(t *testing.T) {
 	for _, want := range []string{
 		"BODY SHAPE — investigation-filed issue",
 		"## Description",
-		"## Why",
-		"## What & Impact",
+		"## Acceptance Criteria",
 		"## Evidence",
 		"## Out of scope",
-		"Impact:",
 		"Plain-English title",
 	} {
 		require.Containsf(t, issueBodyShape, want, "issueBodyShape missing %q", want)
 	}
+	require.NotContains(t, issueBodyShape, "## Why", "Why section should be folded into Description")
 }
 
 func TestPRBodyShape_Sections(t *testing.T) {
@@ -31,7 +30,7 @@ func TestPRBodyShape_Sections(t *testing.T) {
 		"## Changes",
 		"## Testing",
 		"## Challenges",
-		"Don't include `Fixes #N`",
+		"first token must be `Fixes #<num>`",
 	} {
 		require.Containsf(t, prBodyShape, want, "prBodyShape missing %q", want)
 	}
@@ -47,7 +46,7 @@ func TestBodyShapes_DontBleed(t *testing.T) {
 	for _, prOnly := range []string{"## Changes", "## Testing", "## Challenges"} {
 		require.Falsef(t, strings.Contains(issueBodyShape, prOnly), "issueBodyShape unexpectedly contains %q", prOnly)
 	}
-	for _, issueOnly := range []string{"## Why", "## What & Impact", "## Evidence", "## Out of scope"} {
+	for _, issueOnly := range []string{"## Acceptance Criteria", "## Evidence", "## Out of scope"} {
 		require.Falsef(t, strings.Contains(prBodyShape, issueOnly), "prBodyShape unexpectedly contains %q", issueOnly)
 	}
 }
