@@ -32,7 +32,12 @@ test-frontend:
 # fast `make test` loop; CI runs it only on PRs to main. The browser
 # package install is guarded — a no-op until #16 adds e2e/browser, so the
 # Go suite runs today without a package.json on disk.
-test-e2e:
+#
+# Depends on `frontend` so internal/web/dist/ holds the real Next.js bundle
+# before the harness `go build`s ./cmd/triagent and embeds it via
+# //go:embed all:dist. Without this the launcher serves a directory listing
+# instead of the SPA, and the Playwright browser test sees an empty page.
+test-e2e: frontend
 	@if [ -f e2e/browser/package.json ]; then cd e2e/browser && npm install; fi
 	go test -tags=e2e -count=1 ./e2e/...
 
