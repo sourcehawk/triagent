@@ -3,10 +3,15 @@
 package harness
 
 import (
+	"io"
+	"net/http"
+	"net/http/cookiejar"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -75,6 +80,7 @@ func ensureBrowsersInstalled(dir string) error {
 // TRIAGENT_* env the helpers read.
 func (b *Browser) Run(t *testing.T, spec string) {
 	t.Helper()
+	b.assertSPAServed(t)
 	dir := browserDir()
 	if err := ensureBrowsersInstalled(dir); err != nil {
 		t.Fatalf("harness: %v", err)
@@ -96,6 +102,42 @@ func (b *Browser) Run(t *testing.T, spec string) {
 	}
 	if err != nil {
 		t.Fatalf("harness: playwright test %s failed: %v", spec, err)
+	}
+}
+
+// assertSPAServed fails the test loudly if the launcher's root serves
+// something other than the embedded Next.js bundle. With an unbuilt
+// internal/web/dist/ (only its tracked .gitkeep), //go:embed produces an
+// effectively empty FS and the launcher serves a directory listing — the
+// browser then sees no SPA and every getByTestId times out at zero, which
+// reads as a cryptic content assertion failure rather than a build problem.
+//
+// The Next static export's index.html always references /_next/ asset
+// paths; a directory listing never does. Probing for that marker turns the
+// failure mode into a one-line message that names the cause.
+//
+// The probe mirrors the browser's auth handshake: it hits /?token=<token>
+// with a cookie jar so the launcher's 303 token→cookie redirect resolves
+// to the SPA shell, exactly as gotoAuthed does in the Playwright helpers.
+func (b *Browser) assertSPAServed(t *testing.T) {
+	t.Helper()
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("harness: cookie jar: %v", err)
+	}
+	client := &http.Client{Jar: jar}
+	resp, err := client.Get(b.baseURL + "/?token=" + url.QueryEscape(b.token))
+	if err != nil {
+		t.Fatalf("harness: probe SPA root: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		t.Fatalf("harness: read SPA root: %v", err)
+	}
+	if !strings.Contains(string(body), "/_next/") {
+		t.Fatalf("harness: embedded frontend bundle missing — run `make frontend` " +
+			"(launcher root served no SPA; the browser test would silently see an empty page)")
 	}
 }
 
