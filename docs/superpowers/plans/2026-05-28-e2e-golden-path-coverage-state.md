@@ -23,9 +23,9 @@ status: consumer-wave
 | Issue                     | Branch                       | Worktree path                                            | PR (→ base)              | Status      |
 | ------------------------- | ---------------------------- | -------------------------------------------------------- | ------------------------ | ----------- |
 | sourcehawk/triagent#14    | e2e-harness-foundation       | (removed; merged)                                        | sourcehawk/triagent#20 → feature/e2e-golden-path-coverage | self-merged |
-| sourcehawk/triagent#15    | e2e-flow1-boot               | .claude/worktrees/e2e-golden-path-coverage--flow1        | → feature/e2e-golden-path-coverage | not-started |
-| sourcehawk/triagent#16    | e2e-flow2-investigation      | .claude/worktrees/e2e-golden-path-coverage--flow2        | → feature/e2e-golden-path-coverage | not-started |
-| sourcehawk/triagent#17    | e2e-flow2b-k8s               | .claude/worktrees/e2e-golden-path-coverage--flow2b       | → feature/e2e-golden-path-coverage | not-started |
+| sourcehawk/triagent#15    | e2e-flow1-boot               | .claude/worktrees/e2e-golden-path-coverage--flow1        | → feature/e2e-golden-path-coverage | dispatched  |
+| sourcehawk/triagent#16    | e2e-flow2-investigation      | .claude/worktrees/e2e-golden-path-coverage--flow2        | → feature/e2e-golden-path-coverage | dispatched  |
+| sourcehawk/triagent#17    | e2e-flow2b-k8s               | .claude/worktrees/e2e-golden-path-coverage--flow2b       | → feature/e2e-golden-path-coverage | dispatched  |
 | sourcehawk/triagent#18    | e2e-flows34-editors          | .claude/worktrees/e2e-golden-path-coverage--editors      | → feature/e2e-golden-path-coverage | not-started |
 | sourcehawk/triagent#19    | e2e-flow5-repos              | .claude/worktrees/e2e-golden-path-coverage--repos        | → feature/e2e-golden-path-coverage | not-started |
 
@@ -43,6 +43,7 @@ status: consumer-wave
 
 ## Bubble-up log
 
+- **2026-05-28 — wave 2 dispatched (#15/#16/#17).** Three sub-worktrees created off `feature/e2e-golden-path-coverage` (`--flow1`/`--flow2`/`--flow2b` on branches `e2e-flow1-boot`/`e2e-flow2-investigation`/`e2e-flow2b-k8s`). Dispatch prompts carry the locked harness contract grounded against the merged #14 code (real signatures, not the plan's idealization): `Options{Profile, SessionFixtures, PlaybookFixtures, WikiFixtures, RepoFixtures, K8s bool, K8sFixtures, StubScript, GhScript, Browser bool}`; `Harness{BaseURL, StateDir, Client, Browser}` + `Close`/`ReleaseSignal`/`StubTrace(t,role)→Trace{Argv,SystemPrompt,AllowedTools,MCPConfig,StdinEvents}`/`GhTrace(t)→{Invocations [][]string}`; `Client.Healthz(t)→(profile,version)`, `Get`/`PostJSON`, `OpenStream(t)→Stream` with `WaitForKind`/`WaitForEvent`; gh `responses.json` is `[{argv,stdout}]` argv-prefix match; stub `main.jsonl` is one `{"action":...}` per line; traces at `<state_dir>/traces/`, signals at `<state_dir>/signals/<name>`. Plus the six #14 refinements below.
 - **2026-05-28 — wave-1 checkpoint: intermittent race-suite flake (watch item).** `make test-go` FAILed once on the integrated feature branch, then passed 4 consecutive full `-race` runs; the failing run's output was truncated before naming a package. #14's changes are additive (`/healthz` + `--port`), so this reads as a pre-existing intermittent, not new drift. Resolution: not a blocker for wave 2; watch for recurrence — if it reproduces and points at e2e/#14 code, file a follow-up sub-issue. `make lint` 0 issues, `make test-e2e` green.
 - **2026-05-28 — #14 contract refinements (propagate to wave 2/3 dispatch prompts).** The foundation subagent locked these concrete details on top of the plan's Contracts table; consumers must use them verbatim:
   1. `triagent start` gained a real `--port` flag (`127.0.0.1:<port>`; `0` = random). Flow 1 (#15) asserts it exists.
