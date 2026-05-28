@@ -244,3 +244,25 @@ func TestPromClient_SeriesBoundedBody(t *testing.T) {
 	_, err := c.series(context.Background(), "foo", 200)
 	require.Error(t, err, "oversized response must trip the body cap")
 }
+
+// Regression: the per-series caps in runInstantQuery / runRangeQuery
+// only fire after decode. Without a body cap, a broad query could
+// allocate hundreds of MiB before the cap rejects it. doQuery now
+// routes through doJSONBounded with queryMaxBodyBytes.
+func TestPromClient_QueryBoundedBody(t *testing.T) {
+	t.Parallel()
+	// Stub returns a deliberately oversized query response (>queryMaxBodyBytes=8 MiB).
+	// Each row is ~150 bytes; 70000 rows ≈ 10 MiB — well over the cap.
+	stub := newStubProm(t, stubHandlers{
+		query: func(w http.ResponseWriter, r *http.Request) {
+			row := `{"metric":{"__name__":"x","pad":"` + strings.Repeat("a", 100) + `"},"value":[1700000000,"1"]}`
+			rows := strings.Repeat(row+",", 70000)
+			rows = strings.TrimSuffix(rows, ",")
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[` + rows + `]}}`))
+		},
+	})
+	c := newPromClient(stub.URL, "", "", http.DefaultClient)
+	_, err := c.query(context.Background(), "x", "")
+	require.Error(t, err, "oversized query response must trip the body cap before decode finishes")
+}

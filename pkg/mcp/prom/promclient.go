@@ -74,6 +74,16 @@ func (c *promClient) applyAuth(req *http.Request) {
 // 100 KiB.
 const seriesMaxBodyBytes = 1 * 1024 * 1024
 
+// queryMaxBodyBytes caps the response body for /api/v1/query and
+// /api/v1/query_range. The downstream series caps
+// (queryHardSeriesCap=50, rangeHardSeriesCap=25 × rangeHardPointsCap=200)
+// only fire after the JSON is materialized, so without a body cap a
+// broad query could still allocate hundreds of MiB before the cap
+// rejects it. 8 MiB clears the worst-case bounded response (25 series
+// × 200 points × ~150 bytes/sample plus labels) with comfortable
+// headroom while still tripping on a genuinely runaway query.
+const queryMaxBodyBytes = 8 * 1024 * 1024
+
 // doJSONBounded is like doJSON but caps the response body at maxBytes
 // (returns an error if Prom returns more). Used by /api/v1/series to
 // hold the line on bounded output even when an older Prom ignores the
@@ -167,7 +177,7 @@ func (c *promClient) doQuery(ctx context.Context, path string, q url.Values) (Qu
 		Status string          `json:"status"`
 		Data   json.RawMessage `json:"data"`
 	}
-	if err := c.doJSON(ctx, path, q, &raw); err != nil {
+	if err := c.doJSONBounded(ctx, path, q, &raw, queryMaxBodyBytes); err != nil {
 		return QueryResponse{}, err
 	}
 	if raw.Status != "success" {

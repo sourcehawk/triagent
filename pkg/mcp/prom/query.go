@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -136,6 +137,11 @@ func runRecentValue(ctx context.Context, snap *snapshot, metric string, labels m
 	if len(labels) == 0 {
 		return ValueResult{}, fmt.Errorf("labels required (non-empty) — prom_recent_value needs at least one label matcher to scope the lookup")
 	}
+	for k := range labels {
+		if !isValidLabelName(k) {
+			return ValueResult{}, fmt.Errorf("invalid label name %q — must match Prometheus label syntax [a-zA-Z_][a-zA-Z0-9_]*", k)
+		}
+	}
 	expr := metric + "{" + buildMatcherString(labels) + "}"
 	if err := checkScope(ctx, snap.client, snap.catalog, expr); err != nil {
 		return ValueResult{}, err
@@ -177,6 +183,17 @@ func buildMatcherString(labels map[string]string) string {
 		parts = append(parts, k+`="`+escapeMatcherValue(labels[k])+`"`)
 	}
 	return strings.Join(parts, ",")
+}
+
+// labelNameRE matches Prometheus's label-name grammar
+// (`[a-zA-Z_][a-zA-Z0-9_]*`). Used to gate caller-supplied keys before
+// they are spliced into PromQL — values are quote-escaped by
+// escapeMatcherValue, but keys live between commas and `=` with no
+// delimiter, so an unvalidated key can break out of the matcher block.
+var labelNameRE = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
+
+func isValidLabelName(name string) bool {
+	return labelNameRE.MatchString(name)
 }
 
 func escapeMatcherValue(s string) string {

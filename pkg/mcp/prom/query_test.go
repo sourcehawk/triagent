@@ -500,6 +500,28 @@ func TestQuery_VectorDropsNonFiniteRows(t *testing.T) {
 	require.NoError(t, marshalErr)
 }
 
+// Regression: label keys are concatenated raw into PromQL — values
+// are quote-escaped but keys live between commas and `=`. An attacker-
+// controlled key that breaks the matcher syntax would otherwise
+// inject arbitrary PromQL and bypass the catalog scope guard.
+func TestRecentValue_RejectsInvalidLabelKey(t *testing.T) {
+	t.Parallel()
+	cat := cardCatalog("foo", 5)
+	snap := &snapshot{client: newPromClient("http://stub", "", "", http.DefaultClient), catalog: cat}
+	cases := []map[string]string{
+		{`pod"} or vector(1) {dummy`: "x"},
+		{"123invalid": "x"},      // can't start with a digit
+		{"with-dash": "x"},       // dash isn't in [a-zA-Z0-9_]
+		{"with space": "x"},      // space isn't allowed
+		{"":            "x"},     // empty key
+	}
+	for _, labels := range cases {
+		_, err := runRecentValue(context.Background(), snap, "foo", labels)
+		require.Error(t, err, "labels=%v should reject", labels)
+		assert.Contains(t, err.Error(), "invalid label name")
+	}
+}
+
 func TestRecentValue_NonFiniteReturnsError(t *testing.T) {
 	t.Parallel()
 	stub := newStubProm(t, stubHandlers{
