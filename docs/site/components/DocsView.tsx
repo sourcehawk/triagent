@@ -54,6 +54,7 @@ function GitHubIcon({ className }: { className?: string }) {
 
 export function DocsView({ active, markdown }: Props) {
   const [activeSlug, setActiveSlug] = useState<string | null>(null);
+  const [collapsed, setCollapsed] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   // Outline is derived from the markdown body — same regex pass the
@@ -61,13 +62,16 @@ export function DocsView({ active, markdown }: Props) {
   // stay in lock-step.
   const outline = useMemo(() => extractOutline(markdown), [markdown]);
 
-  // Reset outline highlight + scroll position on section switch. The
-  // [section]/page.tsx file is a separate route per section so React
-  // remounts DocsView on each one — useState reseeds naturally — but
-  // explicit reset keeps the behaviour identical in dev (fast refresh
-  // can preserve state).
+  // Reset outline highlight, collapse state, and scroll position on
+  // section switch. The [section]/page.tsx file is a separate route
+  // per section so React remounts DocsView on each one — useState
+  // reseeds naturally — but explicit reset keeps the behaviour
+  // identical in dev (fast refresh can preserve state) and means the
+  // new active section opens expanded even if the operator collapsed
+  // the previous one.
   useEffect(() => {
     setActiveSlug(null);
+    setCollapsed(false);
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
   }, [active]);
 
@@ -141,6 +145,8 @@ export function DocsView({ active, markdown }: Props) {
                   active={isActive}
                   outline={isActive ? outline : []}
                   activeSlug={isActive ? activeSlug : null}
+                  collapsed={isActive && collapsed}
+                  onToggleCollapse={() => setCollapsed((c) => !c)}
                 />
               );
             })}
@@ -192,7 +198,11 @@ function TopBar() {
 
 // SectionGroup is one row of the docs nav: the section header (label
 // + subtitle, links to the dedicated route) with the inline outline
-// of H2/H3 headings rendered beneath when this is the active section.
+// of H2/H3 headings rendered beneath when this is the active section
+// and the operator hasn't collapsed it. The chevron on the active row
+// is a toggle button overlaid on the link's reserved chevron slot;
+// non-active rows keep a decorative chevron so the row stays a single
+// large click target for navigation.
 function SectionGroup({
   href,
   label,
@@ -200,6 +210,8 @@ function SectionGroup({
   active,
   outline,
   activeSlug,
+  collapsed,
+  onToggleCollapse,
 }: {
   href: string;
   label: string;
@@ -207,9 +219,12 @@ function SectionGroup({
   active: boolean;
   outline: Heading[];
   activeSlug: string | null;
+  collapsed: boolean;
+  onToggleCollapse: () => void;
 }) {
+  const showOutline = active && !collapsed;
   return (
-    <div className="flex flex-col">
+    <div className="relative flex flex-col">
       <Link
         href={href}
         aria-current={active ? "page" : undefined}
@@ -221,17 +236,42 @@ function SectionGroup({
         }
       >
         <div className="flex items-center gap-1.5">
-          <ChevronIcon
-            className={
-              "h-3 w-3 shrink-0 text-zinc-500 transition-transform " +
-              (active ? "rotate-90" : "")
-            }
-          />
+          {/* Spacer reserves the chevron's slot so the label and the
+              subtitle's pl-[18px] stay aligned. The chevron itself is
+              rendered as an overlay below — separate so the active
+              row's toggle button can intercept clicks without
+              swallowing the row's navigation. */}
+          <span className="h-3 w-3 shrink-0" aria-hidden />
           <div className="text-sm font-medium">{label}</div>
         </div>
         <div className="pl-[18px] text-xs text-zinc-500">{subtitle}</div>
       </Link>
-      {active && outline.length > 0 && (
+      {active ? (
+        <button
+          type="button"
+          onClick={onToggleCollapse}
+          aria-expanded={!collapsed}
+          aria-label={
+            collapsed ? `Show ${label} outline` : `Hide ${label} outline`
+          }
+          className="absolute left-1 top-2 flex h-5 w-5 items-center justify-center rounded text-zinc-500 transition hover:bg-zinc-700 hover:text-zinc-200"
+        >
+          <ChevronIcon
+            className={
+              "h-3 w-3 transition-transform " +
+              (showOutline ? "rotate-90" : "")
+            }
+          />
+        </button>
+      ) : (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute left-1 top-2 flex h-5 w-5 items-center justify-center text-zinc-500"
+        >
+          <ChevronIcon className="h-3 w-3" />
+        </span>
+      )}
+      {showOutline && outline.length > 0 && (
         <ul className="ml-3 mt-1 flex flex-col gap-0.5 border-l border-zinc-800 py-1 pl-1">
           {outline.map((h) => {
             const isActive = h.slug === activeSlug;

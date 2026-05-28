@@ -77,16 +77,18 @@ auth:
 #   https://github.com/sourcehawk/triagent/blob/main/internal/profile/profiles/default/profile.yaml
 ```
 
-The blocks above cover the 90% case. Three more advanced knobs the default already sets sensibly but you can
-override when needed: **`paths`** (per-machine filesystem layout, templated with `${XDG_CONFIG_HOME}` /
-`${PROFILE_NAME}` so switching profiles never mixes state), **`investigation_inputs`** (the preflight form fields
-and how each one projects into the agent's prompt parameter block), and **`slack.channel_prefix`** (filter applied
-to the Slack channel picker — e.g. `inc-` to hide non-incident channels). The canonical reference for all of them is
-the default profile's
+The blocks above cover the 90% case. A few more knobs the default already sets sensibly but you can override:
+**`paths`** (per-machine filesystem layout, templated with `${XDG_CONFIG_HOME}` / `${PROFILE_NAME}` so switching
+profiles never mixes state), **`slack.channel_prefix`** (filter applied to the Slack channel picker — e.g. `inc-`
+to hide non-incident channels), **`defaults.prometheus`** (in-cluster Prometheus coordinates; an empty `service`
+keeps the prom MCP detached), and **`defaults.auto`** (default new investigations to operator-agent mode).
+[Investigation inputs](#investigation-inputs), [namespace derivation](#namespace-derivation), and
+[model selection](#model-selection) get their own sections below. The canonical reference for every field is the
+default profile's
 [`profile.yaml`](https://github.com/sourcehawk/triagent/blob/main/internal/profile/profiles/default/profile.yaml)
-with a comment on every field.
+with a comment on every one.
 
-## Why fork
+## What a fork is for
 
 The default profile gives you a working agent, but a generic one. It walks the same playbooks and reads the
 cluster through the same MCPs every operator does, with platform-neutral prompts that don't know what your team
@@ -262,6 +264,112 @@ Missing-file is a hard error so typos surface at load time. The conventional `k8
 ```
 
 Fork the default file as a starting point and add entries for the CRDs the agent should be able to fetch by name.
+
+## Investigation inputs
+
+`investigation_inputs` is the preflight form schema. Each entry renders a UI control on the new-investigation
+page and declares how the captured value flows into the prompt parameter block the agent reads at session start.
+Order in YAML matches order in the form.
+
+```yaml
+investigation_inputs:
+  - id: notes                       # stable key; surfaces in error messages and as the values-map key.
+    label: Notes                    # form label.
+    type: textarea                  # text | url | textarea | cluster_id | slack_channel
+    optional: true                  # required fields fail preflight when empty.
+    placeholder: "Symptoms, alerts, what you've seen…"
+    hint: "Plain text; gets injected verbatim."
+    prompt_keys:
+      - { key: operator-notes, value: "{{.value}}", if: '{{ne .value ""}}' }
+```
+
+### Input types
+
+| Type            | Renders as                                          | Template ctx vars                  |
+| --------------- | --------------------------------------------------- | ---------------------------------- |
+| `text`          | single-line input                                   | `{{.value}}`                       |
+| `url`           | single-line input, light URL validation             | `{{.value}}`                       |
+| `textarea`      | multi-line textarea                                 | `{{.value}}`                       |
+| `cluster_id`    | cluster picker bound to detected kube contexts      | `{{.value}}`                       |
+| `slack_channel` | channel picker (filtered by `slack.channel_prefix`) | `{{.id}}`, `{{.name}}`, `{{.url}}` |
+
+Required (`optional: false`) inputs must be non-empty at preflight or the investigation refuses to start. For
+`slack_channel`, "non-empty" means at least one of `id` or `url` is set.
+
+### `prompt_keys`
+
+Each input projects into zero-or-more key/value lines in the agent's prompt parameter block via `prompt_keys`.
+The templates are Go `text/template`; the `.` context fields available depend on the input type (see table above).
+
+- `key` — emitted name in the prompt parameter block. Free-form; playbooks read these by name.
+- `value` — template producing the emitted value. Plain `{{.value}}` is the common case.
+- `if` — optional guard. The line is skipped when the rendered guard is empty or the literal string `false`
+  (Go's template renderer for boolean expressions). Use it to drop empty optional inputs from the prompt entirely
+  rather than emitting `key: ""`.
+
+The default's `slack_channel` shows the pattern for multi-output inputs:
+
+```yaml
+- id: slack_channel
+  type: slack_channel
+  optional: true
+  prompt_keys:
+    - { key: slack-channel-id,   value: "{{.id}}",   if: '{{ne .id ""}}' }
+    - { key: slack-channel-name, value: "{{.name}}", if: '{{ne .name ""}}' }
+    - { key: slack-channel-url,  value: "{{.url}}",  if: '{{and (eq .id "") (ne .url "")}}' }
+```
+
+The `id`/`name` pair is emitted whenever the channel resolved through Slack's API; the `url` line is the fallback
+for when the operator pasted a URL that didn't resolve to a channel id.
+
+### Overriding the form
+
+`investigation_inputs` merges wholesale: an override either inherits the entire default form (omit the key, or
+set it to `nil`) or replaces it (any non-nil list, including the empty `[]` to clear). There is no per-id merge.
+To keep the defaults and add a field, copy the default block in full and append your additions.
+
+## Namespace derivation
+
+`namespace_derivation`, when set, lets the launcher pre-compute namespace hint(s) from the alert payload and
+inject them into the session's system prompt at preflight, sparing the agent a `list_namespaces` call in the
+common case. Two shapes, mutually exclusive — `rules` wins when both are set.
+
+**Template form** — single string with `${field}` placeholders against the alert payload's flat string map:
+
+```yaml
+namespace_derivation:
+  template: "tenant-${tenant_id}"
+```
+
+Every placeholder must resolve to a non-empty value, or the hint is dropped entirely (a half-resolved hint is
+worse than no hint).
+
+**Rules form** — top-to-bottom; the first rule whose `when` predicate matches renders its `template`:
+
+```yaml
+namespace_derivation:
+  rules:
+    - when: "${kind} == 'tenant'"
+      template: "tenant-${tenant_id}"
+    - when: "${cluster_role} != ''"
+      template: "control-plane-${cluster_role}"
+```
+
+Supported `when` shapes are deliberately small: `${field} == 'literal'` and `${field} != ''`. Anything else
+silently doesn't match; compose multiple rules instead of inventing richer logic.
+
+## Model selection
+
+`models` picks the LLM model for the main investigation session and for sub-agent dispatches. Per-call overrides
+for specific sub-agent tools (e.g. `draft_pr`'s Sonnet-grade work) remain available; this block sets the defaults.
+
+```yaml
+models:
+  investigation: claude-sonnet-4-6         # main agent
+  subagent:      claude-haiku-4-5-20251001 # sub-agent dispatches
+```
+
+Both fields are optional; omitted fields fall back to the baked-in defaults shown above.
 
 ## Air-gapped mode
 
