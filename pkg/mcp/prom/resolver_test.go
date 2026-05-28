@@ -101,6 +101,67 @@ func TestResolver_NoOpWhenURLUnchanged(t *testing.T) {
 	assert.Equal(t, preNames, srv.snapshot.Load().catalog.names)
 }
 
+// Regression: refreshCatalog's Load-build-Store sequence can stomp a
+// snapshot a peer goroutine swapped in while we were building. Two
+// concurrent currentSnapshot calls that resolve to different URLs
+// would otherwise produce a snapshot whose endpoint/client point at
+// the *earlier* URL once the slower refresh finished last — silently
+// rolling back the active context after a switch_context. CAS in
+// refreshCatalog ensures the catalog only publishes when the
+// snapshot is still the one we captured at entry.
+func TestRefreshCatalog_DoesNotOverwriteConcurrentRebind(t *testing.T) {
+	t.Parallel()
+	release := make(chan struct{})
+	hit := make(chan struct{}, 1)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/label/__name__/values", func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case hit <- struct{}{}:
+		default:
+		}
+		<-release
+		_ = json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": []string{"slow_metric"}})
+	})
+	mux.HandleFunc("/api/v1/metadata", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": map[string]any{}})
+	})
+	slow := httptest.NewServer(mux)
+	t.Cleanup(slow.Close)
+
+	srv, err := New(Options{Endpoint: slow.URL})
+	require.NoError(t, err)
+
+	// Seed snap_A pointing at the slow upstream.
+	snapA := srv.snapshot.Load()
+	require.Equal(t, slow.URL, snapA.endpoint)
+
+	// Start refresh A in the background — it will block inside
+	// buildCatalog until we release the stub.
+	done := make(chan error, 1)
+	go func() { done <- srv.refreshCatalog(context.Background()) }()
+	<-hit // refresh A is now mid-buildCatalog
+
+	// Peer goroutine "B" swaps in a fresh snapshot for a different
+	// upstream. This is the exact shape currentSnapshot would Store
+	// on a rebind.
+	fast := promStubWithNames(t, []string{"fast_metric"})
+	snapB := &snapshot{
+		endpoint: fast.URL,
+		client:   newPromClient(fast.URL, "", "", http.DefaultClient),
+		catalog:  emptyCatalog(),
+	}
+	srv.snapshot.Store(snapB)
+
+	// Release refresh A. With the CAS, refresh A discovers the
+	// snapshot moved out from under it and abandons the publish.
+	close(release)
+	require.NoError(t, <-done)
+
+	got := srv.snapshot.Load()
+	assert.Same(t, snapB, got, "snapshot must remain the peer's swap; refresh A's stale catalog must not roll it back")
+	assert.Equal(t, fast.URL, got.endpoint)
+}
+
 func TestResolver_PropagatesResolverError(t *testing.T) {
 	t.Parallel()
 	resolver := resolverStub(t, resolverResponse{Status: http.StatusServiceUnavailable, Body: "no port-forward yet"}, "tok", nil)

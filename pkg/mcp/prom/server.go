@@ -207,6 +207,13 @@ func (s *Server) handleListMetrics(ctx context.Context, _ *mcp.CallToolRequest, 
 // refreshCatalog rebuilds the catalog from the current endpoint and
 // atomically swaps the snapshot so in-flight tool calls continue
 // against the old snapshot until they complete.
+//
+// CAS-guarded: if a peer goroutine swapped in a new snapshot (e.g.
+// currentSnapshot rebinding to a new resolver URL) while we were
+// inside buildCatalog, the publish is abandoned. Without the guard, a
+// slow refresh against the previous URL would Store back the older
+// endpoint+client and silently roll back the active context. The
+// peer's rebind path runs its own refresh — dropping ours is safe.
 func (s *Server) refreshCatalog(ctx context.Context) error {
 	snap := s.snapshot.Load()
 	if snap == nil {
@@ -216,10 +223,11 @@ func (s *Server) refreshCatalog(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	// Build a new snapshot pointing at the same client and store it
-	// wholesale; in-flight tool calls finish against the snapshot they
-	// captured at entry.
-	s.snapshot.Store(&snapshot{
+	// Only publish if the snapshot is still the one we captured at
+	// entry. A failed CAS means a concurrent rebind already moved the
+	// snapshot forward — our catalog was built against a stale client
+	// and would corrupt the new binding if we Stored it.
+	s.snapshot.CompareAndSwap(snap, &snapshot{
 		endpoint: snap.endpoint,
 		client:   snap.client,
 		catalog:  cat,
