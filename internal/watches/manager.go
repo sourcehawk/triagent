@@ -624,17 +624,43 @@ func (m *Manager) SpawnFromSignal(_ context.Context, watchID string, req SpawnFr
 	m.opts.Publisher.PublishSignalCreated(watchID, queued.ID, string(queued.Outcome), "", queued.ManuallyStarted)
 
 	m.mu.Lock()
+	if m.stopped {
+		// Stop won the race between the gate check and now. The queued
+		// row is already on disk and the per-watch Spawner cannot be
+		// constructed against a stopped manager (its Run would never
+		// start). Compensate with a failed mutation so the latest-row-
+		// per-id projection converges on a terminal outcome, then return
+		// ErrManagerStopped without leaving a half-registered spawner.
+		m.mu.Unlock()
+		failed := Signal{
+			ID:            signalID,
+			WatchID:       watchID,
+			CreatedAt:     time.Now().UTC(),
+			CitedItemIDs:  req.CitedItemIDs,
+			Outcome:       OutcomeFailed,
+			Clusters:      req.Clusters,
+			Briefing:      composedBriefing,
+			AutoMode:      req.AutoMode,
+			SlackChannel:  req.SlackChannel,
+			IncidentioURL: req.IncidentioURL,
+			Repos:         req.Repos,
+			ErrorMessage:  "manager stopped during enqueue",
+		}
+		if appendErr := AppendSignal(filepath.Join(dir, "signals.jsonl"), failed); appendErr != nil {
+			return "", "", appendErr
+		}
+		m.opts.Publisher.PublishSignalCreated(watchID, failed.ID, string(failed.Outcome), "", failed.ManuallyStarted)
+		return "", "", ErrManagerStopped
+	}
 	sp, ok := m.spawners[watchID]
 	if !ok {
 		sp = NewSpawner(dir, watchID, maxOne(w.AutoStart.MaxConcurrent), m.makeSpawnerCreate(watchID), m.spawnerOptions()...)
 		m.spawners[watchID] = sp
-		if !m.stopped {
-			m.spawnerWG.Add(1)
-			go func() {
-				defer m.spawnerWG.Done()
-				sp.Run(m.ctx)
-			}()
-		}
+		m.spawnerWG.Add(1)
+		go func() {
+			defer m.spawnerWG.Done()
+			sp.Run(m.ctx)
+		}()
 	}
 	m.mu.Unlock()
 

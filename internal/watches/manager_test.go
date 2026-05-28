@@ -515,10 +515,12 @@ func TestAutoStart_RetriesPersistAcrossRestart(t *testing.T) {
 
 // TestManager_StopWaitsForInFlightSpawnFromSignal verifies that Stop
 // blocks until any SpawnFromSignal that already passed the initial
-// stopped check has finished writing its signal row and registering with
-// the per-watch Spawner. Without this, a TOCTOU window between the early
-// check and the later disk write + sp.Enqueue would let post-shutdown
-// work slip through against a manager whose context is already cancelled.
+// stopped check has finished writing its signal row. If Stop won the
+// race while the mutator was blocked in AppendSignal, the mutator must
+// compensate the queued row with a failed-signal mutation, skip the
+// spawner creation entirely, and return ErrManagerStopped — so no
+// half-registered spawner is left in m.spawners and the audit log on
+// disk converges on the terminal "failed" outcome.
 func TestManager_StopWaitsForInFlightSpawnFromSignal(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -594,11 +596,33 @@ func TestManager_StopWaitsForInFlightSpawnFromSignal(t *testing.T) {
 	}
 	select {
 	case err := <-spawnDone:
-		if err != nil {
-			t.Fatalf("SpawnFromSignal returned error: %v", err)
+		if !errors.Is(err, ErrManagerStopped) {
+			t.Fatalf("SpawnFromSignal returned err = %v, want ErrManagerStopped", err)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatalf("SpawnFromSignal did not complete")
+	}
+
+	// The signal must end on a terminal Failed outcome — the queued row
+	// was already on disk when Stop won the race, and the compensation
+	// path appends a Failed mutation so the latest-row-per-id projection
+	// converges instead of leaving a dangling "queued" entry that the
+	// orphan-recovery sweep would otherwise resume on next boot.
+	sigs, err := ReadSignals(signalsPath, ReadOpts{Limit: 10})
+	if err != nil {
+		t.Fatalf("ReadSignals: %v", err)
+	}
+	if len(sigs) != 1 || sigs[0].Outcome != OutcomeFailed {
+		t.Fatalf("expected projected signal Failed; got %+v", sigs)
+	}
+
+	// And no half-created spawner should be left dangling in the
+	// in-memory map — the compensation path aborts before spawner setup.
+	mgr.mu.RLock()
+	leftover := len(mgr.spawners)
+	mgr.mu.RUnlock()
+	if leftover != 0 {
+		t.Fatalf("expected no spawners after stop-compensated mutator; got %d", leftover)
 	}
 }
 
