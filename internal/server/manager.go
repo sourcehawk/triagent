@@ -617,7 +617,6 @@ func (i *Investigation) drain(events <-chan claude.Event) {
 	interrupted := i.interrupted
 	i.interrupted = false
 	i.turnCancel = nil
-	i.streaming = false
 	i.mu.Unlock()
 	if interrupted {
 		// Audit-trail breadcrumb so reviewers can see this turn ended
@@ -632,6 +631,12 @@ func (i *Investigation) drain(events <-chan claude.Event) {
 		})
 	}
 	i.publish(EventEnvelope{Kind: envKindEnd})
+	// streaming flips false last so observers polling on `!streaming`
+	// (production and tests both do) see the full transcript — including
+	// the breadcrumb and end envelopes — by the time the flag clears.
+	i.mu.Lock()
+	i.streaming = false
+	i.mu.Unlock()
 }
 
 // publish appends env to the backlog, stamps it with the next seq +
