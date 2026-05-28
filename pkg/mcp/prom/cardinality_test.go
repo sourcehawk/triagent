@@ -90,6 +90,26 @@ func TestCardinality_ZeroSeriesCachedAndNotReprobed(t *testing.T) {
 	assert.Equal(t, int32(1), calls.Load(), "zero-series cardinality must be cached, not re-probed")
 }
 
+// When the probe fails, the error must say it was a cardinality probe
+// for a specific metric — not a bare upstream URL. Without this the
+// agent can't tell which of its tool calls actually failed.
+func TestCardinality_ProbeErrorWrapsContext(t *testing.T) {
+	t.Parallel()
+	stub := newStubProm(t, stubHandlers{
+		series: func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusGatewayTimeout)
+			_, _ = w.Write([]byte("upstream timed out"))
+		},
+	})
+	c := newPromClient(stub.URL, "", "", http.DefaultClient)
+	cat := emptyCatalog()
+	cat.names = []string{"zeebe_broker_health_nodes"}
+	_, err := cardinalityOf(context.Background(), c, cat, "zeebe_broker_health_nodes")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cardinality probe", "phase must appear in the error")
+	assert.Contains(t, err.Error(), "zeebe_broker_health_nodes", "metric must appear in the error")
+}
+
 func TestCardinality_LowCardFillsLabelsCache(t *testing.T) {
 	t.Parallel()
 	stub := newStubProm(t, stubHandlers{

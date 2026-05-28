@@ -2,6 +2,7 @@ package prom
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"strings"
 )
@@ -29,7 +30,7 @@ const (
 func probeAndCache(ctx context.Context, c *promClient, cat *catalog, name string) (labelProfile, error) {
 	rows, err := c.series(ctx, name, cardProbeLimit)
 	if err != nil {
-		return labelProfile{}, err
+		return labelProfile{}, fmt.Errorf("cardinality probe for %q: %w", name, err)
 	}
 	truncated := len(rows) >= cardProbeLimit
 	prof := buildLabelProfile(rows, cat, name)

@@ -118,6 +118,12 @@ func (c *promClient) doJSONBounded(ctx context.Context, path string, q url.Value
 // response shape is {"status":"success","data":[{label:value, ...}, ...]}.
 // Returns the raw label maps so callers can both count and read sample
 // values without a second round-trip.
+//
+// Errors are wrapped with the matcher so the agent sees "series probe
+// for X failed: ..." instead of a bare upstream URL — the camunda
+// session showed that without context the agent invents a plausible
+// but wrong diagnosis (schema bug, null samples) for what was really
+// just an upstream timeout.
 func (c *promClient) series(ctx context.Context, matchExpr string, limit int) ([]map[string]string, error) {
 	q := url.Values{}
 	q.Set("match[]", matchExpr)
@@ -129,10 +135,10 @@ func (c *promClient) series(ctx context.Context, matchExpr string, limit int) ([
 		Data   []map[string]string `json:"data"`
 	}
 	if err := c.doJSONBounded(ctx, "/api/v1/series", q, &resp, seriesMaxBodyBytes); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("series probe for %q: %w", matchExpr, err)
 	}
 	if resp.Status != "success" {
-		return nil, fmt.Errorf("prom series: status=%q", resp.Status)
+		return nil, fmt.Errorf("series probe for %q: status=%q", matchExpr, resp.Status)
 	}
 	return resp.Data, nil
 }
@@ -192,7 +198,11 @@ func (c *promClient) query(ctx context.Context, expr, atTime string) (QueryRespo
 	if atTime != "" {
 		q.Set("time", atTime)
 	}
-	return c.doQuery(ctx, "/api/v1/query", q)
+	resp, err := c.doQuery(ctx, "/api/v1/query", q)
+	if err != nil {
+		return QueryResponse{}, fmt.Errorf("instant query %q: %w", expr, err)
+	}
+	return resp, nil
 }
 
 func (c *promClient) queryRange(ctx context.Context, expr, start, end, step string) (QueryResponse, error) {
@@ -201,7 +211,11 @@ func (c *promClient) queryRange(ctx context.Context, expr, start, end, step stri
 	q.Set("start", start)
 	q.Set("end", end)
 	q.Set("step", step)
-	return c.doQuery(ctx, "/api/v1/query_range", q)
+	resp, err := c.doQuery(ctx, "/api/v1/query_range", q)
+	if err != nil {
+		return QueryResponse{}, fmt.Errorf("range query %q: %w", expr, err)
+	}
+	return resp, nil
 }
 
 // decodeQueryData splits the polymorphic /api/v1/query data envelope

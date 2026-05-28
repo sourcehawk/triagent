@@ -52,6 +52,56 @@ func writeJSON(t *testing.T, w http.ResponseWriter, v any) {
 	require.NoError(t, json.NewEncoder(w).Encode(v))
 }
 
+// Upstream HTTP failures must carry enough context to identify the
+// operation that triggered them. A bare "context deadline exceeded"
+// or "127.0.0.1:N/api/v1/series" leaves the agent guessing what
+// failed; the camunda session showed that turns into a fabricated
+// schema-bug diagnosis.
+func TestPromClient_SeriesErrorWrapsOperationAndMatcher(t *testing.T) {
+	t.Parallel()
+	stub := newStubProm(t, stubHandlers{
+		series: func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte("upstream unavailable"))
+		},
+	})
+	c := newPromClient(stub.URL, "", "", http.DefaultClient)
+	_, err := c.series(context.Background(), "zeebe_broker_health_nodes", 200)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "series probe", "operation name must appear in the error")
+	assert.Contains(t, err.Error(), "zeebe_broker_health_nodes", "matcher must appear in the error")
+}
+
+func TestPromClient_QueryErrorWrapsOperationAndExpr(t *testing.T) {
+	t.Parallel()
+	stub := newStubProm(t, stubHandlers{
+		query: func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusBadGateway)
+			_, _ = w.Write([]byte("bad gateway"))
+		},
+	})
+	c := newPromClient(stub.URL, "", "", http.DefaultClient)
+	_, err := c.query(context.Background(), `topk(5, zeebe_broker_health_nodes)`, "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "instant query", "operation name must appear in the error")
+	assert.Contains(t, err.Error(), "zeebe_broker_health_nodes", "expression must appear in the error")
+}
+
+func TestPromClient_QueryRangeErrorWrapsOperationAndExpr(t *testing.T) {
+	t.Parallel()
+	stub := newStubProm(t, stubHandlers{
+		queryRange: func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusBadGateway)
+			_, _ = w.Write([]byte("bad gateway"))
+		},
+	})
+	c := newPromClient(stub.URL, "", "", http.DefaultClient)
+	_, err := c.queryRange(context.Background(), `rate(zeebe_messages_total[5m])`, "0", "60", "10s")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "range query", "operation name must appear in the error")
+	assert.Contains(t, err.Error(), "zeebe_messages_total", "expression must appear in the error")
+}
+
 func TestPromClient_LabelNames(t *testing.T) {
 	t.Parallel()
 	stub := newStubProm(t, stubHandlers{
