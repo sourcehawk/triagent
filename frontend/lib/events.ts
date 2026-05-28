@@ -197,6 +197,20 @@ export function isDraftPrToolName(name: string): boolean {
   return name.startsWith("mcp__triagent-git-") && name.endsWith(DRAFT_PR_TOOL_NAME_SUFFIX);
 }
 
+// Wire-format suffix of the per-repo create_github_issue tool. Like
+// draft_pr, the full name varies per linked repo
+// (mcp__triagent-git-<alias>__create_github_issue). Mirrors the backend
+// isCreateGithubIssueToolName helper in
+// internal/server/handlers_codefix.go.
+export const CREATE_GITHUB_ISSUE_TOOL_NAME_SUFFIX = "__create_github_issue";
+
+export function isCreateGithubIssueToolName(name: string): boolean {
+  return (
+    name.startsWith("mcp__triagent-git-") &&
+    name.endsWith(CREATE_GITHUB_ISSUE_TOOL_NAME_SUFFIX)
+  );
+}
+
 // CodefixProposalPayload is the JSON shape the launcher emits on
 // GET /api/codefix-proposals/{id} and the result body of a draft_pr
 // tool call. The CodefixProposalCard renders this directly.

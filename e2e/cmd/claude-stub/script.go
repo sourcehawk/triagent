@@ -86,13 +86,6 @@ func loadScript(path string) ([]action, error) {
 // so the launcher can capture it and pass --resume on the next turn.
 const stubSessionID = "claude-stub-session"
 
-// replay runs the action loop with no telemetry poster — proposal actions
-// degrade to stream-only. Kept as the simple entry point for unit tests
-// that never configure telemetry.
-func replay(actions []action, in *bufio.Reader, out *bufio.Writer, tr *trace) (int, error) {
-	return replayWith(actions, in, out, tr, nil)
-}
-
 // replayWith runs the action loop. It returns the scripted exit code (0
 // unless an "exit" action sets otherwise). out is flushed by the caller.
 // When p is non-nil, "proposal" actions POST a start/end tool-event

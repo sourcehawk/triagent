@@ -35,7 +35,7 @@ func TestReplay_WaitForSignalBlocksUntilFileAppears(t *testing.T) {
 
 	done := make(chan int, 1)
 	go func() {
-		code, err := replay(actions, in, out, tr)
+		code, err := replayWith(actions, in, out, tr, nil)
 		if err != nil {
 			t.Errorf("replay: %v", err)
 		}
@@ -78,7 +78,7 @@ func TestReplay_ExpectActionsRecordStdin(t *testing.T) {
 	out := bufio.NewWriter(&outBuf)
 	in := bufio.NewReader(strings.NewReader("")) // immediate EOF
 
-	if _, err := replay(actions, in, out, tr); err != nil {
+	if _, err := replayWith(actions, in, out, tr, nil); err != nil {
 		t.Fatalf("replay: %v", err)
 	}
 	if !strings.Contains(traceBuf.String(), `"event":"stdin"`) {

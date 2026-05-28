@@ -106,9 +106,6 @@ func Launch(t *testing.T, opts Options) *Harness {
 		Client:   newClient(baseURL),
 		proc:     proc,
 	}
-	if opts.Browser {
-		h.Browser = &Browser{baseURL: baseURL}
-	}
 
 	t.Cleanup(func() {
 		if t.Failed() {
@@ -123,7 +120,11 @@ func Launch(t *testing.T, opts Options) *Harness {
 	}
 	// The launcher logs its token alongside the URL once it's up; capture
 	// it so authenticated /api/* calls work for wave-2 consumers.
-	h.Client.setToken(proc.token())
+	token := proc.token()
+	h.Client.setToken(token)
+	if opts.Browser {
+		h.Browser = &Browser{baseURL: baseURL, token: token}
+	}
 	return h
 }
 
@@ -157,12 +158,4 @@ func freePort() (int, error) {
 	}
 	defer func() { _ = l.Close() }()
 	return l.Addr().(*net.TCPAddr).Port, nil
-}
-
-// Browser is the Playwright runner handle. The browser harness (config
-// overlay + Run) is realized by #16; this placeholder keeps the
-// Harness.Browser field type stable for consumers compiled against the
-// contract before that lands.
-type Browser struct {
-	baseURL string
 }
