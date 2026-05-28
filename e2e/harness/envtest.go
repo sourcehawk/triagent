@@ -125,13 +125,22 @@ func bootSharedEnv() (*rest.Config, error) {
 	return sharedEnvCfg, sharedEnvErr
 }
 
-// stopSharedEnv tears the shared cluster down. TestMain calls it after
-// m.Run(); a no-op when envtest was never booted (non-k8s runs pay nothing).
+// stopSharedEnv tears the shared cluster down after m.Run(); a no-op when
+// envtest was never booted (non-k8s runs pay nothing). The shared cluster is
+// booted in whichever test binary first runs a k8s launch, so each binary
+// that might boot it must stop it from its own TestMain: the harness package's
+// TestMain calls this directly, and the top-level e2e package's TestMain calls
+// the exported StopSharedEnv (the k8s flow lives in the e2e package, so its
+// apiserver+etcd would otherwise leak when that test process exits).
 func stopSharedEnv() {
 	if sharedEnv != nil {
 		_ = sharedEnv.Stop()
 	}
 }
+
+// StopSharedEnv is the exported teardown the top-level e2e package's TestMain
+// invokes after m.Run(). See stopSharedEnv for why both binaries need it.
+func StopSharedEnv() { stopSharedEnv() }
 
 // setupK8s boots the shared envtest (if needed), applies the requested fixture
 // manifests (which create their own namespaces), and writes a static

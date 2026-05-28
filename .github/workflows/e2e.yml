@@ -50,5 +50,16 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-envtest-
 
+      # Install the kubebuilder apiserver/etcd assets and export
+      # KUBEBUILDER_ASSETS so the k8s round-trip flow (Flow 2b) actually runs.
+      # Without this, a fresh runner (cache miss) has no assets, so the flow
+      # skips silently and Flow 2b is never exercised. setup-envtest writes
+      # into the cached path above, so a cache hit makes this near-free.
+      # Pinned to the controller-runtime release line the module depends on.
+      - name: Install envtest assets
+        run: |
+          go install sigs.k8s.io/controller-runtime/tools/setup-envtest@release-0.23
+          echo "KUBEBUILDER_ASSETS=$("$(go env GOPATH)/bin/setup-envtest" use -p path)" >> "$GITHUB_ENV"
+
       - name: Run e2e suite
         run: make test-e2e

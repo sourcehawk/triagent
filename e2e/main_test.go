@@ -7,10 +7,23 @@ package e2e
 
 import (
 	"net/http"
+	"os"
 	"testing"
 
 	"github.com/sourcehawk/triagent/e2e/harness"
 )
+
+// TestMain tears down the shared envtest cluster after this package's tests.
+// The k8s flow (investigation_k8s_test.go) boots envtest lazily inside this
+// package's test binary via a K8s harness.Launch; the harness package's own
+// TestMain only covers the harness binary, so without this teardown the
+// apiserver+etcd children would leak when the e2e test process exits. A no-op
+// unless a k8s test actually booted the shared env.
+func TestMain(m *testing.M) {
+	code := m.Run()
+	harness.StopSharedEnv()
+	os.Exit(code)
+}
 
 // TestSmoke_LauncherBootsAndHealthz boots the launcher with the minimal
 // fixture profile, asserts the /healthz contract, and confirms the launch
