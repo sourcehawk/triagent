@@ -18,6 +18,7 @@ import { labelFor } from "@/lib/sidebar-label";
 import { relativeTime } from "@/lib/relative-time";
 import { formatCostUSD, formatTokens, totalTokens } from "@/lib/usage";
 import {
+  isCreateGithubIssueToolName,
   isDraftPrToolName,
   PROPOSE_PLAYBOOK_DRAFT_TOOL_NAME,
   PROPOSE_WIKI_DRAFT_TOOL_NAME,
@@ -637,7 +638,7 @@ export function SessionView({
         {items.length === 0 && (
           <Empty status={status} streamErr={streamErr} />
         )}
-        <ul className="space-y-3">
+        <ul className="space-y-3" data-testid="triagent-transcript-list">
           {items.map((item) => (
             <li key={item.id}>
               <TranscriptItemView
@@ -1545,7 +1546,11 @@ const TranscriptItemView = memo(function TranscriptItemView({
     case "auto_mode_divider":
       return <StateDivider payload={item.payload} />;
     case "assistant":
-      return <Markdown text={item.text} />;
+      return (
+        <div data-testid="triagent-assistant-message">
+          <Markdown text={item.text} />
+        </div>
+      );
     case "tool_call":
       // Auto-operator's own MCP tool calls (send_message / finish /
       // request_takeover) are hidden from the main transcript — they
@@ -1571,10 +1576,12 @@ const TranscriptItemView = memo(function TranscriptItemView({
           const payload = JSON.parse(item.result) as ProposalDraftPayload;
           if (payload && typeof payload.proposal_id === "string") {
             return (
-              <ProposalCard
-                payload={payload}
-                onSendRefinement={onSendRefinement}
-              />
+              <div data-testid="triagent-proposal-card" data-proposal-kind="playbook">
+                <ProposalCard
+                  payload={payload}
+                  onSendRefinement={onSendRefinement}
+                />
+              </div>
             );
           }
         } catch {
@@ -1591,12 +1598,14 @@ const TranscriptItemView = memo(function TranscriptItemView({
           const payload = JSON.parse(item.result) as WikiProposalPayload;
           if (payload && typeof payload.proposal_id === "string") {
             return (
-              <WikiProposalCard
-                payload={payload}
-                capabilities={capabilities ?? FALLBACK_CAPABILITIES}
-                onSendRefinement={onSendRefinement}
-                streaming={streaming}
-              />
+              <div data-testid="triagent-proposal-card" data-proposal-kind="wiki">
+                <WikiProposalCard
+                  payload={payload}
+                  capabilities={capabilities ?? FALLBACK_CAPABILITIES}
+                  onSendRefinement={onSendRefinement}
+                  streaming={streaming}
+                />
+              </div>
             );
           }
         } catch {
@@ -1611,11 +1620,33 @@ const TranscriptItemView = memo(function TranscriptItemView({
         try {
           const payload = JSON.parse(item.result) as CodefixProposalPayload;
           if (payload && typeof payload.proposal_id === "string") {
-            return <CodefixProposalCard payload={payload} />;
+            return (
+              <div data-testid="triagent-proposal-card" data-proposal-kind="codefix">
+                <CodefixProposalCard payload={payload} />
+              </div>
+            );
           }
         } catch {
           /* fall through to the raw tool card if the JSON is unparseable */
         }
+      }
+      // The create_github_issue tool result is an issue-only proposal —
+      // no dedicated card; it renders as the standard ToolCard. Tag it so
+      // the e2e transcript can locate it as the fourth proposal alongside
+      // the three dedicated cards.
+      if (isCreateGithubIssueToolName(item.name) && item.result) {
+        return (
+          <div data-testid="triagent-proposal-card" data-proposal-kind="github_issue">
+            <ToolCard
+              toolId={item.toolId}
+              name={item.name}
+              input={item.input}
+              result={item.result}
+              pending={item.result === undefined}
+              nested={item.children}
+            />
+          </div>
+        );
       }
       // The strategies summarize tool's result IS the formal
       // investigation summary. Render the verdict as an amber card and

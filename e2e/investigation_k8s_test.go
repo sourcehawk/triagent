@@ -37,7 +37,7 @@ func TestInvestigationK8s_RealMCPRoundTrip(t *testing.T) {
 
 	id := createInvestigation(t, h)
 	startSession(t, h, id)
-	waitForEnd(t, h, id, 60*time.Second)
+	waitForEndPolling(t, h, id, 60*time.Second)
 
 	// --- the two round-trips completed and returned the expected state ------
 	trace := h.StubTrace(t, "main")
@@ -98,27 +98,6 @@ func TestInvestigationK8s_RealMCPRoundTrip(t *testing.T) {
 	assertNoLiveK8sChild(t)
 }
 
-// createInvestigation POSTs /api/preflight with an empty-but-valid inputs map
-// and returns the new investigation id.
-func createInvestigation(t *testing.T, h *harness.Harness) string {
-	t.Helper()
-	body := map[string]any{"inputs": map[string]map[string]any{}}
-	status, raw := h.Client.PostJSON(t, "/api/preflight", body)
-	if status != 200 {
-		t.Fatalf("POST /api/preflight status %d: %s", status, raw)
-	}
-	var inv struct {
-		ID string `json:"id"`
-	}
-	if err := json.Unmarshal(raw, &inv); err != nil {
-		t.Fatalf("decode preflight response: %v (body %s)", err, raw)
-	}
-	if inv.ID == "" {
-		t.Fatalf("preflight returned empty investigation id: %s", raw)
-	}
-	return inv.ID
-}
-
 // startSession kicks off the claude turn for the investigation.
 func startSession(t *testing.T, h *harness.Harness, id string) {
 	t.Helper()
@@ -128,34 +107,13 @@ func startSession(t *testing.T, h *harness.Harness, id string) {
 	}
 }
 
-// transcriptEvent is the slice of an EventEnvelope this flow asserts on.
-type transcriptEvent struct {
-	Kind      string         `json:"kind"`
-	ToolName  string         `json:"toolName"`
-	ToolInput map[string]any `json:"toolInput"`
-}
-
-// fetchTranscript reads the investigation transcript.
-func fetchTranscript(t *testing.T, h *harness.Harness, id string) []transcriptEvent {
-	t.Helper()
-	status, raw := h.Client.Get(t, "/api/investigations/"+id+"/transcript")
-	if status != 200 {
-		t.Fatalf("GET transcript status %d: %s", status, raw)
-	}
-	var parsed struct {
-		Events []transcriptEvent `json:"events"`
-	}
-	if err := json.Unmarshal(raw, &parsed); err != nil {
-		t.Fatalf("decode transcript: %v (body %s)", err, raw)
-	}
-	return parsed.Events
-}
-
-// waitForEnd polls the transcript until an "end" envelope appears or timeout.
-// The end envelope is the launcher's signal that claude exited and the turn
-// drained — which only happens after all three round-trips completed, since
-// the stub emits end last.
-func waitForEnd(t *testing.T, h *harness.Harness, id string, timeout time.Duration) {
+// waitForEndPolling polls the transcript REST endpoint until an "end" envelope
+// appears or timeout. The end envelope is the launcher's signal that claude
+// exited and the turn drained — which only happens after all three round-trips
+// completed, since the stub emits end last. Distinct from the SSE-stream
+// waitForEnd in investigation_test.go: this flow holds no open Stream, so it
+// reads the transcript directly.
+func waitForEndPolling(t *testing.T, h *harness.Harness, id string, timeout time.Duration) {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
@@ -184,7 +142,7 @@ func toolCallsInOrder(t *testing.T, h *harness.Harness, id string) []recordedCal
 	var out []recordedCall
 	for _, e := range fetchTranscript(t, h, id) {
 		if e.Kind == "tool_use" {
-			out = append(out, recordedCall{name: e.ToolName, input: e.ToolInput})
+			out = append(out, recordedCall{name: e.ToolName, input: e.Input})
 		}
 	}
 	return out
