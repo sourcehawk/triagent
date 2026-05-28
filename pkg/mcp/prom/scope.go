@@ -109,7 +109,20 @@ func isIdentChar(c byte) bool {
 // callers building error messages don't need to re-read catalog state
 // (which would race against concurrent probes). When the metric is
 // below the scope-required threshold (and known), scope is not required.
+//
+// If the query already carries a non-__name__ label matcher, scope is
+// satisfied regardless of cardinality — return early without probing.
+// The probe is expensive on high-fanout upstreams (Thanos against a
+// thousands-of-series metric can take many seconds) and serves only
+// to decide whether scope is *required*. A query that already has
+// scope doesn't need that decision.
 func isScoped(ctx context.Context, c *promClient, cat *catalog, q string, after int, name string) (bool, int, error) {
+	if hasNonNameMatcher(q, after) {
+		cat.mu.Lock()
+		est := cat.cardEst[name] // zero when not yet probed; surfaced only for error-message context
+		cat.mu.Unlock()
+		return true, est, nil
+	}
 	cat.mu.Lock()
 	est, ok := cat.cardEst[name]
 	cat.mu.Unlock()
@@ -128,7 +141,7 @@ func isScoped(ctx context.Context, c *promClient, cat *catalog, q string, after 
 		return true, est, nil
 	}
 	// est == -1 (high-card sentinel) OR est >= threshold → require scope.
-	return hasNonNameMatcher(q, after), est, nil
+	return false, est, nil
 }
 
 // hasNonNameMatcher returns true if a `{...}` block immediately after

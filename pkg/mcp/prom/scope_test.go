@@ -56,6 +56,26 @@ func TestScope_AllowsLabelMatcherWithRegex(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// A query that already carries a non-__name__ matcher is scoped no
+// matter what the cardinality is. The probe is therefore unnecessary
+// — and on a high-fanout Thanos like the camunda dev cluster it can
+// take seconds, blowing the request budget before the actual query
+// runs. Skip it entirely when scope is already satisfied.
+func TestScope_AlreadyScopedSkipsProbe(t *testing.T) {
+	t.Parallel()
+	stub := newStubProm(t, stubHandlers{
+		series: func(w http.ResponseWriter, r *http.Request) {
+			t.Fatal("series probe must not run when query is already scoped")
+		},
+	})
+	c := newPromClient(stub.URL, "", "", http.DefaultClient)
+	cat := emptyCatalog()
+	cat.names = []string{"high_card_metric"}
+	// cardEst unset → without the short-circuit, the probe would fire.
+	err := checkScope(context.Background(), c, cat, `high_card_metric{namespace="x"}`)
+	require.NoError(t, err)
+}
+
 func TestScope_ProbesUnknownCardinality(t *testing.T) {
 	t.Parallel()
 	stub := newStubProm(t, stubHandlers{

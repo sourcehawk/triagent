@@ -16,7 +16,6 @@ import (
 	"fmt"
 	"net/http"
 	"sync/atomic"
-	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/sourcehawk/triagent/pkg/mcp/telemetry"
@@ -32,7 +31,11 @@ type Options struct {
 	Bearer string
 	// BasicAuth is an optional "user:pass". Mutually exclusive with Bearer.
 	BasicAuth string
-	// HTTPClient is optional; defaults to a http.Client with 10s timeout.
+	// HTTPClient is optional; defaults to a http.Client with no hard
+	// timeout. The per-request deadline comes from the caller's
+	// context — a fixed http.Client.Timeout would silently truncate
+	// slow probes on high-fanout upstreams (e.g. Thanos query against
+	// a metric with thousands of series).
 	HTTPClient *http.Client
 
 	// EndpointResolver, when non-empty, is a launcher / orchestrator
@@ -84,7 +87,7 @@ func New(opts Options) (*Server, error) {
 	}
 	httpClient := opts.HTTPClient
 	if httpClient == nil {
-		httpClient = &http.Client{Timeout: 10 * time.Second}
+		httpClient = &http.Client{}
 	}
 	impl := mcp.NewServer(&mcp.Implementation{
 		Name:    "triagent-mcp-prom",
