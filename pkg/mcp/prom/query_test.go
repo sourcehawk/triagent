@@ -212,6 +212,156 @@ func TestRecentValue_MultipleMatches(t *testing.T) {
 	assert.Contains(t, err.Error(), "multiple series matched")
 }
 
+// When a label value the user supplied is absent from the cached
+// labelsCache sample, that's the most likely reason the selector
+// returned zero rows. Calling it out gives the agent something to
+// correct rather than another round of guesses.
+func TestRecentValue_NoMatch_IdentifiesAbsentValueFromSample(t *testing.T) {
+	t.Parallel()
+	stub := newStubProm(t, stubHandlers{
+		query: func(w http.ResponseWriter, r *http.Request) {
+			// Empty vector → "no data" path.
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"status": "success",
+				"data":   map[string]any{"resultType": "vector", "result": []map[string]any{}},
+			})
+		},
+	})
+	cat := cardCatalog("zeebe_broker_health_nodes", 5)
+	// labelsCache pre-populated with the known sample. "namespace" has
+	// two observed values; the user's selector uses a third that is
+	// absent from the sample → that's the suspect.
+	cat.labelsCache["zeebe_broker_health_nodes"] = labelProfile{
+		labels: []labelInfo{
+			{Key: "namespace", Cardinality: 2, SampleValues: []string{"ns-a", "ns-b"}},
+			{Key: "pod", Cardinality: 1, SampleValues: []string{"zeebe-0"}},
+		},
+		totalCardinality: 2,
+	}
+	snap := &snapshot{client: newPromClient(stub.URL, "", "", http.DefaultClient), catalog: cat}
+	_, err := runRecentValue(context.Background(), snap, "zeebe_broker_health_nodes", map[string]string{
+		"namespace": "ns-missing",
+		"pod":       "zeebe-0",
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "namespace")
+	assert.Contains(t, err.Error(), "ns-missing")
+	assert.Contains(t, err.Error(), "known values")
+}
+
+// When the sample is truncated, an absent value isn't proof of
+// nonexistence — surface the suspicion as such instead of asserting
+// the value doesn't exist.
+func TestRecentValue_NoMatch_TruncatedSampleSoftensClaim(t *testing.T) {
+	t.Parallel()
+	stub := newStubProm(t, stubHandlers{
+		query: func(w http.ResponseWriter, r *http.Request) {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"status": "success",
+				"data":   map[string]any{"resultType": "vector", "result": []map[string]any{}},
+			})
+		},
+	})
+	cat := cardCatalog("huge", 5)
+	cat.labelsCache["huge"] = labelProfile{
+		labels: []labelInfo{
+			{Key: "namespace", Cardinality: 2, SampleValues: []string{"ns-a", "ns-b"}},
+		},
+		totalCardinality: cardProbeLimit,
+		truncated:        true,
+	}
+	snap := &snapshot{client: newPromClient(stub.URL, "", "", http.DefaultClient), catalog: cat}
+	_, err := runRecentValue(context.Background(), snap, "huge", map[string]string{"namespace": "ns-missing"})
+	require.Error(t, err)
+	// Softer phrasing when sample is truncated.
+	assert.Contains(t, err.Error(), "namespace")
+	assert.Contains(t, err.Error(), "ns-missing")
+	assert.Contains(t, err.Error(), "not in the 200-series sample")
+}
+
+// When all user-supplied values appear in the sample but the
+// combination still matches nothing, surface that the combination
+// (not any single label) is the issue.
+func TestRecentValue_NoMatch_AllValuesPresentSurfacesCombination(t *testing.T) {
+	t.Parallel()
+	stub := newStubProm(t, stubHandlers{
+		query: func(w http.ResponseWriter, r *http.Request) {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"status": "success",
+				"data":   map[string]any{"resultType": "vector", "result": []map[string]any{}},
+			})
+		},
+	})
+	cat := cardCatalog("foo", 5)
+	cat.labelsCache["foo"] = labelProfile{
+		labels: []labelInfo{
+			{Key: "namespace", Cardinality: 2, SampleValues: []string{"ns-a", "ns-b"}},
+			{Key: "pod", Cardinality: 2, SampleValues: []string{"zeebe-0", "zeebe-1"}},
+		},
+		totalCardinality: 2,
+	}
+	snap := &snapshot{client: newPromClient(stub.URL, "", "", http.DefaultClient), catalog: cat}
+	_, err := runRecentValue(context.Background(), snap, "foo", map[string]string{
+		"namespace": "ns-a",
+		"pod":       "zeebe-1",
+	})
+	require.Error(t, err)
+	// User's individual values exist; the combination is what fails.
+	assert.Contains(t, err.Error(), "combination")
+}
+
+// When no labelsCache entry exists yet, fall back to the bare "no data"
+// message rather than make claims we can't substantiate.
+func TestRecentValue_NoMatch_NoCacheFallback(t *testing.T) {
+	t.Parallel()
+	stub := newStubProm(t, stubHandlers{
+		query: func(w http.ResponseWriter, r *http.Request) {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"status": "success",
+				"data":   map[string]any{"resultType": "vector", "result": []map[string]any{}},
+			})
+		},
+	})
+	cat := cardCatalog("foo", 5) // no labelsCache entry
+	snap := &snapshot{client: newPromClient(stub.URL, "", "", http.DefaultClient), catalog: cat}
+	_, err := runRecentValue(context.Background(), snap, "foo", map[string]string{"k": "v"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no data")
+	assert.NotContains(t, err.Error(), "known values")
+}
+
+// On multi-match, look at the labels that vary across matched series
+// and surface them as narrowing candidates — the agent doesn't have to
+// re-fetch describe to guess.
+func TestRecentValue_MultiMatch_SurfacesVaryingLabels(t *testing.T) {
+	t.Parallel()
+	stub := newStubProm(t, stubHandlers{
+		query: func(w http.ResponseWriter, r *http.Request) {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"status": "success",
+				"data": map[string]any{
+					"resultType": "vector",
+					"result": []map[string]any{
+						{"metric": map[string]string{"pod": "zeebe-0", "partition": "1", "namespace": "x"}, "value": []any{1700000000, "0.1"}},
+						{"metric": map[string]string{"pod": "zeebe-0", "partition": "2", "namespace": "x"}, "value": []any{1700000000, "0.2"}},
+						{"metric": map[string]string{"pod": "zeebe-0", "partition": "3", "namespace": "x"}, "value": []any{1700000000, "0.3"}},
+					},
+				},
+			})
+		},
+	})
+	cat := cardCatalog("zeebe_partition_health", 5)
+	snap := &snapshot{client: newPromClient(stub.URL, "", "", http.DefaultClient), catalog: cat}
+	_, err := runRecentValue(context.Background(), snap, "zeebe_partition_health", map[string]string{"namespace": "x"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "multiple series matched")
+	assert.Contains(t, err.Error(), "3")
+	assert.Contains(t, err.Error(), "partition", "label that varies across matches must be named")
+	// pod and namespace are constant across the 3 matches — they wouldn't help narrow.
+	assert.NotContains(t, err.Error(), "narrow on pod")
+	assert.NotContains(t, err.Error(), "narrow on namespace")
+}
+
 func TestBuildMatcherString_Deterministic(t *testing.T) {
 	t.Parallel()
 	got := buildMatcherString(map[string]string{"b": "2", "a": "1"})

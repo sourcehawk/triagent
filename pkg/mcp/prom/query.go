@@ -155,7 +155,7 @@ func runRecentValue(ctx context.Context, snap *snapshot, metric string, labels m
 	}
 	switch len(res.Result) {
 	case 0:
-		return ValueResult{}, fmt.Errorf("no data — no series matches %q with the given labels", metric)
+		return ValueResult{}, noMatchError(snap.catalog, metric, labels)
 	case 1:
 		v, ts, err := parseSamplePair(res.Result[0].Value)
 		if err != nil {
@@ -166,8 +166,127 @@ func runRecentValue(ctx context.Context, snap *snapshot, metric string, labels m
 		}
 		return ValueResult{Value: v, Timestamp: ts}, nil
 	default:
-		return ValueResult{}, fmt.Errorf("multiple series matched (%d) — narrow the label set", len(res.Result))
+		return ValueResult{}, multiMatchError(metric, res.Result, labels)
 	}
+}
+
+// noMatchError consults the cached labelsCache sample to identify the
+// most likely cause of an empty match. When no sample is cached, falls
+// back to the bare "no data" form because the alternative — claims
+// derived from data we don't have — is worse than silence.
+func noMatchError(cat *catalog, metric string, userLabels map[string]string) error {
+	cat.mu.Lock()
+	prof, ok := cat.labelsCache[metric]
+	cat.mu.Unlock()
+	if !ok || len(prof.labels) == 0 {
+		return fmt.Errorf("no data — no series matches %q with the given labels", metric)
+	}
+	sample := map[string]map[string]struct{}{}
+	known := map[string][]string{}
+	for _, l := range prof.labels {
+		set := make(map[string]struct{}, len(l.SampleValues))
+		for _, v := range l.SampleValues {
+			set[v] = struct{}{}
+		}
+		sample[l.Key] = set
+		known[l.Key] = l.SampleValues
+	}
+	type absent struct {
+		key   string
+		value string
+		known []string
+	}
+	var absents []absent
+	for k, v := range userLabels {
+		set, seen := sample[k]
+		if !seen {
+			// Label key not observed in the sample at all — note it but
+			// don't claim absence of the value (the key may exist on
+			// series the sample didn't reach).
+			continue
+		}
+		if _, vSeen := set[v]; !vSeen {
+			absents = append(absents, absent{key: k, value: v, known: known[k]})
+		}
+	}
+	sort.Slice(absents, func(i, j int) bool { return absents[i].key < absents[j].key })
+	if len(absents) == 0 {
+		// Every user label value appeared individually in the sample,
+		// but the combination still matched nothing. That's the only
+		// remaining explanation we can offer without more probes.
+		return fmt.Errorf("no data — each label value exists individually in the sample, but no series carries this combination of %s; verify with prom_query: count(%s{...})", joinLabelKeys(userLabels), metric)
+	}
+	var parts []string
+	for _, a := range absents {
+		preview := a.known
+		if len(preview) > 5 {
+			preview = preview[:5]
+		}
+		if prof.truncated {
+			parts = append(parts, fmt.Sprintf("%s=%q not in the 200-series sample (sample values: %v) — may still exist; confirm with prom_query: count(%s{%s=%q})",
+				a.key, a.value, preview, metric, a.key, a.value))
+		} else {
+			parts = append(parts, fmt.Sprintf("%s=%q does not exist for this metric (known values: %v)",
+				a.key, a.value, preview))
+		}
+	}
+	return fmt.Errorf("no data — %s", strings.Join(parts, "; "))
+}
+
+// multiMatchError surfaces which labels distinguish the matched series
+// so the agent has a direct next step instead of re-fetching describe.
+func multiMatchError(metric string, results []SeriesResult, userLabels map[string]string) error {
+	varying := varyingLabels(results, userLabels)
+	if len(varying) == 0 {
+		return fmt.Errorf("multiple series matched (%d) — narrow the label set", len(results))
+	}
+	return fmt.Errorf("multiple series matched (%d) — narrow the label set; values vary across matches on: %s",
+		len(results), strings.Join(varying, ", "))
+}
+
+// varyingLabels returns the sorted list of label keys whose values
+// differ across at least two of the result series. Keys the user
+// already pinned are excluded — re-pinning them won't help.
+func varyingLabels(results []SeriesResult, userLabels map[string]string) []string {
+	if len(results) < 2 {
+		return nil
+	}
+	seen := map[string]map[string]struct{}{}
+	for _, r := range results {
+		for k, v := range r.Metric {
+			if k == "__name__" {
+				continue
+			}
+			if _, pinned := userLabels[k]; pinned {
+				continue
+			}
+			set, ok := seen[k]
+			if !ok {
+				set = map[string]struct{}{}
+				seen[k] = set
+			}
+			set[v] = struct{}{}
+		}
+	}
+	var out []string
+	for k, set := range seen {
+		if len(set) > 1 {
+			out = append(out, k)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// joinLabelKeys renders user labels in a deterministic key order for
+// error prose.
+func joinLabelKeys(labels map[string]string) string {
+	keys := make([]string, 0, len(labels))
+	for k := range labels {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return strings.Join(keys, ", ")
 }
 
 // buildMatcherString renders {k1="v1",k2="v2"} contents with deterministic
