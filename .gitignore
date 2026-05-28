@@ -28,12 +28,12 @@ vendor/
 # Node modules (each frontend has its own .gitignore too)
 node_modules
 
-# Local-only superpowers / claude harness state
+# Local-only superpowers / claude harness state. `.claude/skills/` is the
+# one exception — project-shared skills (e.g. opening-a-pull-request,
+# writing-github-issues) are checked in so every contributor gets them.
 .worktrees/
-docs/superpowers/plans/*
-docs/superpowers/spec/*
-docs/superpowers/design/*
-.claude/
+.claude/*
+!.claude/skills/
 .claire
 
 # Local testing profile

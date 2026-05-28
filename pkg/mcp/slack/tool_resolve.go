@@ -2,6 +2,7 @@ package slack
 
 import (
 	"context"
+	"errors"
 	"sort"
 	"strings"
 
@@ -34,6 +35,9 @@ func (s *Server) handleGetChannelID(ctx context.Context, _ *mcp.CallToolRequest,
 
 	channels, err := s.client.UsersConversations(ctx)
 	if err != nil {
+		if errors.Is(err, ErrMissingScope) {
+			return errorResult("slack token cannot enumerate joined channels: users.conversations requires the channels:read, groups:read, mpim:read and im:read scopes. If the operator already knows the channel id (e.g. from a slack URL like https://camunda.slack.com/archives/C055PP73FQQ), pass that id directly to the other slack tools instead of going through slack_get_channel_id."), getChannelIDOut{}, nil
+		}
 		return errorResult(err.Error()), getChannelIDOut{}, nil
 	}
 

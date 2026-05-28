@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -22,8 +23,9 @@ type DelegateFrame struct {
 }
 
 // Session is the per-investigation state the walker tracks. Persisted as
-// JSON to <session_dir>/strategy.json after every transition so the walker
-// can be restarted (e.g., across `--resume`) without losing context.
+// JSON to <session_dir>/strategy-<id>.json after every transition so every
+// walker session — including sibling top-level walks within the same
+// investigation — survives MCP restart (e.g., across `--resume`).
 type Session struct {
 	ID         string `json:"id"`
 	PlaybookID string `json:"playbook_id"`
@@ -62,36 +64,77 @@ type RecordedCall struct {
 // SessionDir may be empty — in that case the store skips persistence (useful
 // for tests and for one-shot invocations).
 type store struct {
-	mu         sync.Mutex
-	dir        string
-	byID       map[string]*Session
-	persistOne bool // when true, only one session at a time exists in dir; file is overwritten.
+	mu   sync.Mutex
+	dir  string
+	byID map[string]*Session
 }
 
 func newStore(dir string) *store {
 	s := &store{
-		dir:        dir,
-		byID:       make(map[string]*Session),
-		persistOne: dir != "",
+		dir:  dir,
+		byID: make(map[string]*Session),
 	}
 	s.loadFromDisk()
 	return s
 }
 
+// sessionFilePrefix and sessionFileSuffix bracket the per-session snapshot
+// filename. Kept in constants so loadFromDisk's glob and snapshot's join
+// stay aligned.
+const (
+	sessionFilePrefix = "strategy-"
+	sessionFileSuffix = ".json"
+)
+
 func (s *store) loadFromDisk() {
 	if s.dir == "" {
 		return
 	}
-	path := filepath.Join(s.dir, "strategy.json")
-	data, err := os.ReadFile(path)
+	// One-shot migration from the pre-per-session-file layout: a launcher
+	// that was mid-walk when it upgraded has a single `strategy.json` on
+	// disk under the active session dir. Read it, re-snapshot under the
+	// per-session filename, and remove the legacy file so the next restart
+	// sees only the new layout.
+	legacyPath := filepath.Join(s.dir, "strategy.json")
+	if data, err := os.ReadFile(legacyPath); err == nil {
+		var sess Session
+		if json.Unmarshal(data, &sess) == nil && sess.ID != "" {
+			s.byID[sess.ID] = &sess
+			if s.snapshot(&sess) == nil {
+				_ = os.Remove(legacyPath)
+			}
+		}
+	}
+	// Enumerate via os.ReadDir (not filepath.Glob) so a session dir whose
+	// path contains glob metacharacters (`[`, `*`, `?`) — legal in
+	// $TRIAGENT_MCP_SESSION_DIR — still finds every snapshot. Glob would
+	// either error or match the wrong directory once a `[` appears in the
+	// path, silently dropping every persisted session on restart.
+	entries, err := os.ReadDir(s.dir)
 	if err != nil {
-		return // no prior state; that's fine
+		return
 	}
-	var sess Session
-	if err := json.Unmarshal(data, &sess); err != nil {
-		return // corrupted; ignore rather than crash
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if !strings.HasPrefix(name, sessionFilePrefix) || !strings.HasSuffix(name, sessionFileSuffix) {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(s.dir, name))
+		if err != nil {
+			continue
+		}
+		var sess Session
+		if err := json.Unmarshal(data, &sess); err != nil {
+			continue // corrupted snapshot — skip rather than crash the MCP
+		}
+		if sess.ID == "" {
+			continue
+		}
+		s.byID[sess.ID] = &sess
 	}
-	s.byID[sess.ID] = &sess
 }
 
 func (s *store) snapshot(sess *Session) error {
@@ -101,7 +144,7 @@ func (s *store) snapshot(sess *Session) error {
 	if err := os.MkdirAll(s.dir, 0o755); err != nil {
 		return fmt.Errorf("mkdir %s: %w", s.dir, err)
 	}
-	path := filepath.Join(s.dir, "strategy.json")
+	path := filepath.Join(s.dir, sessionFilePrefix+sess.ID+sessionFileSuffix)
 	data, err := json.MarshalIndent(sess, "", "  ")
 	if err != nil {
 		return err
