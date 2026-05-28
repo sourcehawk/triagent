@@ -57,13 +57,6 @@ func (c *Client) PostJSON(t *testing.T, path string, body any) (int, []byte) {
 func (c *Client) do(t *testing.T, method, path string, body []byte) (int, []byte) {
 	t.Helper()
 	url := c.baseURL + path
-	if c.token != "" {
-		sep := "?"
-		if bytes.ContainsRune([]byte(path), '?') {
-			sep = "&"
-		}
-		url += sep + "token=" + c.token
-	}
 	var rdr io.Reader
 	if body != nil {
 		rdr = bytes.NewReader(body)
@@ -74,6 +67,15 @@ func (c *Client) do(t *testing.T, method, path string, body []byte) (int, []byte
 	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
+	}
+	// Present the launch token as the SPA cookie. The ?token= query path
+	// triggers a 303 redirect that sets the cookie and re-requests — which
+	// the net/http client follows by downgrading POST/PUT to GET (per the
+	// 303 spec), turning a mutating call into a 405. Sending the cookie the
+	// redirect would have set authenticates on the first request, no
+	// redirect, every verb preserved.
+	if c.token != "" {
+		req.AddCookie(&http.Cookie{Name: "triagent_token", Value: c.token})
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {

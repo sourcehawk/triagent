@@ -1,0 +1,14 @@
+// Flow 2 turn 1: the agent summarises, then stages the four proposal
+// round-trips in order — playbook, wiki, codefix (draft_pr), github issue
+// (create_github_issue, which also shells out to gh). Each "proposal"
+// action POSTs a start/end tool-event so the proposal lands in the
+// launcher transcript (the stream tool_use line alone is dropped).
+{"action":"record_args"}
+{"action":"record_prompt"}
+{"action":"emit","event":{"type":"assistant_message","text":"Root cause looks like the payments rollout. Staging four follow-ups for review."}}
+{"action":"proposal","name":"mcp__triagent-strategies__playbook_proposal_draft","input":{"playbook_id":"investigation"},"result":{"proposal_id":"prop-pb-flow2","playbook_id":"investigation","new_yaml":"id: investigation\nsteps:\n  - id: triage\n    advice: check the payments rollout first\n"}}
+{"action":"proposal","name":"mcp__triagent-wiki__propose_wiki_draft","input":{"slug":"payments-crashloop"},"result":{"kind":"wiki_proposal_draft","proposal_id":"prop-wiki-flow2","slug":"payments-crashloop","is_new":true,"new_md":"# Payments crash-loop\n\nThe payments rollout shipped a bad config and the pods crash-looped.\n"}}
+{"action":"proposal","name":"mcp__triagent-git-payments__draft_pr","input":{"issue_number":42},"result":{"proposal_id":"prop-cf-flow2","repo":"acme/payments","issue_url":"https://github.com/acme/payments/issues/42","issue_number":42,"pr_url":"https://github.com/acme/payments/pull/43","pr_number":43,"branch_name":"fix/payments-crashloop","summary":"Revert the bad payments config and add a regression test."}}
+{"action":"proposal","name":"mcp__triagent-git-payments__create_github_issue","gh":["issue","create","--repo","acme/payments","--title","Payments rollout config regression","--body","The last payments rollout shipped a config that crash-loops the pods."],"input":{"title":"Payments rollout config regression"},"result":{"proposal_id":"prop-issue-flow2","repo":"acme/payments","url":"https://github.com/acme/payments/issues/44","number":44}}
+{"action":"emit","event":{"type":"end"}}
+{"action":"exit","code":0}

@@ -52,7 +52,7 @@ func run(argv []string, stdin *os.File, stdout *os.File) error {
 		"resume":       flags.resume,
 	})
 
-	scriptPath, err := scriptFile()
+	scriptPath, err := scriptFile(flags.resume != "")
 	if err != nil {
 		return err
 	}
@@ -61,11 +61,18 @@ func run(argv []string, stdin *os.File, stdout *os.File) error {
 		return err
 	}
 
+	// Proposals reach the launcher's transcript through the internal
+	// tool-events endpoint, not claude's stdout stream. The telemetry
+	// triple the launcher would hand a real MCP server lives in the
+	// per-session mcp.json env blocks; extract it so proposal actions can
+	// POST. A config without telemetry yields a nil poster (stream-only).
+	p := posterFromMCPConfig(flags.mcpConfig)
+
 	in := bufio.NewReader(stdin)
 	out := bufio.NewWriter(stdout)
 	defer func() { _ = out.Flush() }()
 
-	code, err := replay(actions, in, out, tr)
+	code, err := replayWith(actions, in, out, tr, p)
 	if err != nil {
 		return err
 	}
@@ -167,12 +174,21 @@ func emptyMCPConfig(path string) bool {
 }
 
 // scriptFile resolves the JSONL script the stub replays. CLAUDE_STUB_SCRIPT
-// is the per-test directory under fixtures/stub-scripts/<test>/; the stub
-// reads main.jsonl from it.
-func scriptFile() (string, error) {
+// is the per-test directory under fixtures/stub-scripts/<test>/. The first
+// turn reads main.jsonl. A resumed turn (claude --resume, i.e. an operator
+// follow-up message) reads resume.jsonl when present, so a multi-turn
+// flow can script each turn independently; absent resume.jsonl falls back
+// to main.jsonl.
+func scriptFile(resumed bool) (string, error) {
 	dir := os.Getenv("CLAUDE_STUB_SCRIPT")
 	if dir == "" {
 		return "", fmt.Errorf("CLAUDE_STUB_SCRIPT is unset")
+	}
+	if resumed {
+		resume := filepath.Join(dir, "resume.jsonl")
+		if _, err := os.Stat(resume); err == nil {
+			return resume, nil
+		}
 	}
 	return filepath.Join(dir, "main.jsonl"), nil
 }

@@ -1,0 +1,7 @@
+// Flow 2 turn 2: the operator sent a follow-up message; the resumed
+// session answers with a single assistant turn and ends. Read instead of
+// main.jsonl because the launcher re-execs the stub with --resume.
+{"action":"record_args"}
+{"action":"emit","event":{"type":"assistant_message","text":"Confirmed: the regression is isolated to the payments config change. The PR above reverts it."}}
+{"action":"emit","event":{"type":"end"}}
+{"action":"exit","code":0}

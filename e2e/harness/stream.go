@@ -39,15 +39,19 @@ func (c *Client) OpenStream(t *testing.T) *Stream {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	url := c.baseURL + "/api/stream?conn=e2e-harness"
-	if c.token != "" {
-		url += "&token=" + c.token
-	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		cancel()
 		t.Fatalf("stream: build request: %v", err)
 	}
 	req.Header.Set("Accept", "text/event-stream")
+	// Carry the launch token as the SPA cookie rather than ?token=: the
+	// query-param path triggers a 303 redirect that sets the cookie and
+	// re-requests, but a bare SSE client doesn't follow that cleanly, so
+	// we present the cookie the redirect would have set directly.
+	if c.token != "" {
+		req.AddCookie(&http.Cookie{Name: "triagent_token", Value: c.token})
+	}
 
 	// A no-timeout client: the SSE body stays open until Close cancels ctx.
 	resp, err := (&http.Client{}).Do(req)
