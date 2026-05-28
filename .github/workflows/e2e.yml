@@ -61,5 +61,8 @@ jobs:
           go install sigs.k8s.io/controller-runtime/tools/setup-envtest@release-0.23
           echo "KUBEBUILDER_ASSETS=$("$(go env GOPATH)/bin/setup-envtest" use -p path)" >> "$GITHUB_ENV"
 
+      # -v so the logs show every RUN/PASS/SKIP line and the Playwright spec
+      # output — a silent skip (e.g. k8s when envtest assets are missing) is
+      # then visible instead of hiding inside a package-level `ok`.
       - name: Run e2e suite
-        run: make test-e2e
+        run: make test-e2e E2E_GOFLAGS=-v

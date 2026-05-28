@@ -37,9 +37,14 @@ test-frontend:
 # before the harness `go build`s ./cmd/triagent and embeds it via
 # //go:embed all:dist. Without this the launcher serves a directory listing
 # instead of the SPA, and the Playwright browser test sees an empty page.
+#
+# E2E_GOFLAGS is appended to `go test` — CI passes `-v` so the logs show every
+# RUN/PASS/SKIP line and the Playwright output (which the harness pipes via
+# t.Logf), making a silent skip (e.g. the k8s flow when envtest assets are
+# missing) visible instead of hiding inside a package-level `ok`.
 test-e2e: frontend
 	@if [ -f e2e/browser/package.json ]; then cd e2e/browser && npm install; fi
-	go test -tags=e2e -count=1 ./e2e/...
+	go test -tags=e2e -count=1 $(E2E_GOFLAGS) ./e2e/...
 
 lint:
 	golangci-lint run ./...
