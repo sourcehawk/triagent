@@ -35,11 +35,13 @@ update the state file's rows to match reality before continuing.
 
 ### 2. Decide: single-PR or multi-PR (feature-branch model)
 
-- **Single PR** → one worktree off main, one Claude session, one PR targeting main. Skip the feature-branch setup
-  and the integration-PR step at the end.
+- **Single PR** → one worktree on the `feature/<slug>` branch `planning-a-feature` created, one Claude session, one
+  PR from it targeting main. Skip the integration-PR step at the end.
 - **Multi-PR** → feature-branch model:
-  - The orchestrator first creates a `feature/<slug>` branch off main and a corresponding integration worktree at
-    `.claude/worktrees/<slug>` (recorded as `feature_branch` + `feature_worktree` in the state file's frontmatter).
+  - `planning-a-feature` already created `feature/<slug>` (off `origin/main`) and committed the spec + plan + state
+    file onto it. The orchestrator **reuses** that branch — it does not re-create it — attaching the integration
+    worktree at `.claude/worktrees/<slug>` (recorded as `feature_branch` + `feature_worktree` in the state file's
+    frontmatter).
   - Every sub-PR is a real GitHub PR targeting `feature/<slug>`, not main. Each sub-worktree is created off the
     feature branch with `git worktree add .claude/worktrees/<slug>--<sub-name> -b <sub-branch> feature/<slug>`
     (raw git is the simplest path here; `EnterWorktree` defaults to branching from origin/main).
@@ -71,29 +73,37 @@ the field is missing in an older state file: `autonomous` (preserves the origina
 
 ### 3. Set up the implementation environment
 
-- **Multi-PR (feature-branch model)** — create the long-lived feature branch and its main integration worktree.
-  Anchor the branch explicitly to `origin/main` so the orchestrator's current branch state can't accidentally seed
-  it:
+- **Multi-PR (feature-branch model)** — `feature/<slug>` already exists, created and pushed by `planning-a-feature`
+  and carrying the committed spec/plan/state. **Reuse it; never re-create it** off `origin/main` — that errors
+  (`fatal: a branch named 'feature/<slug>' already exists`) and would orphan the planning artifacts. If planning
+  already made the integration worktree at `.claude/worktrees/<slug>`, just `cd` into it. Otherwise attach one to the
+  existing branch:
 
   ```
-  git fetch origin main
-  git worktree add .claude/worktrees/<slug> -b feature/<slug> origin/main
+  git fetch origin
+  git switch main                                       # vacate feature/<slug> if planning left you on it
+  git worktree add .claude/worktrees/<slug> feature/<slug>
   cd .claude/worktrees/<slug>
-  git push -u origin feature/<slug>
   ```
 
-  Update the state file's `feature_branch` + `feature_worktree` frontmatter fields to point here. Sub-worktrees off
-  this branch are created later by `fanning-out-with-worktrees`.
+  (Fallback only if planning was skipped and `feature/<slug>` exists nowhere: `git worktree add
+  .claude/worktrees/<slug> -b feature/<slug> origin/main && git -C .claude/worktrees/<slug> push -u origin
+  feature/<slug>`.) Update the state file's `feature_branch` + `feature_worktree` frontmatter fields to point here.
+  Sub-worktrees off this branch are created later by `fanning-out-with-worktrees`.
 
-- **Single-PR** — create a working worktree off main. `EnterWorktree` (project's native worktree tool) defaults to
-  branching from `origin/<default-branch>`; if you fall back to raw git, anchor explicitly:
+- **Single-PR** — `planning-a-feature` created `feature/<slug>` and committed the planning artifacts onto it; this is
+  the only branch, and the PR opens from it. Reuse it the same way — if planning made a worktree, `cd` in; otherwise
+  attach one to the existing branch:
 
   ```
-  git fetch origin main
-  git worktree add .claude/worktrees/<slug> -b <single-branch> origin/main
+  git fetch origin
+  git switch main                                       # vacate feature/<slug> if planning left you on it
+  git worktree add .claude/worktrees/<slug> feature/<slug>
+  cd .claude/worktrees/<slug>
   ```
 
-  Skip the feature-branch setup; this is the only branch.
+  (Fallback if planning was skipped: `git worktree add .claude/worktrees/<slug> -b feature/<slug> origin/main`.)
+  Skip the integration-PR step at the end; this is the only PR.
 
 ### 4. Implement
 
@@ -126,7 +136,7 @@ the field is missing in an older state file: `autonomous` (preserves the origina
 
 **REQUIRED SUB-SKILL:** `opening-a-pull-request`. Base + body keyword depend on which model is in play:
 
-- **Single-PR feature** → PR targets `main`. Body opens with `Fixes #<feature-issue>` (bug) or
+- **Single-PR feature** → PR targets `main` from `feature/<slug>`. Body opens with `Fixes #<feature-issue>` (bug) or
   `Closes #<feature-issue>` (feature/task) so the issue auto-closes on merge.
 - **Multi-PR integration PR** → PR targets `main` from `feature/<slug>` (`gh pr create --base main --head
   feature/<slug>`). Body opens with `Closes #<epic>` so the epic auto-closes on merge. This is the PR external
@@ -165,3 +175,4 @@ pollutes the repo with stale operational state that future `grep`s have to wade 
 | "Tests pass, I'll skip make lint"                                    | Lint is a CI gate. Running it locally is the cheapest place to catch the failure.                      |
 | "The state file is for the planner, I don't need to update it during dev" | The state file is the resume contract. Every transition is your responsibility while dev is in flight. |
 | "I'll open the integration PR before the last sub-PR is self-merged" | The integration PR's diff is supposed to be the whole feature. An in-flight sub-PR means the integration PR will be re-pushed mid-review. Wait. |
+| "I'll create `feature/<slug>` off `origin/main` in step 3"           | Planning already created it and committed the spec/plan/state onto it. `-b feature/<slug>` errors ("already exists") and re-creating off `origin/main` orphans the planning artifacts. Reuse the existing branch; attach a worktree to it. |

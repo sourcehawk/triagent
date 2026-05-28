@@ -52,8 +52,29 @@ If the brainstorm surfaced an ADR-worthy decision, author the ADR at `docs/adrs/
 entry to the index in `docs/adrs/README.md`. Most features don't produce an ADR; if you're forcing one, the
 decision probably belongs in the spec instead.
 
-Both the spec and any ADR(s) are committed to git as source artifacts (`docs/superpowers/specs/` and `docs/adrs/`
-are not gitignored).
+Both the spec and any ADR(s) are tracked source artifacts (`docs/superpowers/specs/` and `docs/adrs/` are not
+gitignored) — but **never commit a planning artifact to `main`.** The feature owns its branch from birth. The branch
+name is the same whether the work ships as one PR or many (the step-4 PR-shape decision doesn't change it), so create
+it off `origin/main` before the first commit:
+
+```
+git fetch origin main
+git switch -c feature/<slug> origin/main
+```
+
+For a non-trivial (multi-PR) feature, run planning from a dedicated worktree on that branch instead, so the whole
+feature — planning docs included — lives in one isolated checkout:
+
+```
+git fetch origin main
+git worktree add .claude/worktrees/<slug> -b feature/<slug> origin/main
+cd .claude/worktrees/<slug>
+```
+
+Either way, stay on `feature/<slug>` for the rest of planning; every artifact commit lands there. Don't push yet —
+that happens at step 8, after the user approves the spec. `developing-a-feature` reuses this branch (and the
+worktree, if you created one); it never re-creates it off `origin/main`, and `main` receives the feature only through
+the integration/feature PR.
 
 ### 3. User reviews the spec (and any ADR)
 
@@ -144,12 +165,19 @@ The state file is scratch (same lifecycle as the plan): tracked in git so it sur
 machines, and deleted in the orchestrator's last commit once every sub-issue is closed and the feature has shipped.
 Update it as the work progresses — see `developing-a-feature` for the update choreography.
 
-Commit the spec, the plan, and the state file together as the planning artifact set.
+Commit the spec, the plan, and the state file together as the planning artifact set on `feature/<slug>` (created in
+step 2). Confirm you're not on `main`, then publish the branch so `developing-a-feature` can attach its integration
+worktree to it:
+
+```
+git branch --show-current        # must be feature/<slug>, never main
+git push -u origin feature/<slug>
+```
 
 ### 9. Hand off to implementation
 
-Spec + plan + state file committed, issues aligned, contracts written → invoke `developing-a-feature` to start the
-work. The state file is the entry-point artifact for every session that touches this feature afterward.
+Spec + plan + state file committed and pushed on `feature/<slug>`, issues aligned, contracts written → invoke
+`developing-a-feature` to start the work. The state file is the entry-point artifact for every session that touches this feature afterward.
 
 ## Anti-patterns
 
@@ -171,3 +199,4 @@ work. The state file is the entry-point artifact for every session that touches 
 | "Filing issues is busywork, I'll just start coding"                | Without issues, the work isn't reviewable in chunks; the PR will be one giant blob.                  |
 | "The contract is obvious, no need to write it down"                | Two parallel workers reading the same "obvious" thing produce divergent implementations. Write.      |
 | "I'll skip user review on the spec, it's just an internal doc"     | An unreviewed spec is a draft. Drafts don't get tickets filed against them.                          |
+| "The feature branch is created later in `developing-a-feature`, so the spec/plan/state commit to `main` first" | Planning owns the branch's birth. Create `feature/<slug>` in step 2 before the first commit; `developing-a-feature` reuses it. Nothing about the feature touches `main` except the final integration/feature PR. |
