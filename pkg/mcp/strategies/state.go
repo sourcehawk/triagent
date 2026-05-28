@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -104,12 +105,24 @@ func (s *store) loadFromDisk() {
 			}
 		}
 	}
-	matches, err := filepath.Glob(filepath.Join(s.dir, sessionFilePrefix+"*"+sessionFileSuffix))
+	// Enumerate via os.ReadDir (not filepath.Glob) so a session dir whose
+	// path contains glob metacharacters (`[`, `*`, `?`) — legal in
+	// $TRIAGENT_MCP_SESSION_DIR — still finds every snapshot. Glob would
+	// either error or match the wrong directory once a `[` appears in the
+	// path, silently dropping every persisted session on restart.
+	entries, err := os.ReadDir(s.dir)
 	if err != nil {
 		return
 	}
-	for _, path := range matches {
-		data, err := os.ReadFile(path)
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if !strings.HasPrefix(name, sessionFilePrefix) || !strings.HasSuffix(name, sessionFileSuffix) {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(s.dir, name))
 		if err != nil {
 			continue
 		}

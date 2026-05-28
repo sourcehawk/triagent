@@ -70,3 +70,29 @@ func TestStore_MigratesLegacyStrategyJSON(t *testing.T) {
 	_, err = os.Stat(filepath.Join(dir, "strategy-legacy123.json"))
 	assert.NoError(t, err, "session should be re-snapshotted under the per-session filename")
 }
+
+// TestStore_LoadsSessionsWhenDirPathContainsGlobMetacharacters pins the bug
+// caught by Copilot review: TRIAGENT_MCP_SESSION_DIR is operator-configurable
+// and may legitimately contain `[`, `?`, or `*` in its path. The earlier
+// loadFromDisk used filepath.Glob with s.dir embedded in the pattern, so a
+// directory whose name contained those characters either errored or matched
+// the wrong path and dropped every persisted snapshot. os.ReadDir +
+// prefix/suffix filter avoids the issue.
+func TestStore_LoadsSessionsWhenDirPathContainsGlobMetacharacters(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	// `[abc]` is a glob character class — filepath.Glob would interpret it
+	// as "match `a`, `b`, or `c`" once embedded in the pattern, so the
+	// glob's stat against the literal directory would never find it.
+	dir := filepath.Join(root, "session-[abc]")
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+
+	s1 := newStore(dir)
+	a := &Session{ID: "aaa", PlaybookID: "investigation", CurrentNode: "n1", Visited: []string{"n1"}, StartedAt: time.Now().UTC()}
+	require.NoError(t, s1.create(a))
+
+	s2 := newStore(dir)
+	got, err := s2.get("aaa")
+	require.NoError(t, err, "session must survive restart even when the dir path contains glob metacharacters")
+	require.Equal(t, "investigation", got.PlaybookID)
+}
