@@ -116,6 +116,89 @@ func TestScope_MetricNotInCatalog(t *testing.T) {
 	require.NoError(t, err, "name not in catalog can't be matched, so scope check is a no-op")
 }
 
+// topk(N, ...) / bottomk(N, ...) / limitk(N, ...) bound the response
+// to N series regardless of the inner cardinality, so a metric
+// reference inside one of these aggregators satisfies the scope
+// requirement on its own — the same way an explicit label matcher
+// does. Without this the agent's first instinct ("topk(10, metric)")
+// gets rejected on a high-cardinality metric and they have to invent
+// a label they may not yet know.
+func TestScope_TopkSatisfiesScope(t *testing.T) {
+	t.Parallel()
+	cat := cardCatalog("container_cpu_usage", 500)
+	err := checkScope(context.Background(), nil, cat, `topk(10, container_cpu_usage)`)
+	require.NoError(t, err)
+}
+
+func TestScope_BottomkSatisfiesScope(t *testing.T) {
+	t.Parallel()
+	cat := cardCatalog("container_cpu_usage", 500)
+	err := checkScope(context.Background(), nil, cat, `bottomk(5, container_cpu_usage)`)
+	require.NoError(t, err)
+}
+
+func TestScope_LimitkSatisfiesScope(t *testing.T) {
+	t.Parallel()
+	cat := cardCatalog("container_cpu_usage", 500)
+	err := checkScope(context.Background(), nil, cat, `limitk(3, container_cpu_usage)`)
+	require.NoError(t, err)
+}
+
+// topk over a derivative or aggregation is the most common shape.
+// The metric reference sits two or three frames inside topk; the
+// ancestor walk has to find it.
+func TestScope_TopkWithNestedRateSatisfiesScope(t *testing.T) {
+	t.Parallel()
+	cat := cardCatalog("http_requests_total", 500)
+	err := checkScope(context.Background(), nil, cat, `topk(10, rate(http_requests_total[5m]))`)
+	require.NoError(t, err)
+}
+
+func TestScope_TopkWithInnerAggregationSatisfiesScope(t *testing.T) {
+	t.Parallel()
+	cat := cardCatalog("http_requests_total", 500)
+	err := checkScope(context.Background(), nil, cat, `topk(10, max by (cluster_id) (http_requests_total))`)
+	require.NoError(t, err)
+}
+
+// Substring guard: a function whose name happens to end in "topk"
+// must NOT be treated as the bounding aggregator. The identifier
+// boundary check protects against this.
+func TestScope_NotConfusedByTopkSubstring(t *testing.T) {
+	t.Parallel()
+	cat := cardCatalog("container_cpu_usage", 500)
+	err := checkScope(context.Background(), nil, cat, `not_topk(10, container_cpu_usage)`)
+	require.Error(t, err, "topk-suffixed identifier must not satisfy scope")
+	assert.Contains(t, err.Error(), "scope required")
+}
+
+// Label values can contain literal '(' and ')'. The walker must not
+// be fooled by parens inside quoted strings.
+func TestScope_TopkBoundedDespiteParenInLabelValue(t *testing.T) {
+	t.Parallel()
+	cat := cardCatalog("container_cpu_usage", 500)
+	err := checkScope(context.Background(), nil, cat,
+		`topk(10, container_cpu_usage{pod=~"app(.*)"})`)
+	require.NoError(t, err)
+}
+
+// Multi-metric expression: topk wraps one of them, the other is
+// bare. The bare one is unscoped → checkScope still rejects. We're
+// only relaxing for metrics actually inside the bounding call.
+func TestScope_MultiMetricRejectsBareSibling(t *testing.T) {
+	t.Parallel()
+	cat := emptyCatalog()
+	cat.names = []string{"http_requests_total", "container_cpu_usage"}
+	cat.cardEst = map[string]int{
+		"http_requests_total": 500,
+		"container_cpu_usage": 500,
+	}
+	err := checkScope(context.Background(), nil, cat,
+		`topk(10, http_requests_total) + container_cpu_usage`)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "container_cpu_usage", "the bare sibling is the one that should be flagged")
+}
+
 func TestScope_LongestNameWinsOnPrefixOverlap(t *testing.T) {
 	t.Parallel()
 	cat := emptyCatalog()

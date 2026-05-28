@@ -46,13 +46,13 @@ func checkScope(ctx context.Context, c *promClient, cat *catalog, promql string)
 				idx = abs + 1
 				continue
 			}
-			scoped, est, err := isScoped(ctx, c, cat, q, abs+len(name), name)
+			scoped, est, err := isScoped(ctx, c, cat, q, abs, abs+len(name), name)
 			if err != nil {
 				return err
 			}
 			if !scoped {
 				return fmt.Errorf(
-					"scope required for high-cardinality metric %q (cardinality estimate %s): add at least one non-__name__ label matcher, e.g. namespace=\"...\", service=\"...\", job=\"...\"; see prom_describe_metric for typical scope keys",
+					"scope required for high-cardinality metric %q (cardinality estimate %s): add at least one non-__name__ label matcher (e.g. namespace=\"...\", service=\"...\", job=\"...\") or wrap with topk(N, ...) / bottomk(N, ...) / limitk(N, ...); see prom_describe_metric for typical scope keys",
 					name, formatCard(est),
 				)
 			}
@@ -104,20 +104,26 @@ func isIdentChar(c byte) bool {
 	}
 }
 
-// isScoped looks at the chars immediately after a metric-name match and
-// returns (scoped, cardinalityEstimate, err). The est is surfaced so
-// callers building error messages don't need to re-read catalog state
-// (which would race against concurrent probes). When the metric is
-// below the scope-required threshold (and known), scope is not required.
+// isScoped looks at the metric-name match in `q` (starting at `at`,
+// ending at `after`) and returns (scoped, cardinalityEstimate, err).
+// The est is surfaced so callers building error messages don't need to
+// re-read catalog state (which would race against concurrent probes).
+// When the metric is below the scope-required threshold (and known),
+// scope is not required.
 //
-// If the query already carries a non-__name__ label matcher, scope is
-// satisfied regardless of cardinality — return early without probing.
+// Scope is satisfied without probing when either:
+//   - the metric carries a non-__name__ label matcher immediately
+//     after its name, OR
+//   - the metric reference sits lexically inside a topk(N, ...) /
+//     bottomk(N, ...) / limitk(N, ...) call — those aggregators
+//     bound the response to N series regardless of inner cardinality.
+//
 // The probe is expensive on high-fanout upstreams (Thanos against a
 // thousands-of-series metric can take many seconds) and serves only
 // to decide whether scope is *required*. A query that already has
 // scope doesn't need that decision.
-func isScoped(ctx context.Context, c *promClient, cat *catalog, q string, after int, name string) (bool, int, error) {
-	if hasNonNameMatcher(q, after) {
+func isScoped(ctx context.Context, c *promClient, cat *catalog, q string, at, after int, name string) (bool, int, error) {
+	if hasNonNameMatcher(q, after) || isInsideBoundedAggregator(q, at) {
 		cat.mu.Lock()
 		est := cat.cardEst[name] // zero when not yet probed; surfaced only for error-message context
 		cat.mu.Unlock()
@@ -142,6 +148,63 @@ func isScoped(ctx context.Context, c *promClient, cat *catalog, q string, after 
 	}
 	// est == -1 (high-card sentinel) OR est >= threshold → require scope.
 	return false, est, nil
+}
+
+// isInsideBoundedAggregator returns true if position `at` in `q` sits
+// lexically inside a topk(N, ...) / bottomk(N, ...) / limitk(N, ...)
+// call. Quote-aware: a `(` inside a double-quoted label value is not
+// treated as a call opening.
+//
+// Walks forward from the start of q, maintaining a stack of "function
+// name preceding this open paren" frames; when the cursor reaches
+// `at`, any frame whose name is one of the bounding aggregators marks
+// the position as scope-satisfied.
+func isInsideBoundedAggregator(q string, at int) bool {
+	if at >= len(q) {
+		return false
+	}
+	var stack []string
+	inQuote := false
+	for i := 0; i < at; i++ {
+		c := q[i]
+		if inQuote {
+			if c == '\\' && i+1 < len(q) {
+				i++
+				continue
+			}
+			if c == '"' {
+				inQuote = false
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			inQuote = true
+		case '(':
+			// Identifier immediately before the paren is the function
+			// name; whitespace between identifier and paren is not
+			// PromQL-legal for calls, so a non-identifier byte at
+			// position i-1 means this paren opens a grouping (or a
+			// keyword-arg block like `by (...)`) rather than a call.
+			end := i
+			start := i
+			for start > 0 && isIdentChar(q[start-1]) {
+				start--
+			}
+			stack = append(stack, q[start:end])
+		case ')':
+			if n := len(stack); n > 0 {
+				stack = stack[:n-1]
+			}
+		}
+	}
+	for _, fname := range stack {
+		switch fname {
+		case "topk", "bottomk", "limitk":
+			return true
+		}
+	}
+	return false
 }
 
 // hasNonNameMatcher returns true if a `{...}` block immediately after
