@@ -34,7 +34,11 @@ type envConfig struct {
 	binDir    string
 	traceDir  string
 	signalDir string
-	opts      Options
+	// kubeconfigPath, when set (K8s launches), is exported as KUBECONFIG so
+	// the launcher's preflight freezes a copy and wires it into every spawned
+	// MCP child. Empty leaves the kubeconfig provider on its ~/.kube fallback.
+	kubeconfigPath string
+	opts           Options
 }
 
 // launcherEnv builds the child's environment. XDG roots redirect all
@@ -62,6 +66,12 @@ func launcherEnv(c envConfig) []string {
 	// redirects the launcher's own state.
 	if home := os.Getenv("HOME"); home != "" {
 		env = append(env, "HOME="+home)
+	}
+	// K8s launches pin KUBECONFIG to the harness-written static kubeconfig so
+	// the launcher freezes that exact file and the k8s MCP child binds to the
+	// envtest apiserver — no ambient ~/.kube state leaks in.
+	if c.kubeconfigPath != "" {
+		env = append(env, "KUBECONFIG="+c.kubeconfigPath)
 	}
 	return env
 }

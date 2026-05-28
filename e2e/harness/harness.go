@@ -81,13 +81,27 @@ func Launch(t *testing.T, opts Options) *Harness {
 		}
 	}
 
+	// When the test opts into k8s, boot/attach envtest, apply the fixture
+	// manifests, and write a static kubeconfig. The launcher discovers it via
+	// KUBECONFIG below; preflight then freezes a per-session copy and every
+	// spawned MCP child carries that explicit path (project rule).
+	var kubeconfigPath string
+	if opts.K8s {
+		setup, err := setupK8s(t, stateDir, opts)
+		if err != nil {
+			t.Fatalf("harness: k8s setup: %v", err)
+		}
+		kubeconfigPath = setup.kubeconfigPath
+	}
+
 	env := launcherEnv(envConfig{
-		stateDir:  stateDir,
-		cacheDir:  cacheDir,
-		binDir:    BinDir(),
-		traceDir:  traceDir,
-		signalDir: signalDir,
-		opts:      opts,
+		stateDir:       stateDir,
+		cacheDir:       cacheDir,
+		binDir:         BinDir(),
+		traceDir:       traceDir,
+		signalDir:      signalDir,
+		kubeconfigPath: kubeconfigPath,
+		opts:           opts,
 	})
 
 	proc, err := startLauncher(startConfig{

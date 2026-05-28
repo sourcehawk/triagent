@@ -1,0 +1,13 @@
+# Two workload namespaces the list_namespaces round-trip must surface.
+# The harness applies each manifest against the shared envtest apiserver
+# before the launcher starts; namespace names are asserted verbatim in
+# investigation_k8s_test.go.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: team-a
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: team-b
