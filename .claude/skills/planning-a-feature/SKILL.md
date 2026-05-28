@@ -32,17 +32,30 @@ out instead of dragging.
 **REQUIRED SUB-SKILL:** Invoke `superpowers:brainstorming` to nail down intent, scope, and design choices before any
 artifact is written. The brainstorming skill explores the problem — it does **not** author files.
 
-### 2. Author the spec
+### 2. Author the spec — and any cross-cutting ADR
 
-Capture the brainstorm's conclusions in a spec at `docs/superpowers/specs/YYYY-MM-DD-<slug>-design.md`. The spec is
-a durable ADR — WHAT we're building and WHY, with goals, non-goals, design choices, risks, alternatives considered.
-It does **not** enumerate PRs, commits, or parallelism contracts (those live in the plan, see step 6).
+**Spec.** Capture the brainstorm's conclusions in a spec at `docs/superpowers/specs/YYYY-MM-DD-<slug>-design.md`. The
+spec is the feature's design record — WHAT we're building and WHY, with goals, non-goals, design choices, risks,
+alternatives considered. It does **not** enumerate PRs, commits, or parallelism contracts (those live in the plan,
+see step 6). Slug is short ("multi-tenant-profiles", not "implement-multi-tenant-profile-system"); date is the
+conception date.
 
-Slug is short and descriptive ("multi-tenant-profiles", not "implement-multi-tenant-profile-system"). Date is the
-conception date. The spec file is committed to git like any other source artifact (`docs/superpowers/specs/` is no
-longer gitignored as of the workflow rollout).
+**ADR (only if the brainstorm surfaced a project-wide architectural decision).** A spec captures feature-scoped design.
+An ADR captures **cross-cutting** decisions that affect multiple features — choosing one architectural approach over
+another for reasons that future readers will need. Examples of ADR-worthy decisions: introducing a new IPC
+channel, picking a state-of-the-art pattern over the project's current default, rejecting a tempting alternative.
+Examples of NOT ADR-worthy: feature-specific design (that's the spec), operational conventions (CLAUDE.md), file
+naming (CLAUDE.md).
 
-### 3. User reviews the spec
+If the brainstorm surfaced an ADR-worthy decision, author the ADR at `docs/adrs/<NNNN>-<slug>.md` using the format in
+`docs/adrs/README.md` (Decision / Context / Consequences). Number sequentially — pick the next free `NNNN`. Add an
+entry to the index in `docs/adrs/README.md`. Most features don't produce an ADR; if you're forcing one, the
+decision probably belongs in the spec instead.
+
+Both the spec and any ADR(s) are committed to git as source artifacts (`docs/superpowers/specs/` and `docs/adrs/`
+are not gitignored).
+
+### 3. User reviews the spec (and any ADR)
 
 Pause. Surface the spec path and wait for explicit "approved" or redirection before moving on. A spec the user hasn't
 read is a draft, and drafts don't get tickets filed against them.
