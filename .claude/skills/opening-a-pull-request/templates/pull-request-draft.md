@@ -10,11 +10,16 @@ for review using templates/pull-request-ready.md.
 ## What lands here
 
 <!--
-Open with `Fixes #<num>` (bug-fix tracking issue) or `Closes #<num>`
-or `Towards #<num>` (feature/task tracking issue) as the FIRST line
-of this section, so GitHub auto-closes the issue on merge (Towards
-to keep the issue open). Omit the line entirely if there is no
-tracking issue.
+Open with ONE of these as the FIRST line of this section, depending
+on what should happen to the linked issue on merge:
+  - `Fixes #<num>` — bug-fix issue; GitHub auto-closes on merge to main.
+  - `Closes #<num>` — feature/task issue; same auto-close semantics,
+    neutral phrasing.
+  - `Towards #<num>` — the PR contributes to the issue but does NOT
+    auto-close it; the issue stays open. Used for sub-PRs into a
+    feature branch and for any other "in progress on this, not
+    finishing it" case.
+Omit the line entirely if there is no tracking issue.
 
 Then follow with 1-3 sentences forecasting the changes this PR will
 introduce. Human-readable; treat it as the early-visibility surface

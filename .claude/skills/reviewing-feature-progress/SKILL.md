@@ -1,10 +1,9 @@
 ---
 name: reviewing-feature-progress
 description:
-  Use at orchestration checkpoints during feature development — between
-  fan-out waves, before opening the integration PR, and before flipping
-  the integration PR ready — to catch spec/plan/implementation drift
-  and verify the feature branch builds end to end.
+  Use at feature-development orchestration checkpoints — between
+  fan-out waves, before opening the integration PR, and before
+  flipping the integration PR ready.
 ---
 
 # reviewing-feature-progress

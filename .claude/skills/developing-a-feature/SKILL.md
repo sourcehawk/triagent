@@ -71,10 +71,13 @@ the field is missing in an older state file: `autonomous` (preserves the origina
 
 ### 3. Set up the implementation environment
 
-- **Multi-PR (feature-branch model)** — create the long-lived feature branch and its main integration worktree:
+- **Multi-PR (feature-branch model)** — create the long-lived feature branch and its main integration worktree.
+  Anchor the branch explicitly to `origin/main` so the orchestrator's current branch state can't accidentally seed
+  it:
 
   ```
-  git worktree add .claude/worktrees/<slug> -b feature/<slug>
+  git fetch origin main
+  git worktree add .claude/worktrees/<slug> -b feature/<slug> origin/main
   cd .claude/worktrees/<slug>
   git push -u origin feature/<slug>
   ```
@@ -82,9 +85,15 @@ the field is missing in an older state file: `autonomous` (preserves the origina
   Update the state file's `feature_branch` + `feature_worktree` frontmatter fields to point here. Sub-worktrees off
   this branch are created later by `fanning-out-with-worktrees`.
 
-- **Single-PR** — create a working worktree off main via `EnterWorktree` (project's native worktree tool) or
-  `git worktree add .claude/worktrees/<slug> -b <single-branch>`. Skip the feature-branch setup; this is the only
-  branch.
+- **Single-PR** — create a working worktree off main. `EnterWorktree` (project's native worktree tool) defaults to
+  branching from `origin/<default-branch>`; if you fall back to raw git, anchor explicitly:
+
+  ```
+  git fetch origin main
+  git worktree add .claude/worktrees/<slug> -b <single-branch> origin/main
+  ```
+
+  Skip the feature-branch setup; this is the only branch.
 
 ### 4. Implement
 
