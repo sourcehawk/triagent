@@ -34,6 +34,13 @@ func checkScope(ctx context.Context, c *promClient, cat *catalog, promql string)
 	names := append([]string(nil), cat.names...)
 	sort.Slice(names, func(i, j int) bool { return len(names[i]) > len(names[j]) })
 
+	// Precompute which byte offsets sit inside double-quoted label values
+	// so the substring scan doesn't treat a metric name appearing inside
+	// a quoted matcher value (e.g. `up{job="container_cpu_usage"}`) as an
+	// actual metric reference — adding more scope would not fix such a
+	// false positive.
+	quoted := buildQuotedMask(q)
+
 	for _, name := range names {
 		idx := 0
 		for {
@@ -42,6 +49,10 @@ func checkScope(ctx context.Context, c *promClient, cat *catalog, promql string)
 				break
 			}
 			abs := idx + rel
+			if quoted[abs] {
+				idx = abs + 1
+				continue
+			}
 			if !isStandaloneIdentifier(q, abs, name) {
 				idx = abs + 1
 				continue
@@ -284,6 +295,37 @@ func hasUnscopedNameMatcher(q string) bool {
 		}
 		i = end + 1
 	}
+}
+
+// buildQuotedMask returns a slice of len(q) booleans whose i-th entry is
+// true when byte i of q sits inside a double-quoted Prometheus label
+// value. Recognises backslash escapes so a literal `\"` does not close
+// the run. The opening and closing quotes themselves are marked as well
+// — no metric identifier can start at a quote byte, so this only ever
+// over-includes positions the substring scan would not match anyway.
+func buildQuotedMask(q string) []bool {
+	mask := make([]bool, len(q))
+	inQuote := false
+	for i := 0; i < len(q); i++ {
+		c := q[i]
+		if inQuote {
+			mask[i] = true
+			if c == '\\' && i+1 < len(q) {
+				i++
+				mask[i] = true
+				continue
+			}
+			if c == '"' {
+				inQuote = false
+			}
+			continue
+		}
+		if c == '"' {
+			inQuote = true
+			mask[i] = true
+		}
+	}
+	return mask
 }
 
 // findClosingBrace returns the absolute index of the first `}` at or

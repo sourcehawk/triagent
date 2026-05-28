@@ -308,6 +308,23 @@ func TestScope_AllowsRecordingRuleNameContainingHighCardSubstring(t *testing.T) 
 	require.NoError(t, err)
 }
 
+// Regression: a metric name appearing as a substring of a quoted label
+// value (e.g. `up{job="container_cpu_usage"}`) is not an actual metric
+// reference. Without quote-aware scanning the substring scan finds the
+// high-cardinality catalog name inside the quoted value and rejects an
+// otherwise-scoped query — and adding more matchers would not fix it.
+func TestScope_IgnoresMetricNameInsideQuotedLabelValue(t *testing.T) {
+	t.Parallel()
+	cat := emptyCatalog()
+	cat.names = []string{"up", "container_cpu_usage"}
+	cat.cardEst = map[string]int{
+		"up":                  10,
+		"container_cpu_usage": 500,
+	}
+	err := checkScope(context.Background(), nil, cat, `up{job="container_cpu_usage"}`)
+	require.NoError(t, err)
+}
+
 // Regression: the unscoped-name-matcher guard must also see through
 // quoted braces. A `}` inside a quoted regex value should not be
 // mistaken for the end of the matcher block.
