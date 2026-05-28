@@ -253,16 +253,22 @@ type promQueryIn struct {
 }
 
 func (s *Server) handleQuery(ctx context.Context, _ *mcp.CallToolRequest, in promQueryIn) (*mcp.CallToolResult, QueryResult, error) {
+	// Initialise Samples to [] on every error return so the wire
+	// payload never serialises as `null` for the slice-typed field.
+	// Defensive: the agent has twice fabricated a "samples is null"
+	// schema bug from a clear non-schema error, and a future strict-
+	// validating SDK would turn that fabrication into a real failure.
+	empty := QueryResult{Samples: []Sample{}}
 	snap, err := s.currentSnapshot(ctx)
 	if err != nil {
-		return errorResult(err.Error()), QueryResult{}, nil
+		return errorResult(err.Error()), empty, nil
 	}
 	if len(snap.catalog.names) == 0 {
-		return errorResult("catalog empty — the endpoint may have no metrics indexed, or it is not yet reachable"), QueryResult{}, nil
+		return errorResult("catalog empty — the endpoint may have no metrics indexed, or it is not yet reachable"), empty, nil
 	}
 	res, err := runInstantQuery(ctx, snap, in.Promql, in.Time, in.MaxSeries)
 	if err != nil {
-		return errorResult(err.Error()), QueryResult{}, nil
+		return errorResult(err.Error()), empty, nil
 	}
 	return nil, res, nil
 }

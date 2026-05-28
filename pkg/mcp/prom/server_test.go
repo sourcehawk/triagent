@@ -2,8 +2,10 @@ package prom
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -35,6 +37,26 @@ func TestRun_ReturnsOnCanceledContext(t *testing.T) {
 // hard ceiling on the HTTP client meant a single slow probe burned
 // the entire query budget. Rely on the caller's context for the
 // deadline instead.
+// The error return on handleQuery (and friends) used to leave the
+// typed result's slice fields nil. encoding/json renders a nil slice
+// as `null`, which is the exact shape the agent twice fabricated as
+// a "schema validation: samples is null" bug. We can't stop the
+// agent from inventing diagnoses, but we can make sure the wire
+// payload it sees never carries `null` for a slice-typed field.
+func TestHandleQuery_ErrorPathEmitsNonNullSamples(t *testing.T) {
+	t.Parallel()
+	srv, err := New(Options{Endpoint: "http://stub"})
+	require.NoError(t, err)
+	// No catalog, no client wiring → first error path (catalog empty).
+	_, res, err := srv.handleQuery(context.Background(), nil, promQueryIn{Promql: "up"})
+	require.NoError(t, err)
+	require.NotNil(t, res.Samples, "Samples on error must be non-nil so JSON renders [] not null")
+	body, err := json.Marshal(res)
+	require.NoError(t, err)
+	assert.Contains(t, string(body), `"samples":[]`)
+	assert.NotContains(t, string(body), `"samples":null`)
+}
+
 func TestNew_DefaultHTTPClientHasNoHardTimeout(t *testing.T) {
 	t.Parallel()
 	srv, err := New(Options{Endpoint: "http://127.0.0.1:9090"})
