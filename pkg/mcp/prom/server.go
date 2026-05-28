@@ -247,8 +247,9 @@ func (s *Server) handleDescribeMetric(ctx context.Context, _ *mcp.CallToolReques
 }
 
 type promQueryIn struct {
-	Promql string `json:"promql" jsonschema:"Required. Instant PromQL. Prefer expressions that collapse to a scalar or ≤50-series vector — count(... > 0.9), topk(5, ...), max_over_time(...). Range-returning queries belong in prom_query_range."`
-	Time   string `json:"time,omitempty" jsonschema:"Optional ISO-8601 / Unix-seconds. Defaults to now."`
+	Promql    string `json:"promql" jsonschema:"Required. Instant PromQL. Prefer expressions that collapse to a scalar or ≤50-series vector — count(... > 0.9), topk(5, ...), max_over_time(...). Range-returning queries belong in prom_query_range."`
+	Time      string `json:"time,omitempty" jsonschema:"Optional ISO-8601 / Unix-seconds. Defaults to now."`
+	MaxSeries int    `json:"max_series,omitempty" jsonschema:"Per-call series cap; default 50, hard ceiling 500. Pass a higher value only for deliberate fleet aggregations (one row per cluster/namespace)."`
 }
 
 func (s *Server) handleQuery(ctx context.Context, _ *mcp.CallToolRequest, in promQueryIn) (*mcp.CallToolResult, QueryResult, error) {
@@ -259,7 +260,7 @@ func (s *Server) handleQuery(ctx context.Context, _ *mcp.CallToolRequest, in pro
 	if len(snap.catalog.names) == 0 {
 		return errorResult("catalog empty — the endpoint may have no metrics indexed, or it is not yet reachable"), QueryResult{}, nil
 	}
-	res, err := runInstantQuery(ctx, snap, in.Promql, in.Time)
+	res, err := runInstantQuery(ctx, snap, in.Promql, in.Time, in.MaxSeries)
 	if err != nil {
 		return errorResult(err.Error()), QueryResult{}, nil
 	}
@@ -290,7 +291,7 @@ type promQueryRangeIn struct {
 	Promql    string `json:"promql" jsonschema:"Required. Range PromQL. Prefer prom_query for scalar-or-small-vector questions; reach for prom_query_range only when shape-over-time matters."`
 	Range     string `json:"range" jsonschema:"Required. Duration string (e.g. \"15m\", \"1h\"). Cap 24h."`
 	End       string `json:"end,omitempty" jsonschema:"Optional ISO-8601 end time. Defaults to now."`
-	MaxSeries int    `json:"max_series,omitempty" jsonschema:"Per-call series cap; default 10, hard ceiling 25."`
+	MaxSeries int    `json:"max_series,omitempty" jsonschema:"Per-call series cap; default 10, hard ceiling 500. Pass a higher value only for deliberate fleet aggregations."`
 	MaxPoints int    `json:"max_points,omitempty" jsonschema:"Points-per-series budget; default 100, hard ceiling 200. Drives the auto-computed step."`
 	Raw       bool   `json:"raw,omitempty" jsonschema:"When true, return raw [ts, value] points (capped to max_points). Default false → per-series summary stats + sparkline."`
 }

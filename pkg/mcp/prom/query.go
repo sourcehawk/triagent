@@ -11,7 +11,17 @@ import (
 	"time"
 )
 
-const queryHardSeriesCap = 50
+const (
+	// queryDefaultSeriesCap is the implicit cap when the caller doesn't
+	// pass max_series. Kept at 50 so prom_query stays scalar-first by
+	// default — fleet sweeps must opt in.
+	queryDefaultSeriesCap = 50
+	// instantHardSeriesCeiling bounds max_series regardless of caller
+	// input. Sized to comfortably hold a multi-cluster fleet aggregation
+	// (one row per cluster across hundreds of clusters) without
+	// admitting truly runaway responses.
+	instantHardSeriesCeiling = 500
+)
 
 // QueryResult is the JSON shape returned to the agent.
 type QueryResult struct {
@@ -29,10 +39,11 @@ type Sample struct {
 	Timestamp string            `json:"timestamp"`
 }
 
-func runInstantQuery(ctx context.Context, snap *snapshot, expr, atTime string) (QueryResult, error) {
+func runInstantQuery(ctx context.Context, snap *snapshot, expr, atTime string, maxSeries int) (QueryResult, error) {
 	if err := checkScope(ctx, snap.client, snap.catalog, expr); err != nil {
 		return QueryResult{}, err
 	}
+	cap := resolveInstantSeriesCap(maxSeries)
 	res, err := snap.client.query(ctx, expr, atTime)
 	if err != nil {
 		return QueryResult{}, err
@@ -56,10 +67,10 @@ func runInstantQuery(ctx context.Context, snap *snapshot, expr, atTime string) (
 		}
 		return QueryResult{ResultType: "string", StringValue: sv, Timestamp: ts}, nil
 	case "vector":
-		if len(res.Result) > queryHardSeriesCap {
+		if len(res.Result) > cap {
 			return QueryResult{}, fmt.Errorf(
-				"query returned %d series; cap is %d — wrap in topk(N, ...), aggregate (sum/avg by (...)) or add a scope matcher",
-				len(res.Result), queryHardSeriesCap,
+				"query returned %d series; cap is %d — wrap in topk(N, ...), aggregate (sum/avg by (...)), add a scope matcher, or pass max_series (up to %d) for a deliberate fleet sweep",
+				len(res.Result), cap, instantHardSeriesCeiling,
 			)
 		}
 		samples := make([]Sample, 0, len(res.Result))
@@ -85,6 +96,19 @@ func runInstantQuery(ctx context.Context, snap *snapshot, expr, atTime string) (
 	default:
 		return QueryResult{}, fmt.Errorf("unexpected resultType %q from instant query", res.ResultType)
 	}
+}
+
+// resolveInstantSeriesCap clamps a caller-supplied max_series to the
+// hardcoded ceiling and substitutes the default when the caller
+// didn't pass one (zero or negative).
+func resolveInstantSeriesCap(maxSeries int) int {
+	if maxSeries <= 0 {
+		return queryDefaultSeriesCap
+	}
+	if maxSeries > instantHardSeriesCeiling {
+		return instantHardSeriesCeiling
+	}
+	return maxSeries
 }
 
 // parseSamplePair handles Prom's [timestampSeconds, "valueString"] pair
@@ -328,7 +352,11 @@ func escapeMatcherValue(s string) string {
 }
 
 const (
-	rangeHardSeriesCap = 25
+	// rangeHardSeriesCap is the absolute ceiling on a range response's
+	// series count regardless of caller input. Sized to match the
+	// instant-query ceiling so fleet-wide range sweeps are expressible
+	// when the agent opts in via max_series.
+	rangeHardSeriesCap = 500
 	rangeMaxDuration   = 24 * time.Hour
 	// rangeHardPointsCap is the hard ceiling on max_points regardless of
 	// caller input. Mirrors rangeHardSeriesCap; both bound the worst-case

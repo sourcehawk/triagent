@@ -19,7 +19,7 @@ func TestQuery_RejectsUnscopedHighCard(t *testing.T) {
 	t.Parallel()
 	cat := cardCatalog("http_requests_total", 500)
 	snap := &snapshot{client: newPromClient("http://stub", "", "", http.DefaultClient), catalog: cat}
-	_, err := runInstantQuery(context.Background(), snap, "http_requests_total", "")
+	_, err := runInstantQuery(context.Background(), snap, "http_requests_total", "", 0)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "scope required")
 }
@@ -41,7 +41,7 @@ func TestQuery_AllowsScopedQuery(t *testing.T) {
 	})
 	cat := cardCatalog("http_requests_total", 500)
 	snap := &snapshot{client: newPromClient(stub.URL, "", "", http.DefaultClient), catalog: cat}
-	res, err := runInstantQuery(context.Background(), snap, `http_requests_total{namespace="pay"}`, "")
+	res, err := runInstantQuery(context.Background(), snap, `http_requests_total{namespace="pay"}`, "", 0)
 	require.NoError(t, err)
 	assert.Equal(t, "vector", res.ResultType)
 	require.Len(t, res.Samples, 1)
@@ -67,11 +67,95 @@ func TestQuery_RejectsOverSeriesCap(t *testing.T) {
 	})
 	cat := cardCatalog("noisy", 5)
 	snap := &snapshot{client: newPromClient(stub.URL, "", "", http.DefaultClient), catalog: cat}
-	_, err := runInstantQuery(context.Background(), snap, `noisy{namespace="x"}`, "")
+	_, err := runInstantQuery(context.Background(), snap, `noisy{namespace="x"}`, "", 0)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "60 series")
 	assert.Contains(t, err.Error(), "topk")
 	assert.True(t, strings.Contains(err.Error(), "aggregate"), "hint should mention aggregate")
+}
+
+// max_series lets the agent opt in to a higher series cap when it
+// deliberately wants a fleet-wide sweep (one row per cluster/namespace).
+// Default behavior unchanged at 50; explicit opt-in raises the bar up
+// to the absolute ceiling. Without this, legitimate aggregations
+// across 100+ clusters can't be expressed in a single query.
+func TestQuery_RespectsMaxSeriesOptIn(t *testing.T) {
+	t.Parallel()
+	stub := newStubProm(t, stubHandlers{
+		query: func(w http.ResponseWriter, r *http.Request) {
+			var rows []map[string]any
+			for i := 0; i < 80; i++ {
+				rows = append(rows, map[string]any{
+					"metric": map[string]string{"cluster_id": strconv.Itoa(i)},
+					"value":  []any{1700000000, "1"},
+				})
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"status": "success",
+				"data":   map[string]any{"resultType": "vector", "result": rows},
+			})
+		},
+	})
+	cat := cardCatalog("c", 1000)
+	snap := &snapshot{client: newPromClient(stub.URL, "", "", http.DefaultClient), catalog: cat}
+	// 80 series fits inside an explicit max_series=100 budget — would
+	// otherwise hit the default 50 cap and reject.
+	res, err := runInstantQuery(context.Background(), snap, `topk(80, c)`, "", 100)
+	require.NoError(t, err)
+	assert.Len(t, res.Samples, 80)
+}
+
+func TestQuery_DefaultMaxSeriesUnchanged(t *testing.T) {
+	t.Parallel()
+	stub := newStubProm(t, stubHandlers{
+		query: func(w http.ResponseWriter, r *http.Request) {
+			var rows []map[string]any
+			for i := 0; i < 60; i++ {
+				rows = append(rows, map[string]any{
+					"metric": map[string]string{"i": strconv.Itoa(i)},
+					"value":  []any{1700000000, "1"},
+				})
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"status": "success",
+				"data":   map[string]any{"resultType": "vector", "result": rows},
+			})
+		},
+	})
+	cat := cardCatalog("c", 5)
+	snap := &snapshot{client: newPromClient(stub.URL, "", "", http.DefaultClient), catalog: cat}
+	// Default (max_series=0 / not passed) must keep the 50 ceiling.
+	_, err := runInstantQuery(context.Background(), snap, `topk(60, c)`, "", 0)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "60 series")
+	assert.Contains(t, err.Error(), "50", "the default cap is named in the error")
+}
+
+func TestQuery_ClampsMaxSeriesToAbsoluteCeiling(t *testing.T) {
+	t.Parallel()
+	stub := newStubProm(t, stubHandlers{
+		query: func(w http.ResponseWriter, r *http.Request) {
+			// Return more than the ceiling so we trigger the cap branch.
+			var rows []map[string]any
+			for i := 0; i < instantHardSeriesCeiling+10; i++ {
+				rows = append(rows, map[string]any{
+					"metric": map[string]string{"i": strconv.Itoa(i)},
+					"value":  []any{1700000000, "1"},
+				})
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"status": "success",
+				"data":   map[string]any{"resultType": "vector", "result": rows},
+			})
+		},
+	})
+	cat := cardCatalog("c", 5)
+	snap := &snapshot{client: newPromClient(stub.URL, "", "", http.DefaultClient), catalog: cat}
+	// Caller asks for max_series=100000; the absolute ceiling clamps it.
+	_, err := runInstantQuery(context.Background(), snap, `topk(1000, c)`, "", 100000)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), strconv.Itoa(instantHardSeriesCeiling),
+		"the clamped ceiling is named in the error")
 }
 
 func TestQuery_ScalarPassthrough(t *testing.T) {
@@ -86,7 +170,7 @@ func TestQuery_ScalarPassthrough(t *testing.T) {
 	})
 	cat := cardCatalog("up", 12)
 	snap := &snapshot{client: newPromClient(stub.URL, "", "", http.DefaultClient), catalog: cat}
-	res, err := runInstantQuery(context.Background(), snap, "up", "")
+	res, err := runInstantQuery(context.Background(), snap, "up", "", 0)
 	require.NoError(t, err)
 	assert.Equal(t, "scalar", res.ResultType)
 	assert.NotNil(t, res.ScalarValue)
@@ -109,7 +193,7 @@ func TestQuery_EmptyVectorReturnsEmptySamples(t *testing.T) {
 	})
 	cat := cardCatalog("up", 12)
 	snap := &snapshot{client: newPromClient(stub.URL, "", "", http.DefaultClient), catalog: cat}
-	res, err := runInstantQuery(context.Background(), snap, "up", "")
+	res, err := runInstantQuery(context.Background(), snap, "up", "", 0)
 	require.NoError(t, err)
 	require.Equal(t, "vector", res.ResultType)
 	require.NotNil(t, res.Samples, "Samples must be non-nil to marshal as [] rather than null")
@@ -133,7 +217,7 @@ func TestQuery_MatrixRejected(t *testing.T) {
 	})
 	cat := cardCatalog("up", 12)
 	snap := &snapshot{client: newPromClient(stub.URL, "", "", http.DefaultClient), catalog: cat}
-	_, err := runInstantQuery(context.Background(), snap, "up", "")
+	_, err := runInstantQuery(context.Background(), snap, "up", "", 0)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "matrix")
 }
@@ -150,7 +234,7 @@ func TestQuery_StringResultSurfacesValue(t *testing.T) {
 	})
 	cat := cardCatalog("up", 12)
 	snap := &snapshot{client: newPromClient(stub.URL, "", "", http.DefaultClient), catalog: cat}
-	res, err := runInstantQuery(context.Background(), snap, "up", "")
+	res, err := runInstantQuery(context.Background(), snap, "up", "", 0)
 	require.NoError(t, err)
 	assert.Equal(t, "string", res.ResultType)
 	assert.Equal(t, "hello", res.StringValue)
@@ -617,7 +701,7 @@ func TestQuery_ScalarNonFiniteReturnsError(t *testing.T) {
 	})
 	cat := cardCatalog("up", 12)
 	snap := &snapshot{client: newPromClient(stub.URL, "", "", http.DefaultClient), catalog: cat}
-	_, err := runInstantQuery(context.Background(), snap, "up", "")
+	_, err := runInstantQuery(context.Background(), snap, "up", "", 0)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "non-finite")
 }
@@ -642,7 +726,7 @@ func TestQuery_VectorDropsNonFiniteRows(t *testing.T) {
 	})
 	cat := cardCatalog("ratio", 5)
 	snap := &snapshot{client: newPromClient(stub.URL, "", "", http.DefaultClient), catalog: cat}
-	res, err := runInstantQuery(context.Background(), snap, "ratio", "")
+	res, err := runInstantQuery(context.Background(), snap, "ratio", "", 0)
 	require.NoError(t, err)
 	require.Len(t, res.Samples, 2, "non-finite rows must be dropped before JSON encoding")
 	// Output must round-trip through encoding/json without UnsupportedValueError.
