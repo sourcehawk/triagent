@@ -440,6 +440,16 @@ func (a *apiHandlers) handlePreflight(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Pre-seed <sessionDir>/active-context from the operator's
+	// cluster_id pick so the k8s MCP's startup hydrate finds it. Best-
+	// effort: a missing provider, an unresolved cluster, or a write
+	// error all leave the file absent and the agent falls back to
+	// calling switch_context itself.
+	activeContext, err := seedActiveContext(r.Context(), a.opts.Provider, sessionDir, clusterID)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "preflight: seed active-context for %s: %v\n", investigationID, err)
+	}
+
 	inv := &Investigation{
 		ID:                   investigationID,
 		IncidentURL:          incidentURL,
@@ -457,6 +467,7 @@ func (a *apiHandlers) handlePreflight(w http.ResponseWriter, r *http.Request) {
 		Profile:              a.prof,
 		PromTarget:           promTarget,
 		PromDisabled:         promDisabled,
+		ActiveContext:        activeContext,
 	}
 	inv.Author = resolveGitAuthor()
 	if _, err := a.manager.Register(inv); err != nil {

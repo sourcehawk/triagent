@@ -14,7 +14,7 @@ import (
 func TestWriteActiveContextFile_Writes(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	require.NoError(t, writeActiveContextFile(dir, "alpha"))
+	require.NoError(t, WriteActiveContextFile(dir, "alpha"))
 	body, err := os.ReadFile(filepath.Join(dir, "active-context"))
 	require.NoError(t, err)
 	assert.Equal(t, "alpha", string(body))
@@ -23,8 +23,8 @@ func TestWriteActiveContextFile_Writes(t *testing.T) {
 func TestWriteActiveContextFile_Overwrite(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	require.NoError(t, writeActiveContextFile(dir, "alpha"))
-	require.NoError(t, writeActiveContextFile(dir, "beta"))
+	require.NoError(t, WriteActiveContextFile(dir, "alpha"))
+	require.NoError(t, WriteActiveContextFile(dir, "beta"))
 	body, err := os.ReadFile(filepath.Join(dir, "active-context"))
 	require.NoError(t, err)
 	assert.Equal(t, "beta", string(body))
@@ -33,7 +33,7 @@ func TestWriteActiveContextFile_Overwrite(t *testing.T) {
 func TestWriteActiveContextFile_LeavesNoTmpResidue(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	require.NoError(t, writeActiveContextFile(dir, "x"))
+	require.NoError(t, WriteActiveContextFile(dir, "x"))
 	entries, err := os.ReadDir(dir)
 	require.NoError(t, err)
 	for _, e := range entries {
@@ -43,7 +43,7 @@ func TestWriteActiveContextFile_LeavesNoTmpResidue(t *testing.T) {
 
 func TestWriteActiveContextFile_ErrOnMissingDir(t *testing.T) {
 	t.Parallel()
-	err := writeActiveContextFile("/nonexistent/path/that/does/not/exist", "x")
+	err := WriteActiveContextFile("/nonexistent/path/that/does/not/exist", "x")
 	require.Error(t, err)
 }
 
@@ -140,7 +140,7 @@ func TestWriteActiveContextFile_ConcurrentWritesProduceValidFinalState(t *testin
 		wg.Add(1)
 		go func(name string) {
 			defer wg.Done()
-			_ = writeActiveContextFile(dir, name)
+			_ = WriteActiveContextFile(dir, name)
 		}(name)
 	}
 	wg.Wait()

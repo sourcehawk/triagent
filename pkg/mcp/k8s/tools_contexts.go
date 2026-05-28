@@ -121,7 +121,7 @@ func (t *ToolKit) switchContext(_ context.Context, _ *mcp.CallToolRequest, in Sw
 		// port-forwards. Failure to write is non-fatal — the snapshot
 		// swap already succeeded, the agent's tool calls work, only the
 		// launcher's prom resolver loses visibility into the new context.
-		if err := writeActiveContextFile(t.sessionDir, newSnap.contextName); err != nil {
+		if err := WriteActiveContextFile(t.sessionDir, newSnap.contextName); err != nil {
 			fmt.Fprintf(os.Stderr, "k8s: write active-context: %v\n", err)
 		}
 	}

@@ -161,6 +161,14 @@ type Investigation struct {
 	LaunchCwd       string
 	KubeconfigPath  string
 
+	// ActiveContext is the kubeconfig context name the launcher seeded
+	// at preflight from the operator's cluster_id selection. Empty when
+	// no cluster was pre-selected or the provider couldn't resolve it.
+	// The k8s MCP reads <sessionDir>/active-context on startup and
+	// hydrates from there; this field exists so the frontend can show
+	// which context is active without parsing the events.jsonl.
+	ActiveContext string
+
 	// Auto holds the auto-mode lifecycle state. Zero value (Enabled=false)
 	// means manual mode — preserves current behavior. Written by the
 	// AutoOperator on every phase transition; rehydrate consults
@@ -304,6 +312,9 @@ type InvestigationDTO struct {
 	ClaudeSessionID string `json:"claudeSessionId,omitempty"`
 	LaunchCwd       string `json:"launchCwd,omitempty"`
 	KubeconfigPath  string `json:"kubeconfigPath,omitempty"`
+	// ActiveContext is the kubeconfig context the launcher pre-seeded
+	// for the k8s MCP from the operator's cluster_id pick at preflight.
+	ActiveContext string `json:"activeContext,omitempty"`
 	// Auto holds the auto-mode lifecycle state. The `omitempty` tag is
 	// cosmetic — encoding/json does not skip non-pointer struct values,
 	// so manual-mode investigations still emit `"auto":{"enabled":false}`.
@@ -392,6 +403,7 @@ func (i *Investigation) Snapshot() InvestigationDTO {
 		ClaudeSessionID: i.ClaudeSessionID,
 		LaunchCwd:       i.LaunchCwd,
 		KubeconfigPath:  i.KubeconfigPath,
+		ActiveContext:   i.ActiveContext,
 		Auto:               i.Auto,
 		OriginatingWatchID: i.OriginatingWatchID,
 		OriginatingSignal:  i.OriginatingSignal,

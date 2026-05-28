@@ -59,13 +59,17 @@ func (t *ToolKit) hydrateFromActiveContext() {
 	t.snapshot.Store(snap)
 }
 
-// writeActiveContextFile writes contextName to <sessionDir>/active-context
+// WriteActiveContextFile writes contextName to <sessionDir>/active-context
 // atomically: write to a per-call unique tmp file, then rename onto the
 // final path. Best-effort — callers treat errors as warnings, not
 // failures. The tmp filename includes a random suffix so concurrent
 // callers don't trample each other's in-flight writes; the final
 // rename is what determines the visible content.
-func writeActiveContextFile(sessionDir, contextName string) error {
+//
+// Exported so the launcher (internal/server) can pre-seed the file at
+// preflight when the operator selects a cluster on the session-start
+// form — the k8s MCP's hydrate-on-startup path then picks it up.
+func WriteActiveContextFile(sessionDir, contextName string) error {
 	dst := filepath.Join(sessionDir, ActiveContextFile)
 	tmp, err := os.CreateTemp(sessionDir, ActiveContextFile+".tmp.*")
 	if err != nil {
