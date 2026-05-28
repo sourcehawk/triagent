@@ -5,6 +5,7 @@ import (
 
 	"github.com/sourcehawk/triagent/pkg/auth"
 	"github.com/sourcehawk/triagent/pkg/mcp/k8s"
+	"k8s.io/client-go/tools/clientcmd"
 )
 
 // resolveActiveContext translates the operator's cluster_id form input
@@ -47,10 +48,32 @@ func resolveActiveContext(ctx context.Context, provider auth.Provider, clusterID
 // it wrote (empty when there was nothing to seed) plus any write
 // error. Write failures are not fatal to preflight; the caller logs
 // and continues — the agent can always invoke switch_context.
-func seedActiveContext(ctx context.Context, provider auth.Provider, sessionDir, clusterID string) (string, error) {
+//
+// When kubeconfigPath is supplied, the resolved context name is
+// verified against the frozen session kubeconfig before any write —
+// providers (teleport in particular) advertise a synthesized context
+// name for every discoverable cluster, including ones the operator
+// has not logged into yet, and seeding such a name would leave the
+// k8s MCP hydrate and the prom resolver port-forwarding a non-existent
+// context. Empty kubeconfigPath disables the check (trust the
+// provider's name verbatim, matching the prior best-effort behaviour
+// for callers that don't yet know the frozen path).
+func seedActiveContext(ctx context.Context, provider auth.Provider, sessionDir, kubeconfigPath, clusterID string) (string, error) {
 	kubeContext := resolveActiveContext(ctx, provider, clusterID)
 	if kubeContext == "" {
 		return "", nil
+	}
+	if kubeconfigPath != "" {
+		cfg, err := clientcmd.LoadFromFile(kubeconfigPath)
+		if err != nil {
+			// Treat a missing/unreadable kubeconfig as "cannot verify" —
+			// fall back to the standard switch_context flow rather than
+			// seeding a context the MCP may not be able to use.
+			return "", nil
+		}
+		if _, ok := cfg.Contexts[kubeContext]; !ok {
+			return "", nil
+		}
 	}
 	if err := k8s.WriteActiveContextFile(sessionDir, kubeContext); err != nil {
 		return "", err

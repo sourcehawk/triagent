@@ -445,7 +445,7 @@ func (a *apiHandlers) handlePreflight(w http.ResponseWriter, r *http.Request) {
 	// effort: a missing provider, an unresolved cluster, or a write
 	// error all leave the file absent and the agent falls back to
 	// calling switch_context itself.
-	activeContext, err := seedActiveContext(r.Context(), a.opts.Provider, sessionDir, clusterID)
+	activeContext, err := seedActiveContext(r.Context(), a.opts.Provider, sessionDir, res.KubeconfigPath, clusterID)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "preflight: seed active-context for %s: %v\n", investigationID, err)
 	}
