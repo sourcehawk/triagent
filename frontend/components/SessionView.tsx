@@ -831,6 +831,7 @@ export function SessionView({
               the icon. */}
           <div className="relative">
             <textarea
+              data-testid="triagent-composer-input"
               value={followUp}
               onChange={(e) => setFollowUp(e.target.value)}
               onKeyDown={onTextareaKey}
@@ -915,6 +916,7 @@ export function SessionView({
             ) : (
               <button
                 type="submit"
+                data-testid="triagent-composer-send"
                 title="send (Enter)"
                 aria-label="send"
                 disabled={
@@ -1337,6 +1339,7 @@ function UsageReadout({
   if (tokens === 0 && cost === 0) return null;
   return (
     <span
+      data-testid="triagent-usage-readout"
       className="ml-auto font-mono text-xs text-zinc-500"
       title={`Total token usage across this session, summed from every claude turn. Cache reads price at ~10% of fresh input tokens, so cost can be much lower than the raw token count suggests.`}
     >

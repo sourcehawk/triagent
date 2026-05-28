@@ -163,7 +163,10 @@ export function ActivityPanel({ investigation, items, onCollapse }: Props) {
   }
 
   return (
-    <aside className="flex w-80 shrink-0 flex-col gap-3 border-l border-zinc-800 bg-zinc-950 px-3 py-4">
+    <aside
+      data-testid="triagent-activity-panel"
+      className="flex w-80 shrink-0 flex-col gap-3 border-l border-zinc-800 bg-zinc-950 px-3 py-4"
+    >
       {onCollapse && (
         <div className="flex justify-end">
           <button
@@ -278,6 +281,8 @@ function ActivityRow({
   return (
     <button
       type="button"
+      data-testid="triagent-activity-row"
+      data-tool-id={call.toolId}
       onClick={onClick}
       // `group` lets the inner name span flip from truncate → wrap on
       // hover so the row expands vertically and reveals the full tool

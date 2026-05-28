@@ -108,6 +108,8 @@ function InvRow({ inv, active, onSelect, onDelete, onRenamed }: InvRowProps) {
     <li>
       <button
         type="button"
+        data-testid="triagent-investigation-row"
+        data-investigation-id={inv.id}
         onClick={() => onSelect(inv.id)}
         className={
           "group flex w-full flex-col items-start gap-0.5 rounded px-2 py-1.5 text-left transition " +
@@ -521,6 +523,7 @@ function SidebarInner({
           {view === "investigations" ? (
             <Link
               href="/investigations/new"
+              data-testid="triagent-new-investigation"
               className="rounded bg-zinc-100 px-3 py-2 text-sm font-medium text-zinc-900 transition hover:bg-white"
             >
               + new investigation
