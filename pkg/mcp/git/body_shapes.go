@@ -43,8 +43,9 @@ Rules:
 `
 
 // prBodyShape is the section layout + rules the draft_pr sub-agent
-// follows when writing PR_BODY. The host appends "Fixes #N" and the
-// 🤖 trailer; the agent's body covers only the sections below.
+// follows when writing PR_BODY. The agent opens the Description with
+// "Fixes #<num>" so GitHub's auto-close linkage is preserved; the host
+// only appends the 🤖 trailer.
 const prBodyShape = `BODY SHAPE — draft PR
 
 ## Description
