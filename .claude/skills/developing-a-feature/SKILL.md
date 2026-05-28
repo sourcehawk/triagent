@@ -44,8 +44,10 @@ Each subagent's dispatch prompt MUST include:
    so the subagent confirms it's on the right branch before any edit (project-wide convention; commits land on the
    wrong branch otherwise).
 2. **Context handoff.** The dispatch hands the subagent: the plan path, the spec path, the issue number it's working,
-   and the relevant contract row(s) from the plan's `## Contracts` section. The subagent implements **against the
-   contract** — it does not re-discover or re-design it.
+   and the relevant contract row(s) from the plan's `## Contracts` section — **including each row's Realization
+   strategy** so the subagent knows whether to branch from main (pre-merge stub already landed, data-only contract),
+   from the producer's branch (stub-on-producer-branch), or block until the stub PR merges. The subagent implements
+   **against the contract** — it does not re-discover or re-design it.
 3. **Implementation skills.** The subagent follows `superpowers:test-driven-development` + `testing-a-feature` for
    every change.
 4. **Completion.** The subagent invokes `opening-a-pull-request` for its branch with `Fixes #<sub-issue>` in the

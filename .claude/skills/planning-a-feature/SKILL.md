@@ -76,12 +76,29 @@ PR-by-PR breakdown.
 ask: what does each side need to know about the other's wire shape, API surface, or data layout to start work
 without blocking? That's a contract. Document each in a `## Contracts` section of the plan:
 
-| Name                       | Producer (issue) | Consumer (issue) | Shape                                                 |
-| -------------------------- | ---------------- | ---------------- | ----------------------------------------------------- |
-| `profile-storage-layout`   | #22              | #24, #25         | path `~/.config/triagent/<profile>/sessions/<id>/...` |
+| Name                       | Producer (issue) | Consumer (issue) | Shape                                                 | Realization              |
+| -------------------------- | ---------------- | ---------------- | ----------------------------------------------------- | ------------------------ |
+| `profile-storage-layout`   | #22              | #24, #25         | path `~/.config/triagent/<profile>/sessions/<id>/...` | data-only                |
+| `profile-loader-signature` | #22              | #24, #25         | `profile.Resolve(name string) (*Profile, error)`      | pre-merge stub PR (#21)  |
 
 Each contract names the wire / signature / layout the consumer can write code against today, without waiting for the
 producer's implementation. "TBD" is not a contract — block on it until it's concrete.
+
+**Realization strategy.** A contract row is conceptual; for parallel work to actually compile, the interface has to
+exist as code or as data before either side starts. Pick one per row and put it in the Realization column:
+
+- **Pre-merge stub PR** — file a tiny scaffold PR that exports the symbol the consumers need (Go interface or
+  function signature with `panic("unimplemented")` body, TypeScript type, HTTP path constant) and merge it to main
+  BEFORE the implementation PRs branch off. Producer and consumers then all branch from main and import the real
+  symbol. Best default for code-shaped contracts (Go signatures, TS types); costs one trivial extra PR; payoff is
+  both sides compile from day one. Reference the stub PR's number in the Realization column once it's open.
+- **Stub-on-producer-branch** — the producer's own PR opens with just the interface + panic-bodies; consumers branch
+  from the producer's branch (not main) and rebase as the producer fills in the body. Avoids the extra PR but
+  couples consumers to the producer's branch lifetime — rebase pain when the interface evolves. Use only when the
+  interface and one implementation are inherently coupled (shared unexported package, sibling files in one module).
+- **Data-only** — when the contract is a path layout, file format, wire protocol, or env-var name, no code stub is
+  needed. Consumers write against the contract row directly — strings and paths are just strings and paths. Mark
+  the row `data-only`.
 
 Sequential work doesn't need contracts. Only document them where two workers genuinely run in parallel.
 
