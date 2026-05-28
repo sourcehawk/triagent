@@ -195,6 +195,7 @@ export function ReposIndexClient() {
 
         {defaults && defaults.length > 0 && (
           <Section
+            group="defaults"
             label={
               filter
                 ? `defaults (${filteredDefaults.length}/${defaults.length})`
@@ -233,6 +234,7 @@ export function ReposIndexClient() {
 
         {user && (
           <Section
+            group="user"
             label={
               filter
                 ? `yours (${filteredUser.length}/${user.length})`
@@ -333,16 +335,25 @@ function Pager({
 }
 
 function Section({
+  group,
   label,
   subtitle,
   children,
 }: {
+  // group is the stable e2e identity for the section ("defaults" |
+  // "user"), surfaced as a data attribute so tests locate the linked
+  // vs user-local group without depending on the (count-bearing) label.
+  group: string;
   label: string;
   subtitle: string;
   children: React.ReactNode;
 }) {
   return (
-    <section className="mb-6">
+    <section
+      className="mb-6"
+      data-testid="triagent-repos-group"
+      data-repo-group={group}
+    >
       <div className="mb-2 flex items-baseline gap-2">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
           {label}
@@ -397,7 +408,11 @@ function RepoRow({
 }) {
   const status = useRepoSummaryStatus(repo.owner, repo.name);
   return (
-    <li className="group flex items-stretch gap-2 rounded border border-zinc-800 bg-zinc-900/40 transition hover:border-zinc-600 hover:bg-zinc-900/70">
+    <li
+      className="group flex items-stretch gap-2 rounded border border-zinc-800 bg-zinc-900/40 transition hover:border-zinc-600 hover:bg-zinc-900/70"
+      data-testid="triagent-repo-row"
+      data-repo-key={`${repo.owner}/${repo.name}`}
+    >
       <button
         type="button"
         onClick={onClick}

@@ -92,3 +92,56 @@ export async function waitForAssistantText(page: Page, substr: string): Promise<
     transcript(page).getByTestId(testids.assistantMessage).filter({ hasText: substr }),
   ).toBeVisible({ timeout: 30_000 });
 }
+
+// ── Flow 5 (repos page) ──────────────────────────────────────────────
+//
+// The repos surface env the harness passes for Flow 5: the regenerate
+// target (owner/name, an empty-state repo the harness seeded a clone for)
+// and a repo that ships with a pre-baked summary. Empty when the harness
+// didn't set them (non-repos specs).
+export const REPO_OWNER = process.env.TRIAGENT_REPO_OWNER ?? "";
+export const REPO_NAME = process.env.TRIAGENT_REPO_NAME ?? "";
+export const REPO_WITH_SUMMARY = process.env.TRIAGENT_REPO_WITH_SUMMARY ?? "";
+
+// Flow 5 testids, kept in lockstep with the data-testid attributes on the
+// repos index (client.tsx) + the per-repo view (RepoArchitectureView.tsx).
+export const repoTestids = {
+  // One per section on the index page; data-repo-group is "defaults"
+  // (linked) | "user" (user-local).
+  group: "triagent-repos-group",
+  // One per row on the index page; data-repo-key is "owner/name".
+  row: "triagent-repo-row",
+  // The refresh/regenerate button on the per-repo view.
+  regenerate: "triagent-repo-regenerate",
+  // The rendered markdown summary article on the per-repo view.
+  summary: "triagent-repo-summary",
+  // The "no cached summary yet" block on the per-repo view.
+  emptyState: "triagent-repo-empty-state",
+} as const;
+
+// reposGroup returns the index-page section for a group ("defaults" |
+// "user").
+export function reposGroup(page: Page, group: "defaults" | "user"): Locator {
+  return page.locator(
+    `[data-testid="${repoTestids.group}"][data-repo-group="${group}"]`,
+  );
+}
+
+// repoRow returns the index-page row for owner/name, scoped to a group so
+// a repo present in both lists (it shouldn't be) stays unambiguous.
+export function repoRowInGroup(
+  page: Page,
+  group: "defaults" | "user",
+  ownerName: string,
+): Locator {
+  return reposGroup(page, group).locator(
+    `[data-testid="${repoTestids.row}"][data-repo-key="${ownerName}"]`,
+  );
+}
+
+// openRepo navigates straight to a repo's per-repo view via the URL —
+// URL is the source of truth for view state (ADR-0006), so this mounts
+// RepoArchitectureView the same way a row click does.
+export async function openRepo(page: Page, ownerName: string): Promise<void> {
+  await gotoAuthed(page, `/repos?repo=${encodeURIComponent(ownerName)}`);
+}

@@ -220,6 +220,7 @@ export function RepoArchitectureView({ owner, name }: Props) {
           type="button"
           onClick={onRefresh}
           disabled={status?.inFlight === true}
+          data-testid="triagent-repo-regenerate"
           className="rounded bg-zinc-100 px-3 py-1.5 text-xs font-medium text-zinc-900 transition hover:bg-white disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
         >
           {status?.inFlight ? "generating…" : "refresh"}
@@ -254,7 +255,10 @@ export function RepoArchitectureView({ owner, name }: Props) {
       )}
 
       {summary && !summary.exists && !editing && (
-        <div className="rounded border border-zinc-800 bg-zinc-900/40 p-4 text-sm text-zinc-400">
+        <div
+          data-testid="triagent-repo-empty-state"
+          className="rounded border border-zinc-800 bg-zinc-900/40 p-4 text-sm text-zinc-400"
+        >
           <p>No cached architecture summary yet.</p>
           {summary.hint && (
             <p className="mt-2 text-xs text-zinc-500">{summary.hint}</p>
@@ -269,6 +273,7 @@ export function RepoArchitectureView({ owner, name }: Props) {
 
       {summary && summary.exists && !editing && (
         <article
+          data-testid="triagent-repo-summary"
           className={
             "prose prose-invert max-w-none " +
             "prose-headings:font-semibold prose-headings:tracking-tight " +

@@ -1,0 +1,6 @@
+[
+  {
+    "argv": ["issue", "list"],
+    "stdout": "[]\n"
+  }
+]
