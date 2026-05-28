@@ -23,7 +23,7 @@ status: consumer-wave
 | Issue                     | Branch                       | Worktree path                                            | PR (→ base)              | Status      |
 | ------------------------- | ---------------------------- | -------------------------------------------------------- | ------------------------ | ----------- |
 | sourcehawk/triagent#14    | e2e-harness-foundation       | (removed; merged)                                        | sourcehawk/triagent#20 → feature/e2e-golden-path-coverage | self-merged |
-| sourcehawk/triagent#15    | e2e-flow1-boot               | .claude/worktrees/e2e-golden-path-coverage--flow1        | sourcehawk/triagent#21 → feature/e2e-golden-path-coverage | draft       |
+| sourcehawk/triagent#15    | e2e-flow1-boot               | .claude/worktrees/e2e-golden-path-coverage--flow1        | sourcehawk/triagent#21 → feature/e2e-golden-path-coverage | self-merged |
 | sourcehawk/triagent#16    | e2e-flow2-investigation      | .claude/worktrees/e2e-golden-path-coverage--flow2        | sourcehawk/triagent#23 → feature/e2e-golden-path-coverage | draft       |
 | sourcehawk/triagent#17    | e2e-flow2b-k8s               | .claude/worktrees/e2e-golden-path-coverage--flow2b       | sourcehawk/triagent#22 → feature/e2e-golden-path-coverage | draft       |
 | sourcehawk/triagent#18    | e2e-flows34-editors          | .claude/worktrees/e2e-golden-path-coverage--editors      | → feature/e2e-golden-path-coverage | not-started |
