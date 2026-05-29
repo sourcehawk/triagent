@@ -124,10 +124,15 @@ func Wrap[In, Out any](shortName string, fn mcp.ToolHandlerFor[In, Out]) mcp.Too
 		})
 		ctx = context.WithValue(ctx, toolIDKey{}, toolID)
 		callResult, out, callErr := fn(ctx, req, in)
+		// toolName rides the end event too: the launcher's recordEnd
+		// (MCP-health in-flight accounting) and codefix live-persist
+		// branch both key off the end event's name and silently no-op
+		// without it.
 		cfg.send(toolEvent{
 			Phase:     "end",
 			TraceID:   cfg.traceID,
 			ToolID:    toolID,
+			ToolName:  fullName,
 			Result:    stringifyResult(callResult, out),
 			ErrorText: resultError(callResult, callErr),
 		})
