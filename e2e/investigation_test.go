@@ -40,14 +40,14 @@ const summarizeToolName = "mcp__triagent-strategies__summarize"
 // renders. Assertions are invariants, not whole-body snapshots.
 func TestInvestigation_BackendInvariants(t *testing.T) {
 	h := harness.Launch(t, harness.Options{
-		Profile:         "with-prompts-and-linked-repo",
-		SessionFixtures: "in-progress",
-		StubScript:      "investigation",
-		GhScript:        "investigation",
+		Profile:    "with-prompts-and-linked-repo",
+		Session:    "resumable-investigation",
+		StubScript: "summarize-and-resume",
+		GhScript:   "issue-create",
 	})
 
 	// The pre-baked fixture investigation is listed before any live work.
-	if !listContainsInvestigation(t, h, "inv-flow2-fixture") {
+	if !listContainsInvestigation(t, h, "inv-resumable") {
 		t.Fatalf("seeded fixture investigation not listed by /api/investigations")
 	}
 
@@ -60,7 +60,7 @@ func TestInvestigation_BackendInvariants(t *testing.T) {
 	// Create a fresh investigation. All profile inputs are optional, so an
 	// empty inputs map is a valid preflight.
 	id := createInvestigation(t, h)
-	if id == "inv-flow2-fixture" {
+	if id == "inv-resumable" {
 		t.Fatalf("new investigation reused the fixture id %q", id)
 	}
 
@@ -76,7 +76,7 @@ func TestInvestigation_BackendInvariants(t *testing.T) {
 	tr := h.StubTrace(t, "main")
 	assertAllowedToolsCover(t, tr.AllowedTools, []string{
 		"mcp__triagent-git-payments__*", // linked_repos
-		"mcp__org-docs__search",          // extra_mcps allowed_tools
+		"mcp__org-docs__search",         // extra_mcps allowed_tools
 	})
 	// The main system prompt is delivered as the claude prompt over stdin;
 	// its first line is the fixture's distinctive marker, proving the
@@ -124,11 +124,11 @@ func TestInvestigation_BackendInvariants(t *testing.T) {
 // this test owns the DOM-rendering half end to end.
 func TestInvestigation_Browser(t *testing.T) {
 	h := harness.Launch(t, harness.Options{
-		Profile:         "with-prompts-and-linked-repo",
-		SessionFixtures: "in-progress",
-		StubScript:      "investigation",
-		GhScript:        "investigation",
-		Browser:         true,
+		Profile:    "with-prompts-and-linked-repo",
+		Session:    "resumable-investigation",
+		StubScript: "summarize-and-resume",
+		GhScript:   "issue-create",
+		Browser:    true,
 	})
 
 	h.Browser.Run(t, "investigation.spec.ts")

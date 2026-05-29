@@ -29,9 +29,9 @@ import (
 // (validate-playbook / write-user-playbook / promote-proposal).
 func TestPlaybookEditor_BackendInvariants(t *testing.T) {
 	h := harness.Launch(t, harness.Options{
-		Profile:          "minimal",
-		PlaybookFixtures: "with-pending-proposal",
-		StubScript:       "playbook-editor",
+		Profile:    "minimal",
+		Playbook:   "with-pending-proposal",
+		StubScript: "playbook-editor",
 	})
 
 	// The vault's three user playbooks are all listed. The list also
@@ -115,10 +115,10 @@ func TestPlaybookEditor_BackendInvariants(t *testing.T) {
 // at ?playbook=<id>. The backend invariants are pinned separately above.
 func TestPlaybookEditor_Browser(t *testing.T) {
 	h := harness.Launch(t, harness.Options{
-		Profile:          "minimal",
-		PlaybookFixtures: "with-pending-proposal",
-		StubScript:       "playbook-editor",
-		Browser:          true,
+		Profile:    "minimal",
+		Playbook:   "with-pending-proposal",
+		StubScript: "playbook-editor",
+		Browser:    true,
 	})
 
 	// Confirm the vault is server-side complete before driving the

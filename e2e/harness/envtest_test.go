@@ -25,7 +25,7 @@ func TestSetupK8s_AppliesFixturesAndWritesKubeconfig(t *testing.T) {
 	}
 
 	stateDir := t.TempDir()
-	res, err := setupK8s(t, stateDir, Options{K8s: true, K8sFixtures: "with-namespaces-and-pods"})
+	res, err := setupK8s(t, stateDir, Options{K8sEnvtest: true, K8s: "with-namespaces-and-pods"})
 	if err != nil {
 		t.Fatalf("setupK8s: %v", err)
 	}

@@ -6,7 +6,7 @@ import {
   proposalKindsInOrder,
   waitForAssistantText,
   waitForProposalCards,
-} from "./helpers/triagent";
+} from "../helpers/triagent";
 import {
   activityRows,
   clickNewInvestigation,
@@ -17,7 +17,7 @@ import {
   investigationRows,
   mcpChip,
   waitForUsageReadout,
-} from "./helpers/walkthrough";
+} from "../helpers/walkthrough";
 
 // Flow 2, the investigations operator walkthrough: the browser drives the
 // whole golden path rather than reading a transcript the Go harness pre-baked.
@@ -29,9 +29,9 @@ import {
 // (allowed-tools, system prompt, gh issue body, transcript order) stay pinned
 // in TestInvestigation_BackendInvariants; this spec owns the rendered SPA.
 
-// The id the in-progress session fixture seeds; deterministic, so the spec
-// asserts the seed row by id without the harness threading it through env.
-const SEED_INVESTIGATION_ID = "inv-flow2-fixture";
+// The id the resumable-investigation session fixture seeds; deterministic, so
+// the spec asserts the seed row by id without the harness threading it through env.
+const SEED_INVESTIGATION_ID = "inv-resumable";
 
 test.describe("investigation Flow 2 walkthrough", () => {
   test("seeds, creates, drives the kickoff turn, and answers a follow-up", async ({

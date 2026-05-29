@@ -17,27 +17,29 @@ import (
 	"time"
 )
 
-// Options configures a Launch. Profile names a fixture profile under
-// fixtures/profiles/; the *Fixtures fields name optional scenarios under
-// the matching fixtures/ subtree; StubScript / GhScript name the per-test
-// script directories the stubs replay.
+// Options configures a Launch. Each scenario field names a directory under
+// the matching fixtures/ bucket — the field name is the bucket name, so
+// Session names a scenario under fixtures/sessions/, GhScript under
+// fixtures/gh-scripts/, and so on. Profile is required; the rest are
+// optional. K8sEnvtest / Browser are toggles, not scenario names.
 type Options struct {
-	Profile          string // fixture profile name under fixtures/profiles/
-	SessionFixtures  string // optional scenario under fixtures/sessions/
-	PlaybookFixtures string // optional scenario under fixtures/playbooks/
-	WikiFixtures     string // optional scenario under fixtures/wiki/
-	RepoFixtures     string // optional scenario under fixtures/repos/
-	K8s              bool   // attach an envtest namespace and write kubeconfig (wired by #17)
-	K8sFixtures      string // optional scenario under fixtures/k8s/ to pre-apply (#17)
-	StubScript       string // per-test script dir under fixtures/stub-scripts/
-	GhScript         string // per-test responses dir under fixtures/gh-scripts/
-	Browser          bool   // launch the Playwright runner for this test (wired by #16)
+	Profile    string // fixture profile under fixtures/profiles/ (required)
+	Session    string // optional scenario under fixtures/sessions/
+	Playbook   string // optional scenario under fixtures/playbooks/
+	Wiki       string // optional scenario under fixtures/wiki/
+	Repo       string // optional scenario under fixtures/repos/
+	K8s        string // optional scenario under fixtures/k8s/ to pre-apply
+	StubScript string // scenario under fixtures/stub-scripts/
+	GhScript   string // scenario under fixtures/gh-scripts/
+
+	K8sEnvtest bool // attach an envtest apiserver and write kubeconfig
+	Browser    bool // launch the Playwright runner for this test
 }
 
 // Harness is the live launcher under test. BaseURL is the launcher's
 // loopback URL; StateDir is the temp XDG_CONFIG_HOME root the launcher
 // persisted into; Client carries HTTP helpers. Browser is nil unless
-// Options.Browser (and is wired by #16).
+// Options.Browser.
 type Harness struct {
 	BaseURL  string
 	StateDir string
@@ -86,7 +88,7 @@ func Launch(t *testing.T, opts Options) *Harness {
 	// KUBECONFIG below; preflight then freezes a per-session copy and every
 	// spawned MCP child carries that explicit path (project rule).
 	var kubeconfigPath string
-	if opts.K8s {
+	if opts.K8sEnvtest {
 		setup, err := setupK8s(t, stateDir, opts)
 		if err != nil {
 			t.Fatalf("harness: k8s setup: %v", err)

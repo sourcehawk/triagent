@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { gotoAuthed } from "./helpers/triagent";
+import { gotoAuthed } from "../helpers/triagent";
 import {
   approveWikiProposalInEditor,
   clickNewWikiEntry,
@@ -10,7 +10,7 @@ import {
   openWikiEntries,
   wikiEditorChatReply,
   wikiEntryRow,
-} from "./helpers/editor";
+} from "../helpers/editor";
 
 // Flow 4 operator walkthrough — wikis. The browser drives the whole
 // through-line a human would click; the Go harness only seeds prior state

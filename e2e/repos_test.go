@@ -41,10 +41,10 @@ const (
 // the single-flight regenerate contract.
 func TestRepos_BackendInvariants(t *testing.T) {
 	h := harness.Launch(t, harness.Options{
-		Profile:      "with-linked-repos",
-		RepoFixtures: "mixed",
-		StubScript:   "repos-regenerate",
-		GhScript:     "repos-mixed",
+		Profile:    "with-linked-repos",
+		Repo:       "mixed",
+		StubScript: "repos-regenerate",
+		GhScript:   "repos-mixed",
 	})
 
 	// Four-source reconciliation: the profile's linked_repos surface as
@@ -115,11 +115,11 @@ func TestRepos_BackendInvariants(t *testing.T) {
 // TestRepos_BackendInvariants; the browser only asserts what it can see.
 func TestRepos_Browser(t *testing.T) {
 	h := harness.Launch(t, harness.Options{
-		Profile:      "with-linked-repos",
-		RepoFixtures: "mixed",
-		StubScript:   "repos-regenerate",
-		GhScript:     "repos-mixed",
-		Browser:      true,
+		Profile:    "with-linked-repos",
+		Repo:       "mixed",
+		StubScript: "repos-regenerate",
+		GhScript:   "repos-mixed",
+		Browser:    true,
 	})
 
 	h.Browser.SetEnv("TRIAGENT_REPO_OWNER", flow5RegenOwner)

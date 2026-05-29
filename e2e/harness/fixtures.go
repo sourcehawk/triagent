@@ -53,9 +53,9 @@ func seedFixtures(stateDir, cacheDir string, opts Options) (string, error) {
 		dest     string // destination under the per-profile state dir
 	}
 	seeds := []seed{
-		{opts.SessionFixtures, "sessions", filepath.Join(base, "sessions")},
-		{opts.PlaybookFixtures, "playbooks", filepath.Join(base, "playbooks")},
-		{opts.WikiFixtures, "wiki", filepath.Join(base, "wiki")},
+		{opts.Session, "sessions", filepath.Join(base, "sessions")},
+		{opts.Playbook, "playbooks", filepath.Join(base, "playbooks")},
+		{opts.Wiki, "wiki", filepath.Join(base, "wiki")},
 	}
 	for _, s := range seeds {
 		if s.scenario == "" {
@@ -70,10 +70,10 @@ func seedFixtures(stateDir, cacheDir string, opts Options) (string, error) {
 		}
 	}
 
-	if opts.RepoFixtures != "" {
+	if opts.Repo != "" {
 		gitCacheDir := filepath.Join(cacheDir, "triagent-mcp", opts.Profile, "git")
-		if err := seedRepoVault(fixtureDir("repos", opts.RepoFixtures), base, gitCacheDir); err != nil {
-			return "", fmt.Errorf("seed repos/%s: %w", opts.RepoFixtures, err)
+		if err := seedRepoVault(fixtureDir("repos", opts.Repo), base, gitCacheDir); err != nil {
+			return "", fmt.Errorf("seed repos/%s: %w", opts.Repo, err)
 		}
 	}
 	return profilePath, nil

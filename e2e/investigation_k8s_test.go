@@ -29,10 +29,10 @@ func TestInvestigationK8s_RealMCPRoundTrip(t *testing.T) {
 	}
 
 	h := harness.Launch(t, harness.Options{
-		Profile:     "minimal-with-k8s",
-		K8s:         true,
-		K8sFixtures: "with-namespaces-and-pods",
-		StubScript:  "k8s-roundtrip",
+		Profile:    "minimal-with-k8s",
+		K8sEnvtest: true,
+		K8s:        "with-namespaces-and-pods",
+		StubScript: "k8s-roundtrip",
 	})
 
 	id := createInvestigation(t, h)

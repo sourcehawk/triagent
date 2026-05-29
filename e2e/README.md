@@ -20,17 +20,28 @@ resolves the stubs.
 
 ## Writing a test
 
+Every `Options` scenario field is named for its `fixtures/` bucket, so the
+field tells you exactly which directory it loads from. Name a scenario for the
+state it encodes (`resumable-investigation`) or the behaviour it scripts
+(`summarize-and-resume`) — never for the flow that happens to use it, since
+scenarios get reused.
+
 ```go
 func TestSomething(t *testing.T) {
     h := harness.Launch(t, harness.Options{
-        Profile:    "minimal",            // fixtures/profiles/<name>/
-        StubScript: "my-flow",            // fixtures/stub-scripts/<name>/main.jsonl
-        GhScript:   "my-flow",            // fixtures/gh-scripts/<name>/responses.json
+        Profile:    "minimal",              // fixtures/profiles/<scenario>/
+        StubScript: "summarize-and-resume", // fixtures/stub-scripts/<scenario>/main.jsonl
+        GhScript:   "issue-create",         // fixtures/gh-scripts/<scenario>/responses.json
     })
     profile, version := h.Client.Healthz(t)
     // ... assert against h.Client, h.StubTrace(t, "main"), h.GhTrace(t)
 }
 ```
+
+The optional `Session` / `Playbook` / `Wiki` / `Repo` / `K8s` fields seed the
+matching vault before the launcher boots; `K8sEnvtest` / `Browser` are toggles.
+Browser specs live under `browser/specs/`; `h.Browser.Run(t, "<name>.spec.ts")`
+runs one against the launched instance.
 
 `Launch` seeds a temp `XDG_CONFIG_HOME`, allocates a free port, execs
 `triagent start --profile <path> --port <n>`, waits for `/healthz`, and
@@ -38,7 +49,7 @@ registers cleanup that SIGTERMs the launcher and dumps its logs on failure.
 
 ## Authoring a claude-stub script
 
-`fixtures/stub-scripts/<test>/main.jsonl`, one action per line:
+`fixtures/stub-scripts/<scenario>/main.jsonl`, one action per line:
 
 ```jsonl
 {"action":"record_args"}
@@ -65,8 +76,8 @@ no `--mcp-config` is wired (non-k8s flows), `expect_tool_result` degrades to a
 single stdin-yield, so flows that don't need the round-trip are unaffected.
 
 The k8s flow (`investigation_k8s_test.go`) uses this against a real
-`triagent-mcp --kind=k8s` backed by an envtest apiserver. Set `K8s: true` (and
-optionally `K8sFixtures: "<scenario>"` under `fixtures/k8s/`) on `Options`; the
+`triagent-mcp --kind=k8s` backed by an envtest apiserver. Set `K8sEnvtest: true`
+(and optionally `K8s: "<scenario>"` under `fixtures/k8s/`) on `Options`; the
 harness boots a process-shared envtest, applies the fixture manifests, writes a
 static kubeconfig, and points the launcher's `KUBECONFIG` at it. Envtest needs
 the kubebuilder apiserver/etcd binaries; without them (`KUBEBUILDER_ASSETS` or
@@ -79,7 +90,7 @@ result to `<state_dir>/traces/claude-stub.trace.<role>.<pid>.jsonl`; read it via
 
 ## Authoring a gh-stub script
 
-`fixtures/gh-scripts/<test>/responses.json` is an argv-prefix → response
+`fixtures/gh-scripts/<scenario>/responses.json` is an argv-prefix → response
 table:
 
 ```json

@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { REPO_NAME, REPO_OWNER, openRepo, repoTestids } from "./helpers/triagent";
+import { REPO_NAME, REPO_OWNER, openRepo, repoTestids } from "../helpers/triagent";
 
 // Flow 5 — regenerated-summary result (deterministic second phase).
 //

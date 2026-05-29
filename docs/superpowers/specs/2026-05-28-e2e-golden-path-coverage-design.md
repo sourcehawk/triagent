@@ -134,26 +134,29 @@ e2e/
                                  subcommand match → JSON response from
                                  a per-test script
   browser/
-    playwright.config.ts       — base config; per-run overlay written
-                                 by harness.browser.Run()
+    playwright.config.ts       — base config (testDir: ./specs); per-run
+                                 overlay written by harness.browser.Run()
     package.json               — @playwright/test pinned
-    investigation.spec.ts      — flow 2 browser assertions
-    playbook.spec.ts           — flow 3
-    wiki.spec.ts               — flow 4
-    repos.spec.ts              — flow 5
+    specs/                     — the Playwright tests, fenced off from
+                                 config + helpers so the spec files are
+                                 unambiguously the test surface
+      investigation.spec.ts    — flow 2 browser assertions
+      playbook.spec.ts         — flow 3
+      wiki.spec.ts             — flow 4
+      repos.spec.ts            — flow 5
     helpers/                   — selectors, waits, fixture loaders
   fixtures/
-    profiles/<scenario>/       — minimal, with-linked-repo, with-prompts, etc.
-    sessions/<scenario>/       — pre-baked Investigation dirs
-                                 (events.jsonl, metadata.json, transcript.jsonl)
+    profiles/<scenario>/       — minimal, with-linked-repos, with-prompts, etc.
+    sessions/<scenario>/       — pre-baked Investigation dirs, each holding
+                                 the <id>/ dir (events.jsonl, metadata.json)
     playbooks/<scenario>/      — pre-baked playbook vault state
     wiki/<scenario>/           — pre-baked wiki vault state
     repos/<scenario>/          — repo summaries vault + user-local repo dirs
     k8s/<scenario>/            — YAML manifests applied to envtest before
                                  each test (pods, namespaces, deployments)
-    stub-scripts/<test>/
+    stub-scripts/<scenario>/   — named for the claude behaviour it scripts
       main.jsonl               — primary claude session script
-    gh-scripts/<test>/
+    gh-scripts/<scenario>/     — named for the gh interaction it answers
       responses.json           — match-by-argv table for gh-stub
   launcher_test.go             — flow 1: boot options
   investigation_test.go        — flow 2: session lifecycle + proposals
@@ -286,17 +289,19 @@ locate fragilely (a small, named set; some already exist in
 ```go
 func Launch(t *testing.T, opts Options) *Harness
 
+// Each scenario field is the bucket directory name, so the field names
+// double as the fixtures/ layout. K8sEnvtest / Browser are toggles.
 type Options struct {
-    Profile          string  // fixture profile name under fixtures/profiles/
-    SessionFixtures  string  // optional scenario under fixtures/sessions/
-    PlaybookFixtures string  // optional scenario under fixtures/playbooks/
-    WikiFixtures     string  // optional scenario under fixtures/wiki/
-    RepoFixtures     string  // optional scenario under fixtures/repos/
-    K8s              bool    // attach an envtest namespace and write kubeconfig
-    K8sFixtures      string  // optional scenario under fixtures/k8s/ to pre-apply
-    StubScript       string  // per-test script directory under fixtures/stub-scripts/
-    GhScript         string  // per-test responses under fixtures/gh-scripts/
-    Browser          bool    // launch Playwright runner for this test
+    Profile    string  // fixture profile under fixtures/profiles/ (required)
+    Session    string  // optional scenario under fixtures/sessions/
+    Playbook   string  // optional scenario under fixtures/playbooks/
+    Wiki       string  // optional scenario under fixtures/wiki/
+    Repo       string  // optional scenario under fixtures/repos/
+    K8s        string  // optional scenario under fixtures/k8s/ to pre-apply
+    StubScript string  // scenario under fixtures/stub-scripts/
+    GhScript   string  // scenario under fixtures/gh-scripts/
+    K8sEnvtest bool    // attach an envtest apiserver and write kubeconfig
+    Browser    bool    // launch Playwright runner for this test
 }
 
 type Harness struct {

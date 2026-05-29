@@ -12,7 +12,7 @@ import {
   repoRowInGroup,
   reposGroup,
   repoTestids,
-} from "./helpers/triagent";
+} from "../helpers/triagent";
 
 // Flow 5 — the repos operator walkthrough, browser-driven end to end.
 //

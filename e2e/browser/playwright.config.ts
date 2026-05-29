@@ -13,7 +13,7 @@ import { defineConfig, devices } from "@playwright/test";
 const baseURL = process.env.TRIAGENT_BASE_URL ?? "http://127.0.0.1:8080";
 
 export default defineConfig({
-  testDir: ".",
+  testDir: "./specs",
   // The harness runs one spec per (*Harness).Browser.Run call against its
   // own launcher, so parallelism across files would cross-wire launchers.
   // Within a single spec file, serial keeps the shared launcher state

@@ -13,7 +13,7 @@ import {
   playbookProposalBadge,
   savePlaybookEdit,
   sendEditorChat,
-} from "./helpers/editor";
+} from "../helpers/editor";
 
 // Flow 3 — the playbook editor operator walkthrough. The Go harness
 // seeded the with-pending-proposal vault (three playbooks + one pending

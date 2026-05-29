@@ -163,9 +163,9 @@ func setupK8s(t *testing.T, stateDir string, opts Options) (k8sSetup, error) {
 		return k8sSetup{}, fmt.Errorf("write kubeconfig: %w", err)
 	}
 
-	applied, err := applyK8sFixtures(cfg, opts.K8sFixtures)
+	applied, err := applyK8sManifests(cfg, opts.K8s)
 	if err != nil {
-		return k8sSetup{}, fmt.Errorf("apply k8s fixtures %q: %w", opts.K8sFixtures, err)
+		return k8sSetup{}, fmt.Errorf("apply k8s manifests %q: %w", opts.K8s, err)
 	}
 
 	// Clean up the namespaces the fixtures created so reruns within one
@@ -212,13 +212,13 @@ func writeStaticKubeconfig(cfg *rest.Config, path string) error {
 	return os.Chmod(path, 0o600)
 }
 
-// applyK8sFixtures parses every YAML manifest under fixtures/k8s/<scenario>,
+// applyK8sManifests parses every YAML manifest under fixtures/k8s/<scenario>,
 // creates each object against the apiserver, and (for pods carrying a
 // declared status.phase) patches that phase onto the status subresource —
 // envtest has no kubelet, so phase never advances on its own and the
 // declared value is the only thing list_resources can report. It returns the
 // set of namespaces touched, for cleanup. An empty scenario applies nothing.
-func applyK8sFixtures(cfg *rest.Config, scenario string) (map[string]struct{}, error) {
+func applyK8sManifests(cfg *rest.Config, scenario string) (map[string]struct{}, error) {
 	namespaces := map[string]struct{}{}
 	if scenario == "" {
 		return namespaces, nil
