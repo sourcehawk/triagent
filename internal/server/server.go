@@ -179,6 +179,10 @@ type Options struct {
 	// (system / architecture / strategies / editor / wiki_editor) and
 	// playbook IDs (suggested-entrypoint-playbook / suggested-closing-playbook).
 	Profile *profile.Profile
+
+	// Version is the launcher version reported by /healthz. Empty falls
+	// back to "dev"; release builds thread the -ldflags value here.
+	Version string
 }
 
 // Server owns the listener, the HTTP server, the launch token, and the
@@ -634,6 +638,7 @@ func New(opts Options) (*Server, error) {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/health", handleHealth)
+	mux.HandleFunc("/healthz", healthzHandler(profileName(opts.Profile), launcherVersion(opts.Version)))
 	api.register(mux)
 	mux.Handle("/", spaFileServer(frontFS))
 
@@ -749,6 +754,13 @@ func (s *statusRecorder) WriteHeader(code int) {
 func authMiddleware(token string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/api/internal/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		// /healthz is an unauthenticated readiness probe — it carries no
+		// investigation data, only the resolved profile name + version, and
+		// the e2e harness polls it before it ever has the launch token.
+		if r.URL.Path == "/healthz" {
 			next.ServeHTTP(w, r)
 			return
 		}

@@ -59,7 +59,7 @@ export function RepoActivityPanel({ repo, refreshNonce }: Props) {
   }, [items, filter]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="flex h-full min-h-0 flex-col" data-testid="triagent-repo-activity-panel">
       <div className="px-1 pb-2">
         <div className="mb-1 flex items-baseline justify-between gap-2">
           <span className="text-xs uppercase tracking-wide text-zinc-500">
@@ -138,7 +138,11 @@ function ActivityRow({
   const hasPR = Boolean(p.pr_url) && p.pr_number > 0;
   const hasIssue = Boolean(p.issue_url) && p.issue_number > 0;
   return (
-    <li className="rounded border border-zinc-800 bg-zinc-900/30 px-2 py-1.5 transition hover:border-zinc-700">
+    <li
+      className="rounded border border-zinc-800 bg-zinc-900/30 px-2 py-1.5 transition hover:border-zinc-700"
+      data-testid="triagent-repo-activity-row"
+      data-proposal-id={p.proposal_id}
+    >
       {showRepo && (
         <div className="mb-0.5 flex items-center gap-1.5 text-[11px] text-zinc-400">
           <GitHubIcon className="h-3 w-3 shrink-0 text-zinc-500" />

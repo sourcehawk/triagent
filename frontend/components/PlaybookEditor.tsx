@@ -1030,7 +1030,7 @@ export function PlaybookEditor({ id, onBack, onMutated, onOpenPlaybook }: Props)
   const showContent = load.kind === "loaded";
 
   return (
-    <div className="flex h-full flex-col gap-3 px-6 py-6">
+    <div data-testid="triagent-playbook-editor" className="flex h-full flex-col gap-3 px-6 py-6">
       {showLoading && (
         <div className="flex items-center gap-2 text-sm text-zinc-400">
           <Spinner /> loading playbook…
@@ -1081,6 +1081,7 @@ export function PlaybookEditor({ id, onBack, onMutated, onOpenPlaybook }: Props)
             placeholder="playbook_id"
           />
           <input
+            data-testid="triagent-playbook-symptom"
             value={draft.symptom}
             disabled={readOnly}
             onChange={(e) =>
@@ -1280,6 +1281,7 @@ export function PlaybookEditor({ id, onBack, onMutated, onOpenPlaybook }: Props)
                 ) : null}
                 <button
                   type="button"
+                  data-testid="triagent-playbook-save"
                   onClick={() => setShowSaveDialog(true)}
                   disabled={saving || allErrors.length > 0 || !dirty}
                   title={
@@ -1796,6 +1798,7 @@ function ChatToggleButton({
   return (
     <button
       type="button"
+      data-testid="triagent-playbook-chat-toggle"
       onClick={onClick}
       aria-pressed={open}
       title={

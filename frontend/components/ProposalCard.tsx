@@ -235,6 +235,7 @@ export function ProposalCard({
               </button>
               <button
                 type="button"
+                data-testid="triagent-proposal-approve"
                 onClick={() => void approve()}
                 className="rounded bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white transition hover:bg-emerald-500"
               >

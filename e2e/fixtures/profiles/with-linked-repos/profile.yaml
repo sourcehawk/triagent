@@ -1,0 +1,34 @@
+# Flow 5 fixture profile. Offline, kubeconfig auth, two linked (default)
+# repos exposed via linked_repos. The repos page reconciles these
+# defaults with the user-local repos seeded into user_repos.yaml and the
+# summary cache the harness seeds under GitCacheDir; repos_test.go pins
+# what the operator sees when one of the four has a summary and three
+# don't.
+name: with-linked-repos
+
+description: |
+  e2e Flow 5 profile: two linked (default) repos, offline, local
+  kubeconfig auth, no upstream repos.
+
+auth:
+  kind: kubeconfig
+
+playbooks:
+  entrypoint: investigation
+  closing: capture_offer
+
+defaults:
+  playbooks_repo: ""
+  wiki_repo: ""
+  sessions_repo: ""
+  offline: true
+
+linked_repos:
+  - owner: acme
+    name: payments
+    alias: payments
+    description: Payments service — billing-path investigations start here.
+  - owner: acme
+    name: billing
+    alias: billing
+    description: Billing ledger service — invoice and dunning state lives here.

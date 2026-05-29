@@ -1,0 +1,11 @@
+{
+  "name": "triagent-e2e-browser",
+  "private": true,
+  "description": "Playwright browser layer for the triagent e2e golden-path suite. The Go harness boots the real launcher and invokes `npx playwright test` against it via (*Harness).Browser.Run.",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.60.0"
+  }
+}

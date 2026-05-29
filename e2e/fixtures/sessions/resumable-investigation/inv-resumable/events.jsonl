@@ -1,0 +1,2 @@
+{"seq":1,"kind":"user","timestamp":"2026-05-01T12:00:01Z","text":"Pods in team-a are crash-looping after the last deploy. What changed?"}
+{"seq":2,"kind":"assistant","timestamp":"2026-05-01T12:00:05Z","text":"Looking into the team-a crash loop now — pulling recent events and the rollout history."}

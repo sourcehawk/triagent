@@ -1,0 +1,13 @@
+# Flow 5 user-local repos. The repos page lists these under the "yours"
+# group, distinct from the profile's linked_repos defaults. Both are
+# summary-less (empty-state); acme/gateway is the regenerate target the
+# test seeds a clone for so the summary worker has something to run in.
+repos:
+  - owner: acme
+    name: gateway
+    alias: gateway
+    description: API gateway — edge routing and auth termination for all services.
+  - owner: acme
+    name: notifier
+    alias: notifier
+    description: Notification fan-out service — email, SMS, and webhook delivery.

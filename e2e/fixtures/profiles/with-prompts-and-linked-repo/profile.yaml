@@ -1,0 +1,44 @@
+# Flow 2 fixture profile. Forks the minimal offline shape and adds the
+# two profile-derived knobs the investigation flow asserts reach the
+# agent: a linked repo (its triagent-git-<alias> tool glob must appear in
+# --allowedTools) and an extra MCP (its allowed-tools glob likewise). The
+# prompts/system.md first line is a distinctive marker the backend test
+# pins against the stub's first stdin event, proving the profile-derived
+# system prompt reached claude.
+name: with-prompts-and-linked-repo
+
+description: |
+  e2e Flow 2 profile: prompts + one linked repo + one extra MCP. Local
+  kubeconfig auth, offline, no upstream repos.
+
+auth:
+  kind: kubeconfig
+
+playbooks:
+  entrypoint: investigation
+  closing: capture_offer
+
+defaults:
+  playbooks_repo: ""
+  wiki_repo: ""
+  sessions_repo: ""
+  offline: true
+
+linked_repos:
+  - owner: acme
+    name: payments
+    alias: payments
+    description: Payments service — reach here for billing-path investigations.
+
+extra_mcps:
+  - alias: org-docs
+    description: Org-internal docs MCP, reference-only.
+    allowed_tools: [mcp__org-docs__search]
+
+investigation_inputs:
+  - id: notes
+    label: Notes
+    type: textarea
+    optional: true
+    prompt_keys:
+      - { key: operator-notes, value: "{{.value}}", if: '{{ne .value ""}}' }

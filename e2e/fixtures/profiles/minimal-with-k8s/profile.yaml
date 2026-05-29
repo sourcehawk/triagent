@@ -1,0 +1,23 @@
+# Minimal profile for the k8s round-trip flow (2b). Same local-only,
+# offline shape as `minimal` — no linked repos, no extra MCPs, no
+# prompts — just enough to bring the launcher up with the k8s MCP wired.
+# The harness points KUBECONFIG at a static envtest kubeconfig; the
+# kubeconfig auth provider discovers it the normal way (no Teleport).
+name: minimal-with-k8s
+
+description: |
+  Minimal k8s profile used by the e2e Flow 2b round-trip test. Local
+  kubeconfig auth against an envtest apiserver, offline, no upstream repos.
+
+auth:
+  kind: kubeconfig
+
+playbooks:
+  entrypoint: investigation
+  closing: capture_offer
+
+defaults:
+  playbooks_repo: ""
+  wiki_repo: ""
+  sessions_repo: ""
+  offline: true

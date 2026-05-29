@@ -1,0 +1,6 @@
+[
+  {
+    "argv": ["issue", "create"],
+    "stdout": "https://github.com/acme/payments/issues/44\n"
+  }
+]

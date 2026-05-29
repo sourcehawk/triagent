@@ -1,0 +1,8 @@
+{
+  "id": "inv-resumable",
+  "namespace": "team-a",
+  "notes": "Pre-baked in-progress investigation the e2e suite resumes from the resumable-investigation session fixture.",
+  "mcpConfigPath": "",
+  "sessionDir": "",
+  "createdAt": "2026-05-01T12:00:00Z"
+}

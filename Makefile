@@ -1,4 +1,4 @@
-.PHONY: build build-go build-launcher build-mcp test test-go test-frontend lint fmt frontend frontend-dev docs docs-dev docs-pages release-check release-snapshot-quick release-snapshot clean
+.PHONY: build build-go build-launcher build-mcp test test-go test-frontend test-e2e lint fmt frontend frontend-dev docs docs-dev docs-pages release-check release-snapshot-quick release-snapshot clean
 
 # Build the embedded frontend bundle, then both Go binaries. Order matters:
 # `frontend` syncs into internal/web/dist/, which the launcher embeds via
@@ -26,6 +26,25 @@ test-go:
 
 test-frontend:
 	cd frontend && npm install && npm test -- --run
+
+# End-to-end suite: drives the real triagent binary against scripted
+# claude/gh stubs. Gated behind the `e2e` build tag so it stays out of the
+# fast `make test` loop; CI runs it only on PRs to main. The browser
+# package install is guarded — a no-op until #16 adds e2e/browser, so the
+# Go suite runs today without a package.json on disk.
+#
+# Depends on `frontend` so internal/web/dist/ holds the real Next.js bundle
+# before the harness `go build`s ./cmd/triagent and embeds it via
+# //go:embed all:dist. Without this the launcher serves a directory listing
+# instead of the SPA, and the Playwright browser test sees an empty page.
+#
+# E2E_GOFLAGS is appended to `go test` — CI passes `-v` so the logs show every
+# RUN/PASS/SKIP line and the Playwright output (which the harness pipes via
+# t.Logf), making a silent skip (e.g. the k8s flow when envtest assets are
+# missing) visible instead of hiding inside a package-level `ok`.
+test-e2e: frontend
+	@if [ -f e2e/browser/package.json ]; then cd e2e/browser && npm install; fi
+	go test -tags=e2e -count=1 $(E2E_GOFLAGS) ./e2e/...
 
 lint:
 	golangci-lint run ./...

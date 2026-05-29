@@ -1,0 +1,68 @@
+name: E2E
+
+# The end-to-end suite drives the real triagent binary against scripted
+# claude/gh stubs. It runs only on pull requests targeting main, in
+# parallel with the unit-test job — sub-PRs into a feature branch skip it,
+# keeping the multi-PR loop fast; this job gates the integration PR to main
+# (and any direct-to-main PR).
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: E2E (golden path)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.tool-versions'
+
+      # Playwright browsers (~300MB) are pulled by the browser harness
+      # (#16); cache them so the install is near-free on subsequent runs.
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('e2e/browser/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-
+
+      # envtest's apiserver + etcd bundle (~80MB) is fetched by setup-envtest
+      # for the k8s round-trip flow (#17); cache the versioned bundle.
+      - name: Cache envtest binaries
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/kubebuilder-envtest/
+          key: ${{ runner.os }}-envtest-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-envtest-
+
+      # Install the kubebuilder apiserver/etcd assets and export
+      # KUBEBUILDER_ASSETS so the k8s round-trip flow (Flow 2b) actually runs.
+      # Without this, a fresh runner (cache miss) has no assets, so the flow
+      # skips silently and Flow 2b is never exercised. setup-envtest writes
+      # into the cached path above, so a cache hit makes this near-free.
+      # Pinned to the controller-runtime release line the module depends on.
+      - name: Install envtest assets
+        run: |
+          go install sigs.k8s.io/controller-runtime/tools/setup-envtest@release-0.23
+          echo "KUBEBUILDER_ASSETS=$("$(go env GOPATH)/bin/setup-envtest" use -p path)" >> "$GITHUB_ENV"
+
+      # -v so the logs show every RUN/PASS/SKIP line and the Playwright spec
+      # output — a silent skip (e.g. k8s when envtest assets are missing) is
+      # then visible instead of hiding inside a package-level `ok`.
+      - name: Run e2e suite
+        run: make test-e2e E2E_GOFLAGS=-v

@@ -1,0 +1,22 @@
+# Minimal e2e fixture profile. Boots the launcher with local-only,
+# offline defaults so no git clones, no Teleport, and no extra MCPs are
+# needed — just enough to bring the HTTP server + session manager up so
+# /healthz answers. Other flows fork this with extra fixtures.
+name: minimal
+
+description: |
+  Minimal profile used by the e2e harness smoke test. Local kubeconfig
+  auth, offline, no upstream repos.
+
+auth:
+  kind: kubeconfig
+
+playbooks:
+  entrypoint: investigation
+  closing: capture_offer
+
+defaults:
+  playbooks_repo: ""
+  wiki_repo: ""
+  sessions_repo: ""
+  offline: true

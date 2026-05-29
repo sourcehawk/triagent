@@ -1,0 +1,5 @@
+# Playwright run artifacts — traces, screenshots, the HTML report.
+/test-results/
+/playwright-report/
+/blob-report/
+/.cache/

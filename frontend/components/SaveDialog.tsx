@@ -110,6 +110,7 @@ export function SaveDialog({
           </button>
           <button
             type="button"
+            data-testid="triagent-playbook-save-confirm"
             onClick={handleConfirm}
             disabled={saving || !dirty}
             className="flex items-center gap-2 rounded bg-zinc-100 px-3 py-1.5 text-xs font-medium text-zinc-900 transition hover:bg-white disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
