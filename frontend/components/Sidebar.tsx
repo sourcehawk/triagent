@@ -539,6 +539,9 @@ function SidebarInner({
             <button
               type="button"
               onClick={onNew}
+              data-testid={
+                view === "playbooks" ? "triagent-new-playbook" : undefined
+              }
               className="rounded bg-zinc-100 px-3 py-2 text-sm font-medium text-zinc-900 transition hover:bg-white"
             >
               {view === "wiki"
