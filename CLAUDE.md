@@ -4,40 +4,9 @@
 
 Code is the source of truth for *what*; `AGENTS.md` is the source of truth for *where*; architectural decisions live under `docs/adrs/`; this file is the operational *how* and *don't*.
 
-## Local skills and the feature-development workflow
+## Feature-development workflow
 
-The feature-development workflow skills come from the **`feature-dev-workflow`** plugin (enabled in `.claude/settings.json` under `enabledPlugins`), not from this repo. They choreograph feature work end to end — invoke `feature-dev-workflow:planning-a-feature` at feature conception and let the cross-references fan out from there.
-
-```mermaid
-flowchart TD
-    Start([Feature conception]) --> P[feature-dev-workflow:planning-a-feature]
-    P -->|brainstorm + author spec<br/>+ author ADR if cross-cutting<br/>at docs/superpowers/specs/ and docs/adrs/| Review{User reviews<br/>spec + ADR}
-    Review -->|approved| Shape{PR shape:<br/>single or multi?}
-    Shape -->|single PR| Issue1[feature-dev-workflow:writing-github-issues<br/>file single feature/bug]
-    Shape -->|multi PR| Issue2[feature-dev-workflow:writing-github-issues<br/>file epic + sub-issues<br/>link via addSubIssue]
-    Issue1 --> Plan
-    Issue2 --> Plan[superpowers:writing-plans<br/>plan + ## Contracts table at<br/>docs/superpowers/plans/]
-    Plan --> State[Initialize state file at<br/>docs/superpowers/plans/<slug>-state.md]
-    State --> D[feature-dev-workflow:developing-a-feature]
-
-    D --> DShape{single-PR<br/>or multi-PR?}
-    DShape -->|single-PR| Direct[Implement directly<br/>TDD + testing-a-feature]
-    DShape -->|multi-PR| Setup[Create feature/<slug><br/>branch + main worktree]
-    Setup --> Fanout[feature-dev-workflow:fanning-out-with-worktrees]
-
-    Fanout -->|sub-worktree per sub-PR<br/>subagent writes,<br/>orchestrator reviews/merges/closes| Fanout
-    Fanout -->|between waves| Checkpoint[feature-dev-workflow:reviewing-feature-progress]
-    Checkpoint --> Fanout
-
-    Direct --> Verify1[superpowers:verification-before-completion<br/>make test + lint + typecheck]
-    Fanout --> Verify2[feature-dev-workflow:reviewing-feature-progress<br/>before integration PR]
-    Verify1 --> SinglePR[feature-dev-workflow:opening-a-pull-request<br/>PR → main, Fixes/Closes #issue]
-    Verify2 --> Integration[feature-dev-workflow:opening-a-pull-request<br/>feature → main, Closes #epic]
-    SinglePR --> Ship([External review → merge<br/>teardown plan + state after CI green])
-    Integration --> Ship
-```
-
-Each box is a skill body — invoke it via `Skill`, follow it, let the `**REQUIRED SUB-SKILL:**` markers walk you to the next.
+The feature-development workflow skills ship as the **`feature-dev-workflow`** plugin (enabled in `.claude/settings.json` under `enabledPlugins`), not from this repo. Invoke `feature-dev-workflow:planning-a-feature` at feature conception and let each skill's `**REQUIRED SUB-SKILL:**` markers walk you through the rest (planning → issues → plan → developing → fan-out → review → PR). The end-to-end flow and its diagram are documented in the plugin repo (`github.com/sourcehawk/feature-dev-workflow`).
 
 ### Editing the workflow skills
 
