@@ -11,13 +11,12 @@ on:
 permissions:
   contents: read
 
-# CI runs on pull requests only — no point validating a branch before it has an
-# open PR, and dropping the push trigger removes the push + pull_request
-# double-run entirely. The concurrency group still collapses rapid pushes to an
-# open PR so cancel-in-progress keeps only the latest run; github.workflow keys
-# it per workflow, so Test never cancels Lint.
+# CI runs on pull requests only. The concurrency group collapses rapid pushes
+# to an open PR so cancel-in-progress keeps only the latest run. Keyed on the
+# PR number (not the branch name, which collides across forks) and on
+# github.workflow, so Test never cancels Lint.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:

@@ -11,10 +11,11 @@ on:
 permissions:
   contents: read
 
-# See the note in test.yml: pull-request-only triggers (no push) plus a
-# per-workflow concurrency group so cancel-in-progress drops stale runs.
+# See the note in test.yml: pull-request-only triggers plus a per-workflow
+# concurrency group, keyed on the PR number, so cancel-in-progress drops
+# stale runs.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -31,7 +32,9 @@ jobs:
           cache-dependency-path: go.sum
 
       - id: tool-versions
-        run: grep "golangci-lint" ".tool-versions" 2>/dev/null | awk '{ print $1"="$2 }' >> $GITHUB_OUTPUT || echo "golangci-lint=" >> $GITHUB_OUTPUT
+        run: |
+          version="$(awk '/^golangci-lint / { print $2 }' .tool-versions)"
+          echo "golangci-lint=${version}" >> "$GITHUB_OUTPUT"
         shell: bash
 
       - name: Go lint
