@@ -4,9 +4,7 @@ on:
   pull_request:
     paths-ignore:
       - '**.md'
-      - 'Makefile'
       - '.gitignore'
-      - '.tool-versions'
 
 permissions:
   contents: read
