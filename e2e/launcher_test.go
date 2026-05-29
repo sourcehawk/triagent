@@ -96,6 +96,23 @@ func bootKnobs() []bootKnob {
 			},
 		},
 		{
+			name: "launch_browser_false_boots_headless",
+			flag: "--launch-browser",
+			subtest: func(t *testing.T) {
+				// The harness always passes --launch-browser=false (see
+				// startLauncher), so every Launch exercises the headless
+				// path: the launcher must boot and serve without opening a
+				// browser. A clean /healthz proves the documented flag is
+				// accepted and the launcher comes up with it set. The gating
+				// itself (openBrowser invoked only when the flag is true) is
+				// pinned by the cmd/triagent unit test.
+				h := harness.Launch(t, harness.Options{Profile: "minimal"})
+				if profile, _ := h.Client.Healthz(t); profile != "minimal" {
+					t.Errorf("/healthz profile = %q, want minimal (boot with --launch-browser=false)", profile)
+				}
+			},
+		},
+		{
 			name: "xdg_config_home_redirects_state",
 			subtest: func(t *testing.T) {
 				// The harness points XDG_CONFIG_HOME at h.StateDir. The

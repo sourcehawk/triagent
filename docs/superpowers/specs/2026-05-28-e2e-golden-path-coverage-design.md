@@ -353,13 +353,15 @@ per knob. Verifies each documented flag and env var has its effect:
   reported in the `/healthz` body)
 - `XDG_CONFIG_HOME` redirects state dir
 - `XDG_CACHE_HOME` redirects cache dir
-- `--cwd` effect on session working dir reported in transcript
-  (**deferred — flag not yet implemented; tracked by #27**)
-- `--launch-browser=false` (no browser tab opened — covered by absence
-  of `open` / `xdg-open` invocation) (**deferred — flag not yet
-  implemented; tracked by #27**)
+- `--launch-browser` (default true) gates the startup browser-open; the
+  harness always passes `--launch-browser=false` so the suite stays
+  headless, and the Flow-1 subtest pins that the launcher boots with it
+  set. The openBrowser gating itself is unit-tested in `cmd/triagent`.
 - Telemetry token plumbing: `TRIAGENT_MCP_TELEMETRY_TOKEN` reachable
   from a spawned MCP child via the loopback contract
+
+(`--cwd` was considered but dropped — the launcher resolves all paths from
+the profile, so a working-directory flag had no real use; see #27.)
 
 Exact knob list derived from `triagent start --help` at implementation
 time; the test scans `--help` output for completeness to catch

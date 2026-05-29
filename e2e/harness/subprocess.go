@@ -84,14 +84,18 @@ type startConfig struct {
 	env         []string
 }
 
-// startLauncher execs `triagent start --profile <path> --port <n>` with the
-// composed env and captured output, then returns a handle. It does not wait
-// for readiness — Launch polls /healthz separately.
+// startLauncher execs `triagent start --profile <path> --port <n>
+// --launch-browser=false` with the composed env and captured output, then
+// returns a handle. It does not wait for readiness — Launch polls /healthz
+// separately. --launch-browser=false keeps the suite hermetic: without it a
+// runner that has a display (a dev box, not just headless CI) would pop a
+// real browser per launch.
 func startLauncher(c startConfig) (*launcherProc, error) {
 	bin := filepath.Join(c.binDir, "triagent")
 	cmd := exec.Command(bin, "start",
 		"--profile", c.profilePath,
 		"--port", fmt.Sprintf("%d", c.port),
+		"--launch-browser=false",
 	)
 	cmd.Env = c.env
 	stdout := &syncBuffer{}
