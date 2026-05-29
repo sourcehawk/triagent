@@ -1,0 +1,65 @@
+name: Lint
+
+on:
+  pull_request:
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+
+permissions:
+  contents: read
+
+# See the note in test.yml: pull-request-only triggers plus a per-workflow
+# concurrency group, keyed on the PR number, so cancel-in-progress drops
+# stale runs.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: Go lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - id: tool-versions
+        run: |
+          version="$(awk '/^golangci-lint / { print $2 }' .tool-versions)"
+          echo "golangci-lint=${version}" >> "$GITHUB_OUTPUT"
+        shell: bash
+
+      - name: Go lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          # golangci-lint-action@v9 requires a v-prefixed version
+          # (e.g. v2.11.4). .tool-versions stores the bare semver, so
+          # prepend the v here rather than pollute the asdf format.
+          version: v${{ steps.tool-versions.outputs.golangci-lint }}
+          args: --timeout 10m
+
+  frontend:
+    name: Frontend typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.tool-versions'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Frontend typecheck
+        run: |
+          cd frontend
+          npm install
+          npm run typecheck

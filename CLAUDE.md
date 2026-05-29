@@ -54,3 +54,7 @@ These skills live in the `feature-dev-workflow` plugin (`github.com/sourcehawk/f
 - **Frontend embed:** `internal/web/dist/.gitkeep` is the tracked anchor that lets `//go:embed all:dist` compile on a fresh checkout. Don't remove it.
 - **Read the spec, not the plan.** Specs in `docs/superpowers/specs/` are durable. Plans in `docs/superpowers/plans/` are scratch and get deleted once the plan ships. If a spec says X and code does Y, raise it — don't quietly rewrite either.
 - **Prefer extracting a shared helper to copy-pasting a second consumer.**
+
+## Refining files
+
+When refining any file in response to feedback, the result reads as if it had always been that way. Don't leave residue about the change itself: no "we used to do X," "this no longer includes Y," or "do not do Z" tails for things no longer in play. Re-read the changed section cold; cut anything that only makes sense knowing what just changed. Refinement context belongs in commit messages and PR descriptions, not the file.
