@@ -347,8 +347,10 @@ export async function approveWikiProposalInEditor(
   await expect(
     page.getByRole("tab", { name: /AI proposal/i }),
   ).toHaveAttribute("aria-disabled", "true", { timeout: 30_000 });
-  // The refetched post-mortem body carries the promoted edit.
-  await expect(page.getByText(expectedInBody, { exact: false })).toBeVisible({
+  // The refetched post-mortem body carries the promoted edit. .first():
+  // the substring can legitimately appear more than once (e.g. preview +
+  // rendered body), so assert presence without a strict-mode violation.
+  await expect(page.getByText(expectedInBody, { exact: false }).first()).toBeVisible({
     timeout: 30_000,
   });
 }

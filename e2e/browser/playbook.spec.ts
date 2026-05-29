@@ -81,8 +81,14 @@ test.describe("playbook editor Flow 3 — operator walkthrough", () => {
     await openPlaybookEditor(page, "payments_latency");
     await openPlaybookChat(page);
     await sendEditorChat(page, "review this playbook for me");
+    // The editor replays its stub script on every turn (the create-time
+    // analyze turn AND this send), and with no resume.jsonl both emit the
+    // same reply — so the reply can render once or twice depending on turn
+    // timing. `.first()` asserts "the agent replied" without a strict-mode
+    // violation when both turns have landed (the CI runner reliably renders
+    // both; a single local turn renders one).
     await expect(
-      page.getByText(/PLAYBOOK-EDITOR-STUB-REPLY/),
+      page.getByText(/PLAYBOOK-EDITOR-STUB-REPLY/).first(),
     ).toBeVisible({ timeout: 30_000 });
 
     // Collapse the chat drawer — it's bottom-anchored fixed-position and

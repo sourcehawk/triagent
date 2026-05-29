@@ -102,7 +102,8 @@ test.describe("investigation Flow 2 walkthrough", () => {
     await expect(
       page
         .locator('[data-testid="triagent-transcript-list"]')
-        .getByText("crash-loops the pods", { exact: false }),
+        .getByText("crash-loops the pods", { exact: false })
+        .first(),
     ).toBeVisible({ timeout: 30_000 });
 
     await waitForProposalCards(page, 4);

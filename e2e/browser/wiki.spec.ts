@@ -64,7 +64,10 @@ test.describe("wiki editor Flow 4 walkthrough", () => {
     await openWikiEntries(page);
     await openWikiEditor(page, SLUG);
     await openWikiEditorChat(page);
-    await expect(wikiEditorChatReply(page, "WIKI-EDITOR-STUB-REPLY")).toBeVisible({
+    // .first(): the editor replays its stub on every turn, so the reply can
+    // render more than once — assert "the agent replied" without a
+    // strict-mode violation when multiple turns have landed.
+    await expect(wikiEditorChatReply(page, "WIKI-EDITOR-STUB-REPLY").first()).toBeVisible({
       timeout: 30_000,
     });
 
