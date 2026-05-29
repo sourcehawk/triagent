@@ -28,12 +28,14 @@ vendor/
 # Node modules (each frontend has its own .gitignore too)
 node_modules
 
-# Local-only superpowers / claude harness state. `.claude/skills/` is the
-# one exception — project-shared skills (e.g. opening-a-pull-request,
-# writing-github-issues) are checked in so every contributor gets them.
+# Local-only superpowers / claude harness state. `.claude/settings.json` is
+# the one checked-in exception — project defaults like enabledPlugins, so
+# every contributor gets the feature-dev-workflow plugin. The workflow skills
+# themselves now ship as that plugin, not under `.claude/skills/`.
+# `settings.local.json` stays local-only.
 .worktrees/
 .claude/*
-!.claude/skills/
+!.claude/settings.json
 .claire
 
 # Local testing profile

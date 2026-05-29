@@ -4,42 +4,13 @@
 
 Code is the source of truth for *what*; `AGENTS.md` is the source of truth for *where*; architectural decisions live under `docs/adrs/`; this file is the operational *how* and *don't*.
 
-## Local skills and the feature-development workflow
+## Feature-development workflow
 
-The `.claude/skills/` directory holds project-shared skills that every contributor and every Claude session in this repo uses. The skills below choreograph feature work end to end — invoke `planning-a-feature` at feature conception and let the cross-references fan out from there.
+The feature-development workflow skills ship as the **`feature-dev-workflow`** plugin (enabled in `.claude/settings.json` under `enabledPlugins`), not from this repo. Invoke `feature-dev-workflow:planning-a-feature` at feature conception and let each skill's `**REQUIRED SUB-SKILL:**` markers walk you through the rest (planning → issues → plan → developing → fan-out → review → PR). The end-to-end flow and its diagram are documented in the plugin repo (`github.com/sourcehawk/feature-dev-workflow`).
 
-```mermaid
-flowchart TD
-    Start([Feature conception]) --> P[skill:planning-a-feature]
-    P -->|brainstorm + author spec<br/>+ author ADR if cross-cutting<br/>at docs/superpowers/specs/ and docs/adrs/| Review{User reviews<br/>spec + ADR}
-    Review -->|approved| Shape{PR shape:<br/>single or multi?}
-    Shape -->|single PR| Issue1[skill:writing-github-issues<br/>file single feature/bug]
-    Shape -->|multi PR| Issue2[skill:writing-github-issues<br/>file epic + sub-issues<br/>link via addSubIssue]
-    Issue1 --> Plan
-    Issue2 --> Plan[superpowers:writing-plans<br/>plan + ## Contracts table at<br/>docs/superpowers/plans/]
-    Plan --> State[Initialize state file at<br/>docs/superpowers/plans/<slug>-state.md]
-    State --> D[skill:developing-a-feature]
+### Editing the workflow skills
 
-    D --> DShape{single-PR<br/>or multi-PR?}
-    DShape -->|single-PR| Direct[Implement directly<br/>TDD + testing-a-feature]
-    DShape -->|multi-PR| Setup[Create feature/<slug><br/>branch + main worktree]
-    Setup --> Fanout[skill:fanning-out-with-worktrees]
-
-    Fanout -->|sub-worktree per sub-PR<br/>subagent writes,<br/>orchestrator reviews/merges/closes| Fanout
-    Fanout -->|between waves| Checkpoint[skill:reviewing-feature-progress]
-    Checkpoint --> Fanout
-
-    Direct --> Verify1[superpowers:verification-before-completion<br/>make test + lint + typecheck]
-    Fanout --> Verify2[skill:reviewing-feature-progress<br/>before integration PR]
-    Verify1 --> SinglePR[skill:opening-a-pull-request<br/>PR → main, Fixes/Closes #issue]
-    Verify2 --> Integration[skill:opening-a-pull-request<br/>feature → main, Closes #epic]
-    SinglePR --> Ship([External review → merge<br/>teardown plan + state in same diff])
-    Integration --> Ship
-```
-
-Each box is a skill body — load via `Skill`, follow it, let the `**REQUIRED SUB-SKILL:**` markers walk you to the next.
-
-### Editing local skills
+These skills live in the `feature-dev-workflow` plugin (`github.com/sourcehawk/feature-dev-workflow`), not in this repo — edit them there, then bump the enabled version here:
 
 - **Invoke `superpowers:writing-skills` before creating or modifying any skill** and follow its RED → GREEN → REFACTOR loop.
 - **Skill `description:` is "Use when..." triggers only, never a workflow summary** — a summary becomes a shortcut agents take instead of reading the body.
