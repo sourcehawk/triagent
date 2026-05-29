@@ -24,12 +24,14 @@ shows up specifically in:
    reaches the proposal step of a real investigation.
 3. **Editor surfaces.** The polymorphic `editor.Session` is shared
    between playbooks and wiki, with a chat panel that proposes edits
-   and a manual-edit path. Wiki entries are frontmatter+body documents
-   whose frontmatter bytes are preserved verbatim on save (comments
-   survive); playbooks are plain YAML that round-trips through a
-   `yaml.v3` marshal — semantically faithful but lossy on comments.
-   Unit tests cover each layer; nothing tests the through-line "open
-   editor → chat → AI proposal → accept → file on disk reflects the
+   and a manual-edit path. Persistence fidelity differs by path:
+   playbooks are plain YAML re-marshalled through `yaml.v3` (semantically
+   faithful, lossy on comments); a wiki **entry** save re-marshals its
+   frontmatter through a typed struct (the structured fields — `links`,
+   etc. — round-trip, but comments / byte-order are not preserved); only
+   the wiki **entity-stub** save path preserves frontmatter bytes
+   verbatim. Unit tests cover each layer; nothing tests the through-line
+   "open editor → chat → AI proposal → accept → file on disk reflects the
    change."
 4. **Repos page composition.** The repos page reconciles config
    `linked_repos`, user-local repos, cached `gh` metadata, and the
@@ -392,13 +394,13 @@ documented-but-untested flags.
   proposal landed in the transcript, with a body matching the
   proposal's body.
 
-**Browser assertions** (Playwright):
-- Land on launcher root → fixture investigation listed.
-- Create new investigation, send kickoff message → wait for `end`.
-- Four `ProposalCard` components render in the chat transcript,
-  one per proposal type, in order.
-- Each card shows the right title and a non-empty body preview.
-- Send a follow-up message → second turn's `assistant_message` renders.
+**Browser assertions** (Playwright) — a full operator walkthrough, browser-driven end to end (no deep-link-by-id shortcut):
+- Land on launcher root → the seeded fixture investigation appears in the sidebar (`triagent-investigation-row`).
+- Click "+ new investigation" → fill `InvestigationForm` → submit (real `/api/preflight` through the UI) → land on the new session → the new investigation now appears in the sidebar.
+- `MCPStatusBar` shows the session's active (spawned) MCP chips (`triagent-mcp-chip`) — e.g. the linked-repo `triagent-git-payments` + `triagent-strategies`. Reference-mode `extra_mcps` (no `command`, e.g. `org-docs`) reach the agent's allowed-tools but are not spawned, so they render no chip; their wiring stays a backend invariant (`assertAllowedToolsCover`).
+- Send the kickoff via the composer → the live turn streams: assistant message, the summary block, then the four `ProposalCard`s in order with non-empty previews.
+- `ActivityPanel` lists the turn's tool calls (`triagent-activity-row`); the usage readout (`triagent-usage-readout`) shows non-zero tokens/cost.
+- Send a follow-up via the composer → the second turn's assistant reply renders.
 
 ### Flow 2b — investigation with real k8s tool round-trip
 
@@ -449,30 +451,19 @@ result back to claude → next script action runs.
 - Stub script for the editor chat: `analyze_playbook` tool call →
   `propose_playbook_edit` tool call → `end`.
 
-**Assertions:**
-- Navigate to `/playbooks` → three playbooks listed in sidenav.
-- The playbook with a pending proposal shows the proposed-badge.
-- Click a playbook → URL becomes `/playbooks?playbook=<id>`, editor
-  view mounts.
-- Open chat panel → send message → wait for `end`.
-- `ProposalPreview` tab populates with the AI-proposed diff.
-- Apply a manual edit via the editor's textarea → save → playbook YAML
-  on disk reflects the change (edited fields round-trip through
-  `WriteUserPlaybook` → `yaml.v3` marshal; playbooks are plain YAML, so
-  comments are not preserved — frontmatter-comment preservation is a
-  wiki-entry property, asserted in Flow 4, not here).
-- Accept the AI proposal → playbook file updates, ledger entry cleared.
+**Assertions** (operator walkthrough, browser-driven):
+- Navigate to `/playbooks` → the three seeded playbooks are listed; the one with a pending proposal shows the proposed-badge.
+- Create a new playbook through the UI (the new-playbook modal) → it appears in the list.
+- Click a playbook → URL becomes `/playbooks?playbook=<id>`, editor mounts.
+- Open chat panel → send message → the `ProposalPreview` populates with the AI-proposed diff → accept → the playbook file updates and the ledger entry clears.
+- Apply a manual edit via the editor's textarea → save → the playbook YAML on disk reflects the change (edited fields round-trip through `WriteUserPlaybook` → `yaml.v3` marshal; playbooks are plain YAML, so comments are not preserved — verbatim byte preservation is a wiki entity-stub property, not a playbook one).
 
 ### Flow 4 — wiki editor
 
 **File:** `wiki_test.go` + `browser/wiki.spec.ts`. **Browser:** yes.
 **Claude-stub:** yes. **Gh-stub:** no.
 
-Same shape as Flow 3, with wiki fixtures (entries with `links`
-frontmatter) and a wiki-specific proposal. Pins the contract that
-`editor.Session` is genuinely polymorphic over `Subject.Kind`.
-Shares ~80% of selectors / helpers with Flow 3 via
-`browser/helpers/editor.ts`.
+Same operator-walkthrough shape as Flow 3 over `Subject.Kind=wiki`, reusing `browser/helpers/editor.ts` (the point: `editor.Session` is genuinely polymorphic): land on `/wiki` → seeded entries (with `links` frontmatter) listed → create a new entry via `NewWikiEntryModal` → open editor → chat → proposal → accept. The manual-save assertion pins what the entry path actually guarantees — the structured frontmatter (`links`) survives the re-marshal round-trip — **not** byte-verbatim comment preservation, which only the entity-stub save path provides (`handleUpdateWikiEntry` re-marshals entry frontmatter through a typed struct). A live AI proposal can't be generated (`detectRole` is `main`-only; sub-agent dispatch is a non-goal here), so the proposal→accept step uses a seeded pending-proposal fixture, the deterministic analogue of Flow 3's `with-pending-proposal`.
 
 ### Flow 5 — repos page
 
