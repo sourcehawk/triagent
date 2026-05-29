@@ -1,0 +1,72 @@
+name: Test
+
+on:
+  push:
+    branches-ignore: [main]
+    paths-ignore:
+      - '.github/**'
+      - '**.md'
+      - 'Makefile'
+      - '.gitignore'
+      - '.tool-versions'
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - '.github/**'
+      - '**.md'
+      - 'Makefile'
+      - '.gitignore'
+      - '.tool-versions'
+
+permissions:
+  contents: read
+
+# A push to a branch that already has an open PR to main fires both the push
+# and the pull_request event, doubling every run. Grouping both under the same
+# head ref (head_ref is set on pull_request, ref_name on push) collapses them
+# into one concurrency group so cancel-in-progress keeps only the latest run.
+# github.workflow keys the group per workflow, so Test never cancels Lint.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: Backend (Go race)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Go build
+        run: go build ./...
+
+      - name: Test (Go race)
+        run: make test-go
+
+  frontend:
+    name: Frontend (vitest + build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.tool-versions'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Test (frontend vitest)
+        run: make test-frontend
+
+      - name: Frontend build
+        run: |
+          cd frontend
+          npm run build

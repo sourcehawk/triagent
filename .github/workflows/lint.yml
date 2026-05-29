@@ -1,4 +1,4 @@
-name: CI
+name: Lint
 
 on:
   push:
@@ -21,11 +21,17 @@ on:
 permissions:
   contents: read
 
+# See the note in test.yml: collapse the push + pull_request double-trigger
+# into one group per workflow so cancel-in-progress drops the stale run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
 jobs:
-  test:
-    name: Test
+  go:
+    name: Go lint
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
 
@@ -33,19 +39,6 @@ jobs:
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version-file: '.tool-versions'
-          cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Go build
-        run: go build ./...
-
-      - name: Test (Go race + frontend vitest)
-        run: make test
 
       - id: tool-versions
         run: grep "golangci-lint" ".tool-versions" 2>/dev/null | awk '{ print $1"="$2 }' >> $GITHUB_OUTPUT || echo "golangci-lint=" >> $GITHUB_OUTPUT
@@ -60,8 +53,22 @@ jobs:
           version: v${{ steps.tool-versions.outputs.golangci-lint }}
           args: --timeout 10m
 
-      - name: Frontend typecheck and build
+  frontend:
+    name: Frontend typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.tool-versions'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Frontend typecheck
         run: |
           cd frontend
+          npm install
           npm run typecheck
-          npm run build
