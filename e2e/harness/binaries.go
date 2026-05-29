@@ -52,7 +52,10 @@ func buildBinaries() error {
 		}
 		for _, tgt := range targets {
 			outPath := filepath.Join(dir, tgt.out)
-			cmd := exec.Command("go", "build", "-o", outPath, tgt.pkg)
+			// -tags=e2e so the claude/gh stub sources (now behind //go:build
+			// e2e, to keep them out of the fast `go test ./...` loop) compile.
+			// Harmless for triagent/triagent-mcp, which carry no e2e-tagged files.
+			cmd := exec.Command("go", "build", "-tags=e2e", "-o", outPath, tgt.pkg)
 			cmd.Dir = root
 			cmd.Env = os.Environ()
 			if out, err := cmd.CombinedOutput(); err != nil {

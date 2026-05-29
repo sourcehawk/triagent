@@ -66,8 +66,11 @@ func envtestUnavailable() string {
 		}
 		return fmt.Sprintf("KUBEBUILDER_ASSETS=%s has no kube-apiserver", dir)
 	}
-	if _, err := os.Stat(resolveEnvtestAssets()); err != nil {
-		return "no KUBEBUILDER_ASSETS and no cached assets under " + defaultEnvtestCacheRoot()
+	// Probe for the actual apiserver binary, not just the directory: a cache
+	// root that exists but is empty or partially populated would otherwise
+	// report "available" and then fail in env.Start() instead of skipping.
+	if _, err := os.Stat(filepath.Join(resolveEnvtestAssets(), "kube-apiserver")); err != nil {
+		return "no KUBEBUILDER_ASSETS and no usable cached assets (kube-apiserver) under " + defaultEnvtestCacheRoot()
 	}
 	return ""
 }

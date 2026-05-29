@@ -23,14 +23,17 @@ import {
 // (acme/gateway) so the summary worker runs offline, and two seeded
 // codefix proposals scoped to acme/gateway so the activity panel has
 // agent-opened issues/PRs to render. The regenerate worker's claude
-// sub-agent is gated on a signal the harness releases ~2s after launch.
+// sub-agent is gated on a signal the harness releases only after this
+// spec run returns (Browser.Run is synchronous) — deterministic, with no
+// release-vs-probe timing race.
 //
-// This spec drives the whole flow from the DOM: land on /repos and read
-// the reconciled groups, see the summary-present vs empty-state divergence,
+// This spec drives the flow from the DOM: land on /repos and read the
+// reconciled groups, see the summary-present vs empty-state divergence,
 // read the RepoActivityPanel, then regenerate the empty repo — observing
-// the in-flight window (button disabled, "generating…"), proving
-// single-flight (a concurrent refresh POST returns 409), and landing the
-// rendered summary once the worker finishes.
+// the in-flight window (button disabled, "generating…") and proving
+// single-flight (a concurrent refresh POST returns 409). The regenerated
+// summary rendering is asserted in repos-regen-result.spec.ts, which the
+// harness runs after releasing the gate and waiting for completion.
 test.describe("repos Flow 5", () => {
   const regenTarget = `${REPO_OWNER}/${REPO_NAME}`;
 
@@ -113,9 +116,9 @@ test.describe("repos Flow 5", () => {
     await expect(regenerate).toHaveText("refresh");
 
     // Click refresh. The worker's sub-agent is gated on a signal the
-    // harness releases ~2s after launch; the button flips to the
-    // disabled in-flight state, proving the launcher admitted the
-    // generation and the UI observed it.
+    // harness releases only AFTER this run returns (see below); the button
+    // flips to the disabled in-flight state, proving the launcher admitted
+    // the generation and the UI observed it.
     await regenerate.click();
     await expect(regenerate).toHaveText("generating…", { timeout: 15_000 });
     await expect(regenerate).toBeDisabled();
@@ -137,10 +140,11 @@ test.describe("repos Flow 5", () => {
     expect(status.status()).toBe(200);
     expect(((await status.json()) as { inFlight: boolean }).inFlight).toBe(true);
 
-    // The harness releases the gate ~2s in; on the success SSE event the
-    // view re-fetches and renders the regenerated summary with its marker.
-    const summary = page.getByTestId(repoTestids.summary);
-    await expect(summary).toBeVisible({ timeout: 60_000 });
-    await expect(summary).toContainText("TRIAGENT-E2E-FLOW5-REGENERATED-MARKER");
+    // Leave the worker gated and end the run here. Because Browser.Run is
+    // synchronous, the Go harness releases the gate signal only after this
+    // run returns — i.e. after the 409 + in-flight assertions above have
+    // provably completed — so there is no release-vs-probe race. The
+    // regenerated summary is asserted in repos-regen-result.spec.ts, run
+    // after the release + completion.
   });
 });

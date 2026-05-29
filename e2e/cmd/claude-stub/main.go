@@ -1,3 +1,5 @@
+//go:build e2e
+
 // Command claude-stub stands in for the `claude` CLI on $PATH during the
 // e2e suite. The launcher exec's it with the same argv the real CLI accepts
 // (--output-format stream-json, --mcp-config, --allowedTools, --model,

@@ -122,31 +122,40 @@ func TestRepos_Browser(t *testing.T) {
 		Browser:      true,
 	})
 
-	// The browser-side regenerate click blocks on the worker's gate so the
-	// spec can observe the in-flight state (disabled button, "generating…")
-	// and prove single-flight (a concurrent refresh POST → 409). A fixed
-	// sleep can't coordinate with whichever test in the spec file does the
-	// click, so the releaser instead polls the status endpoint until the
-	// worker is genuinely in flight — which only happens after the browser
-	// clicks refresh — then grants a short grace window for the spec's 409
-	// probe to land before unblocking the one worker. Mirrors the Go
-	// invariant test's "observe in-flight → release" discipline.
-	go func() {
-		deadline := time.Now().Add(90 * time.Second)
-		for time.Now().Before(deadline) {
-			if repoSummaryInFlight(t, h, flow5RegenOwner, flow5RegenName) {
-				time.Sleep(750 * time.Millisecond)
-				h.ReleaseSignal(t, "regenerate-released")
-				return
-			}
-			time.Sleep(100 * time.Millisecond)
-		}
-	}()
-
 	h.Browser.SetEnv("TRIAGENT_REPO_OWNER", flow5RegenOwner)
 	h.Browser.SetEnv("TRIAGENT_REPO_NAME", flow5RegenName)
 	h.Browser.SetEnv("TRIAGENT_REPO_WITH_SUMMARY", "acme/payments")
+
+	// Phase 1: reconciliation, activity panel, and single-flight. The
+	// single-flight spec clicks refresh — the worker's sub-agent blocks on a
+	// gate signal — asserts the disabled/"generating…" button and the 409 on
+	// a concurrent refresh, then ends with the worker STILL gated. Because
+	// Browser.Run is synchronous, when it returns those in-flight assertions
+	// are provably complete; the worker has not been released, so there is no
+	// release-vs-probe race (the flake the old timer-based releaser had).
 	h.Browser.Run(t, "repos.spec.ts")
+
+	// The worker is gated post-single-flight. Release deterministically now,
+	// then wait for completion before the result spec reads the summary.
+	if !repoSummaryInFlight(t, h, flow5RegenOwner, flow5RegenName) {
+		t.Fatal("regenerate worker should still be gated in-flight after repos.spec.ts returned")
+	}
+	h.ReleaseSignal(t, "regenerate-released")
+
+	deadline := time.Now().Add(60 * time.Second)
+	for {
+		if exists, content := repoSummary(t, h, flow5RegenOwner, flow5RegenName); exists &&
+			strings.Contains(content, "TRIAGENT-E2E-FLOW5-REGENERATED-MARKER") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("regenerated summary did not land after releasing the gate")
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	// Phase 2: the regenerated summary now renders in the DOM.
+	h.Browser.Run(t, "repos-regen-result.spec.ts")
 }
 
 // listRepos fetches GET /api/repos and returns the defaults + user groups.

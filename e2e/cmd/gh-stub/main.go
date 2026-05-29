@@ -1,3 +1,5 @@
+//go:build e2e
+
 // Command gh-stub stands in for the `gh` CLI on $PATH during the e2e suite.
 // It matches the invocation argv against a per-test responses table
 // (fixtures/gh-scripts/<test>/responses.json), prints the matched JSON to
