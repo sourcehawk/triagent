@@ -130,6 +130,7 @@ export function NewPlaybookModal({
 
   return (
     <div
+      data-testid="triagent-new-playbook-modal"
       className="fixed inset-0 z-50 flex items-start justify-center bg-zinc-950/80 px-4 py-12"
       role="dialog"
       aria-modal="true"
@@ -173,6 +174,7 @@ export function NewPlaybookModal({
               onClick={() => setMode("paste")}
               title="paste raw YAML"
               subtitle="Drop in YAML from somewhere — port, restore, or hand-author. Validated as you type."
+              testid="triagent-new-playbook-paste-mode"
             />
           </div>
 
@@ -199,6 +201,7 @@ export function NewPlaybookModal({
               </label>
               <textarea
                 ref={yamlRef}
+                data-testid="triagent-new-playbook-yaml"
                 value={yaml}
                 onChange={(e) => setYaml(e.target.value)}
                 placeholder={
@@ -249,6 +252,7 @@ export function NewPlaybookModal({
           ) : (
             <button
               type="button"
+              data-testid="triagent-new-playbook-save"
               onClick={submitPaste}
               disabled={
                 submitting ||
@@ -271,15 +275,18 @@ function ModeCard({
   onClick,
   title,
   subtitle,
+  testid,
 }: {
   active: boolean;
   onClick: () => void;
   title: string;
   subtitle: string;
+  testid?: string;
 }) {
   return (
     <button
       type="button"
+      data-testid={testid}
       onClick={onClick}
       aria-pressed={active}
       className={

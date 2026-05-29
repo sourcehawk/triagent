@@ -519,6 +519,7 @@ function Composer({
     <form onSubmit={submit} className="space-y-1">
       <div className="relative">
         <textarea
+          data-testid="triagent-editor-chat-input"
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={onKey}
@@ -533,6 +534,7 @@ function Composer({
         />
         <button
           type="submit"
+          data-testid="triagent-editor-chat-send"
           title="send (Enter)"
           aria-label="send"
           disabled={!text.trim() || submitting || disabled || streaming}
@@ -786,6 +788,18 @@ function useEditorSession({
         lastSeq = res.lastSeq;
         for (const ev of res.events) {
           dispatch(ev);
+        }
+        // Reconcile status from the seeded backlog. When the drawer
+        // attaches after a turn already ended (the create-time turn
+        // streams its result/end before SSE subscribes), the live
+        // status transition for that terminal event is missed — the
+        // backlog carries it but applyEnvelope only runs for live
+        // envelopes. Derive idle from a backlog whose last event is
+        // terminal so the composer's send button isn't stuck disabled
+        // on a phantom "streaming".
+        const lastKind = res.events[res.events.length - 1]?.kind;
+        if (lastKind === "result" || lastKind === "end") {
+          setStatus("idle");
         }
         snapshotApplied = true;
         for (const env of buffered) {

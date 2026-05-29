@@ -23,6 +23,13 @@ var wantProposalToolsInOrder = []string{
 	"mcp__triagent-git-payments__create_github_issue",
 }
 
+// summarizeToolName is the strategies summarize call the kickoff turn
+// emits ahead of the four proposals so the SPA renders the summary block
+// (and the summary-gated session-action buttons unlock). It is a tool_use
+// like any proposal, so proposalToolNamesInOrder filters it out — the
+// four-proposal contract is about the proposal cards, not every tool call.
+const summarizeToolName = "mcp__triagent-strategies__summarize"
+
 // TestInvestigation_BackendInvariants drives a synthetic investigation end
 // to end through the real launcher + scripted stubs and pins the
 // observable golden-path contracts: the seeded fixture is listed, a fresh
@@ -105,12 +112,16 @@ func TestInvestigation_BackendInvariants(t *testing.T) {
 	}
 }
 
-// TestInvestigation_Browser drives the same live investigation through the
-// real launcher, then hands its id to the Playwright spec, which asserts
-// the rendered transcript in the embedded SPA: four proposal cards in
-// order with non-empty previews, plus the follow-up turn. The backend
-// invariants are pinned separately in TestInvestigation_BackendInvariants;
-// this test owns the DOM-rendering half.
+// TestInvestigation_Browser is the operator walkthrough: the browser
+// drives the whole golden path. The Go side only launches the launcher
+// (seeded with the fixture investigation + the scripted stubs) and runs
+// the Playwright spec, which seeds off the fixture row, creates a fresh
+// investigation through the real form, watches the auto-started kickoff
+// turn render (assistant reply → summary block → four proposal cards),
+// verifies the ambient panels, then sends a follow-up. The backend
+// invariants — allowed-tools, system prompt, gh issue body, transcript
+// order — are pinned separately in TestInvestigation_BackendInvariants;
+// this test owns the DOM-rendering half end to end.
 func TestInvestigation_Browser(t *testing.T) {
 	h := harness.Launch(t, harness.Options{
 		Profile:         "with-prompts-and-linked-repo",
@@ -120,32 +131,6 @@ func TestInvestigation_Browser(t *testing.T) {
 		Browser:         true,
 	})
 
-	stream := h.Client.OpenStream(t)
-	defer stream.Close()
-
-	id := createInvestigation(t, h)
-	status, body := h.Client.PostJSON(t, "/api/investigations/"+id+"/start", nil)
-	if status != http.StatusAccepted {
-		t.Fatalf("start session status = %d (body %s)", status, body)
-	}
-	waitForEnd(t, stream, id)
-
-	// Confirm the four proposals landed server-side before driving the
-	// browser, so a browser-side timeout means a render bug, not a missing
-	// proposal.
-	if got := proposalToolNamesInOrder(t, h, id); len(got) != len(wantProposalToolsInOrder) {
-		t.Fatalf("expected %d proposals server-side before browser run, got %d: %v",
-			len(wantProposalToolsInOrder), len(got), got)
-	}
-
-	status, body = h.Client.PostJSON(t, "/api/investigations/"+id+"/messages",
-		map[string]string{"text": "Confirm the regression is isolated to the payments config."})
-	if status != http.StatusAccepted {
-		t.Fatalf("follow-up message status = %d (body %s)", status, body)
-	}
-	waitForEnd(t, stream, id)
-
-	h.Browser.SetEnv("TRIAGENT_INVESTIGATION_ID", id)
 	h.Browser.Run(t, "investigation.spec.ts")
 }
 
@@ -221,13 +206,15 @@ func fetchTranscript(t *testing.T, h *harness.Harness, id string) []transcriptEv
 	return parsed.Events
 }
 
-// proposalToolNamesInOrder returns the toolName of every tool_use event in
-// the transcript, in order — the four proposals the stub staged.
+// proposalToolNamesInOrder returns the toolName of every proposal tool_use
+// event in the transcript, in order — the four proposals the stub staged.
+// The summarize call that precedes them is a tool_use too, but it isn't a
+// proposal, so it's filtered out here to keep the four-proposal contract.
 func proposalToolNamesInOrder(t *testing.T, h *harness.Harness, id string) []string {
 	t.Helper()
 	var out []string
 	for _, ev := range fetchTranscript(t, h, id) {
-		if ev.Kind == "tool_use" {
+		if ev.Kind == "tool_use" && ev.ToolName != summarizeToolName {
 			out = append(out, ev.ToolName)
 		}
 	}

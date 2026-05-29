@@ -23,19 +23,19 @@ Phases 1–3 shipped (harness/stubs #14→#20, Flow 1 #15→#21, Flow 2 #16→#2
 
 | Issue                  | Branch                       | Worktree path                                              | PR (→ base)                        | Status      |
 | ---------------------- | ---------------------------- | ---------------------------------------------------------- | ---------------------------------- | ----------- |
-| sourcehawk/triagent#30 | e2e-walkthrough-infra        | .claude/worktrees/e2e-golden-path-coverage--winfra         | → feature/e2e-golden-path-coverage | dispatched  |
-| sourcehawk/triagent#31 | e2e-walk-investigations      | .claude/worktrees/e2e-golden-path-coverage--winv           | → feature/e2e-golden-path-coverage | blocked on #30 |
-| sourcehawk/triagent#32 | e2e-walk-playbooks           | .claude/worktrees/e2e-golden-path-coverage--wpb            | → feature/e2e-golden-path-coverage | blocked on #30 |
-| sourcehawk/triagent#33 | e2e-walk-wikis               | .claude/worktrees/e2e-golden-path-coverage--wwiki          | → feature/e2e-golden-path-coverage | blocked on #30 |
-| sourcehawk/triagent#34 | e2e-walk-repos               | .claude/worktrees/e2e-golden-path-coverage--wrepos         | → feature/e2e-golden-path-coverage | blocked on #30 |
+| sourcehawk/triagent#30 | e2e-walkthrough-infra (del)  | (removed; merged)                                          | sourcehawk/triagent#35 → feature/e2e-golden-path-coverage | self-merged |
+| sourcehawk/triagent#31 | e2e-walk-investigations      | .claude/worktrees/e2e-golden-path-coverage--winv           | → feature/e2e-golden-path-coverage | dispatched  |
+| sourcehawk/triagent#32 | e2e-walk-playbooks           | .claude/worktrees/e2e-golden-path-coverage--wpb            | → feature/e2e-golden-path-coverage | dispatched  |
+| sourcehawk/triagent#33 | e2e-walk-wikis               | .claude/worktrees/e2e-golden-path-coverage--wwiki          | → feature/e2e-golden-path-coverage | dispatched  |
+| sourcehawk/triagent#34 | e2e-walk-repos               | .claude/worktrees/e2e-golden-path-coverage--wrepos         | → feature/e2e-golden-path-coverage | dispatched  |
 
 ## Contracts
 
 | Name                  | Realization              | Realized in | Status  |
 | --------------------- | ------------------------ | ----------- | ------- |
-| `walkthrough-testids` | code: #30 merges first   | (pending)   | pending |
-| `stub-summarize-usage`| code: #30                | (pending)   | pending |
-| `walkthrough-helpers` | code: #30                | (pending)   | pending |
+| `walkthrough-testids` | code: #30 merges first   | sourcehawk/triagent#35 | locked  |
+| `stub-summarize-usage`| code: #30                | sourcehawk/triagent#35 | locked  |
+| `walkthrough-helpers` | code: #30                | sourcehawk/triagent#35 | locked  |
 
 ## Bubble-up log
 

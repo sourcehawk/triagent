@@ -90,6 +90,10 @@ func seedFixtures(stateDir, cacheDir string, opts Options) (string, error) {
 //     with a local-file origin, so the regenerate worker's EnsureClone
 //     (git fetch against origin) succeeds offline and the summary
 //     sub-agent has a working tree to run in.
+//   - codefix-proposals/<id>.json → <configBase>/codefix-proposals/<id>.json
+//     (the agent-opened issue/PR proposals the repos activity panel
+//     reads via GET /api/codefix-proposals; mirrors
+//     profile.defaultPathTemplates' codefix_proposals_dir).
 func seedRepoVault(scenarioDir, configBase, gitCacheDir string) error {
 	if _, err := os.Stat(scenarioDir); err != nil {
 		return fmt.Errorf("scenario dir: %w", err)
@@ -98,6 +102,12 @@ func seedRepoVault(scenarioDir, configBase, gitCacheDir string) error {
 	if src := filepath.Join(scenarioDir, "user_repos.yaml"); fileExists(src) {
 		if err := copyFileAt(src, filepath.Join(configBase, "user_repos.yaml")); err != nil {
 			return fmt.Errorf("user_repos.yaml: %w", err)
+		}
+	}
+
+	if proposals := filepath.Join(scenarioDir, "codefix-proposals"); dirExists(proposals) {
+		if err := copyTree(proposals, filepath.Join(configBase, "codefix-proposals")); err != nil {
+			return fmt.Errorf("codefix-proposals: %w", err)
 		}
 	}
 

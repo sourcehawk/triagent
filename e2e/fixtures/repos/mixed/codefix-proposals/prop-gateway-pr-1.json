@@ -1,0 +1,12 @@
+{
+  "proposal_id": "prop-gateway-pr-1",
+  "repo": "acme/gateway",
+  "issue_url": "https://github.com/acme/gateway/issues/41",
+  "issue_number": 41,
+  "pr_url": "https://github.com/acme/gateway/pull/42",
+  "pr_number": 42,
+  "branch_name": "fix/gateway-timeout",
+  "summary": "Raise the upstream timeout so the gateway stops 504-ing under load.",
+  "investigation_id": "inv-flow5-gateway-aaaa",
+  "created_at": "2026-05-20T10:00:00Z"
+}

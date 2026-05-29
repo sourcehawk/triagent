@@ -122,14 +122,25 @@ func TestRepos_Browser(t *testing.T) {
 		Browser:      true,
 	})
 
-	// The browser-side regenerate click will block on the worker's gate;
-	// the harness releases the signal shortly after so the spec observes
-	// the completion without racing. A background releaser keeps the spec
-	// deterministic — it waits long enough for the click + 409-free first
-	// POST to land, then unblocks the worker.
+	// The browser-side regenerate click blocks on the worker's gate so the
+	// spec can observe the in-flight state (disabled button, "generating…")
+	// and prove single-flight (a concurrent refresh POST → 409). A fixed
+	// sleep can't coordinate with whichever test in the spec file does the
+	// click, so the releaser instead polls the status endpoint until the
+	// worker is genuinely in flight — which only happens after the browser
+	// clicks refresh — then grants a short grace window for the spec's 409
+	// probe to land before unblocking the one worker. Mirrors the Go
+	// invariant test's "observe in-flight → release" discipline.
 	go func() {
-		time.Sleep(2 * time.Second)
-		h.ReleaseSignal(t, "regenerate-released")
+		deadline := time.Now().Add(90 * time.Second)
+		for time.Now().Before(deadline) {
+			if repoSummaryInFlight(t, h, flow5RegenOwner, flow5RegenName) {
+				time.Sleep(750 * time.Millisecond)
+				h.ReleaseSignal(t, "regenerate-released")
+				return
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
 	}()
 
 	h.Browser.SetEnv("TRIAGENT_REPO_OWNER", flow5RegenOwner)

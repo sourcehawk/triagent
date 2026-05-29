@@ -17,6 +17,23 @@ export const editorTestids = {
   playbookEditor: "triagent-playbook-editor",
   playbookProposal: "triagent-playbook-proposal",
   playbookProposalBadge: "triagent-playbook-proposal-badge",
+  // Playbook editor inner surfaces (the operator walkthrough drives
+  // create → chat → proposal → manual-save through these).
+  playbookSymptom: "triagent-playbook-symptom",
+  playbookSave: "triagent-playbook-save",
+  playbookSaveConfirm: "triagent-playbook-save-confirm",
+  playbookChatToggle: "triagent-playbook-chat-toggle",
+  // New-playbook modal (sidebar "+ new playbook" → NewPlaybookModal).
+  newPlaybook: "triagent-new-playbook",
+  newPlaybookModal: "triagent-new-playbook-modal",
+  newPlaybookPasteMode: "triagent-new-playbook-paste-mode",
+  newPlaybookYAML: "triagent-new-playbook-yaml",
+  newPlaybookSave: "triagent-new-playbook-save",
+  // Shared editor-chat composer (EditorChatDrawer — playbook + wiki).
+  editorChatInput: "triagent-editor-chat-input",
+  editorChatSend: "triagent-editor-chat-send",
+  // Shared proposal-card approve action (ProposalCard — playbook + wiki).
+  proposalApprove: "triagent-proposal-approve",
   // Wiki surface.
   wikiEntryList: "triagent-wiki-entry-list",
   wikiEntryRow: "triagent-wiki-entry-row",
@@ -91,6 +108,111 @@ export async function openPlaybookEditor(page: Page, id: string): Promise<void> 
   await expect(page.getByTestId(editorTestids.playbookEditor)).toBeVisible({
     timeout: 30_000,
   });
+}
+
+// createPlaybookFromYAML drives the sidebar "+ new playbook" trigger
+// through NewPlaybookModal's paste-raw-YAML path: open the modal,
+// switch to the paste tab, fill the YAML body, and save. Waits for the
+// editor to mount at ?playbook=<id> (the modal routes there on a
+// successful save) so the caller lands on the freshly-created file.
+//
+// The `id` must match the YAML's top-level `id:` field — the modal
+// extracts the id from the body to drive the savePlaybook call and the
+// post-save route.
+export async function createPlaybookFromYAML(
+  page: Page,
+  id: string,
+  yaml: string,
+): Promise<void> {
+  await page.getByTestId(editorTestids.newPlaybook).click();
+  await expect(page.getByTestId(editorTestids.newPlaybookModal)).toBeVisible({
+    timeout: 30_000,
+  });
+  await page.getByTestId(editorTestids.newPlaybookPasteMode).click();
+  await page.getByTestId(editorTestids.newPlaybookYAML).fill(yaml);
+  // The save button gates on client-side validation clearing; wait for
+  // it to enable before clicking so a still-validating body doesn't
+  // produce a no-op click.
+  const save = page.getByTestId(editorTestids.newPlaybookSave);
+  await expect(save).toBeEnabled({ timeout: 30_000 });
+  await save.click();
+  await expect(page).toHaveURL(
+    new RegExp(`[?&]playbook=${escapeRegExp(id)}(?:&|$)`),
+  );
+  await expect(page.getByTestId(editorTestids.playbookEditor)).toBeVisible({
+    timeout: 30_000,
+  });
+}
+
+// openPlaybookChat opens the editor's chat drawer (the "chat" / "draft
+// with AI" toggle) and waits for the composer input to mount.
+export async function openPlaybookChat(page: Page): Promise<void> {
+  await page.getByTestId(editorTestids.playbookChatToggle).click();
+  await expect(page.getByTestId(editorTestids.editorChatInput)).toBeVisible({
+    timeout: 30_000,
+  });
+}
+
+// closePlaybookChat collapses the chat drawer via the same toggle.
+// Collapsing keeps the server-side session alive (the drawer unmounts,
+// freeing the bottom of the viewport) — used before interacting with
+// surfaces the fixed-position drawer would otherwise overlay.
+export async function closePlaybookChat(page: Page): Promise<void> {
+  await page.getByTestId(editorTestids.playbookChatToggle).click();
+  await expect(page.getByTestId(editorTestids.editorChatInput)).toHaveCount(0, {
+    timeout: 30_000,
+  });
+}
+
+// sendEditorChat types a message into the chat composer and sends it.
+// The send button enables only once the session is live (not starting),
+// so wait for it before clicking.
+export async function sendEditorChat(page: Page, text: string): Promise<void> {
+  await page.getByTestId(editorTestids.editorChatInput).fill(text);
+  const send = page.getByTestId(editorTestids.editorChatSend);
+  await expect(send).toBeEnabled({ timeout: 30_000 });
+  await send.click();
+}
+
+// openProposalPreview clicks the sidenav pending-proposal row, which
+// deep-links the editor to ?proposal=<id>&tab=proposal — the editor
+// hydrates the proposal into its AI-proposal tab and renders the diff
+// via ProposalCard. Waits for the approve action to surface, the signal
+// the ProposalPreview is populated and still pending.
+export async function openProposalPreview(
+  page: Page,
+  playbookID: string,
+): Promise<void> {
+  await playbookProposal(page, playbookID).click();
+  await expect(page.getByTestId(editorTestids.proposalApprove)).toBeVisible({
+    timeout: 30_000,
+  });
+}
+
+// acceptProposal approves the pending proposal from the rendered
+// ProposalCard. The card swaps to its "approved" confirmation in place.
+export async function acceptProposal(page: Page): Promise<void> {
+  await page.getByTestId(editorTestids.proposalApprove).click();
+}
+
+// editPlaybookSymptom rewrites the editor's symptom field — the manual
+// edit the walkthrough round-trips to disk.
+export async function editPlaybookSymptom(
+  page: Page,
+  symptom: string,
+): Promise<void> {
+  await page.getByTestId(editorTestids.playbookSymptom).fill(symptom);
+}
+
+// savePlaybookEdit clicks the editor's save button, then confirms the
+// SaveDialog. Waits for the dialog's confirm to disappear (the dialog
+// closes on a successful save).
+export async function savePlaybookEdit(page: Page): Promise<void> {
+  await page.getByTestId(editorTestids.playbookSave).click();
+  const confirm = page.getByTestId(editorTestids.playbookSaveConfirm);
+  await expect(confirm).toBeVisible({ timeout: 30_000 });
+  await confirm.click();
+  await expect(confirm).toBeHidden({ timeout: 30_000 });
 }
 
 // ── Wiki surface ──────────────────────────────────────────────────
