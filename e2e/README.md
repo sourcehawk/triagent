@@ -13,7 +13,8 @@ make test-e2e      # whole suite (go test -tags=e2e ./e2e/...)
 ```
 
 The `e2e` build tag keeps the suite out of `make test`. `TestMain` (in
-`harness/binaries.go`) and `harness.Launch` build the four binaries
+`harness/binaries_test.go`, via `buildBinaries` in `harness/binaries.go`)
+and `harness.Launch` build the four binaries
 (`triagent`, `triagent-mcp`, and the `claude` / `gh` stubs) once per
 invocation into a temp bin dir, then prefix it onto `PATH` so the launcher
 resolves the stubs.

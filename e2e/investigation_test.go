@@ -98,6 +98,16 @@ func TestInvestigation_BackendInvariants(t *testing.T) {
 	// it ran only as part of the create_github_issue round-trip.
 	assertGhIssueCreate(t, h, "Payments rollout config regression", "acme/payments")
 
+	// The two repo proposals (draft_pr + create_github_issue) are persisted
+	// and surfaced on the codefix activity panel — the disk/activity
+	// invariant that the live tool-event persist path exists to satisfy.
+	assertCodefixProposalPersisted(t, h, codefixWant{
+		proposalID: "prop-cf-flow2", repo: "acme/payments", prNumber: 43, issueNumber: 42,
+	})
+	assertCodefixProposalPersisted(t, h, codefixWant{
+		proposalID: "prop-issue-flow2", repo: "acme/payments", issueNumber: 44,
+	})
+
 	// A follow-up message resumes the session; turn 2 renders an assistant
 	// reply and ends.
 	status, body = h.Client.PostJSON(t, "/api/investigations/"+id+"/messages",
@@ -277,6 +287,55 @@ func assertGhIssueCreate(t *testing.T, h *harness.Harness, title, repo string) {
 	}
 	t.Errorf("no `gh issue create` invocation with title %q + repo %q; invocations: %v",
 		title, repo, h.GhTrace(t).Invocations)
+}
+
+// codefixWant is the expected shape of one persisted codefix proposal.
+// Zero-valued numeric fields are not asserted, so an issue-only proposal
+// leaves prNumber at 0.
+type codefixWant struct {
+	proposalID  string
+	repo        string
+	prNumber    int
+	issueNumber int
+}
+
+// assertCodefixProposalPersisted confirms the launcher surfaced a proposal
+// on GET /api/codefix-proposals — the disk-backed activity panel the repos
+// page reads. Driven through the API rather than the on-disk path so the
+// assertion tracks what an operator actually sees.
+func assertCodefixProposalPersisted(t *testing.T, h *harness.Harness, want codefixWant) {
+	t.Helper()
+	status, body := h.Client.Get(t, "/api/codefix-proposals")
+	if status != http.StatusOK {
+		t.Fatalf("GET /api/codefix-proposals status = %d (body %s)", status, body)
+	}
+	var parsed struct {
+		Proposals []struct {
+			ProposalID  string `json:"proposal_id"`
+			Repo        string `json:"repo"`
+			PRNumber    int    `json:"pr_number"`
+			IssueNumber int    `json:"issue_number"`
+		} `json:"proposals"`
+	}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		t.Fatalf("decode codefix proposals: %v (body %s)", err, body)
+	}
+	for _, p := range parsed.Proposals {
+		if p.ProposalID != want.proposalID {
+			continue
+		}
+		if p.Repo != want.repo {
+			t.Errorf("proposal %s repo = %q, want %q", want.proposalID, p.Repo, want.repo)
+		}
+		if want.prNumber != 0 && p.PRNumber != want.prNumber {
+			t.Errorf("proposal %s pr_number = %d, want %d", want.proposalID, p.PRNumber, want.prNumber)
+		}
+		if want.issueNumber != 0 && p.IssueNumber != want.issueNumber {
+			t.Errorf("proposal %s issue_number = %d, want %d", want.proposalID, p.IssueNumber, want.issueNumber)
+		}
+		return
+	}
+	t.Errorf("codefix proposal %s not surfaced by /api/codefix-proposals; got %+v", want.proposalID, parsed.Proposals)
 }
 
 // waitForEnd blocks until the synthetic end envelope for the investigation

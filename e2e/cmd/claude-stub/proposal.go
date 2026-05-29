@@ -93,7 +93,9 @@ func (p *poster) nextToolID() string {
 // tool-events for one proposal tool call, returning the toolID that
 // linked them. The launcher publishes a tool_use envelope on start and a
 // tool_result envelope on end; the frontend pairs them by toolID to
-// render the proposal card.
+// render the proposal card. The end event also carries toolName because
+// the launcher branches on it to persist draft-PR / GitHub-issue codefix
+// proposals (handleToolEvent); a real triagent-mcp end event sets it too.
 func (p *poster) roundTrip(toolName string, input json.RawMessage, result string) (string, error) {
 	id := p.nextToolID()
 	if err := p.post(toolEventBody{
@@ -106,10 +108,11 @@ func (p *poster) roundTrip(toolName string, input json.RawMessage, result string
 		return id, err
 	}
 	if err := p.post(toolEventBody{
-		Phase:   "end",
-		TraceID: p.traceID,
-		ToolID:  id,
-		Result:  result,
+		Phase:    "end",
+		TraceID:  p.traceID,
+		ToolID:   id,
+		ToolName: toolName,
+		Result:   result,
 	}); err != nil {
 		return id, err
 	}
