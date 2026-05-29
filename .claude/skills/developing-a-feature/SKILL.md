@@ -146,13 +146,16 @@ Sub-PRs into the feature branch are owned by `fanning-out-with-worktrees`, not t
 
 ### 7. Tear down the planning artifacts
 
-Once the PR (single-PR or integration) merges to main and the epic has auto-closed via its `Closes #N` keyword,
-delete the plan + state file. For multi-PR features the cleanest path is to include the deletion as part of the
-integration PR itself (last commit on the feature branch before opening the integration PR): one diff, reviewed
-alongside the feature. For single-PR features, fold the deletion into the same PR's diff.
+Delete the plan + state file once the work is genuinely done. The spec stays — it's the durable ADR. The plan and
+state file are scratch; leaving them committed past readiness pollutes the repo with stale operational state that
+future `grep`s have to wade through.
 
-The spec stays — it's the durable ADR. The plan and state file are scratch; leaving them committed past readiness
-pollutes the repo with stale operational state that future `grep`s have to wade through.
+**Do NOT tear down until the integration PR's CI is green.** The state file is the resume contract for exactly the
+case where the PR's CI comes back red and you have to fix forward — tear it down before CI confirms and a failed run
+leaves you fixing forward with no recorded state. So the teardown is the **last commit on the feature branch, pushed
+only after the integration PR's CI passes** — never as the commit *before opening* the PR, and never on "local green"
+or "flipped ready" alone (those are not the CI gate). For single-PR features, same rule: fold the deletion in only
+once the PR's CI is green. Until then, keep updating the state file as reality moves.
 
 ## Anti-patterns
 
@@ -176,3 +179,4 @@ pollutes the repo with stale operational state that future `grep`s have to wade 
 | "The state file is for the planner, I don't need to update it during dev" | The state file is the resume contract. Every transition is your responsibility while dev is in flight. |
 | "I'll open the integration PR before the last sub-PR is self-merged" | The integration PR's diff is supposed to be the whole feature. An in-flight sub-PR means the integration PR will be re-pushed mid-review. Wait. |
 | "I'll create `feature/<slug>` off `origin/main` in step 3"           | Planning already created it and committed the spec/plan/state onto it. `-b feature/<slug>` errors ("already exists") and re-creating off `origin/main` orphans the planning artifacts. Reuse the existing branch; attach a worktree to it. |
+| "Tests pass locally and the PR is ready, so I'll tear down plan/state now" | Local green and "ready" aren't the CI gate. If the integration PR's CI comes back red you fix forward — with no state file if you deleted it. Tear down only after the PR's CI is green. |
