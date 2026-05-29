@@ -12,6 +12,12 @@ on:
 permissions:
   contents: read
 
+# Rapid pushes to an open PR shouldn't pile up runs of the expensive e2e suite;
+# cancel-in-progress keeps only the latest. Keyed per workflow and head ref.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   e2e:
     name: E2E (golden path)

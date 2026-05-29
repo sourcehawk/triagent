@@ -1,18 +1,8 @@
 name: Lint
 
 on:
-  push:
-    branches-ignore: [main]
-    paths-ignore:
-      - '.github/**'
-      - '**.md'
-      - 'Makefile'
-      - '.gitignore'
-      - '.tool-versions'
   pull_request:
-    branches: [main]
     paths-ignore:
-      - '.github/**'
       - '**.md'
       - 'Makefile'
       - '.gitignore'
@@ -21,10 +11,10 @@ on:
 permissions:
   contents: read
 
-# See the note in test.yml: collapse the push + pull_request double-trigger
-# into one group per workflow so cancel-in-progress drops the stale run.
+# See the note in test.yml: pull-request-only triggers (no push) plus a
+# per-workflow concurrency group so cancel-in-progress drops stale runs.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
 jobs:

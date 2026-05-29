@@ -1,18 +1,8 @@
 name: Test
 
 on:
-  push:
-    branches-ignore: [main]
-    paths-ignore:
-      - '.github/**'
-      - '**.md'
-      - 'Makefile'
-      - '.gitignore'
-      - '.tool-versions'
   pull_request:
-    branches: [main]
     paths-ignore:
-      - '.github/**'
       - '**.md'
       - 'Makefile'
       - '.gitignore'
@@ -21,13 +11,13 @@ on:
 permissions:
   contents: read
 
-# A push to a branch that already has an open PR to main fires both the push
-# and the pull_request event, doubling every run. Grouping both under the same
-# head ref (head_ref is set on pull_request, ref_name on push) collapses them
-# into one concurrency group so cancel-in-progress keeps only the latest run.
-# github.workflow keys the group per workflow, so Test never cancels Lint.
+# CI runs on pull requests only — no point validating a branch before it has an
+# open PR, and dropping the push trigger removes the push + pull_request
+# double-run entirely. The concurrency group still collapses rapid pushes to an
+# open PR so cancel-in-progress keeps only the latest run; github.workflow keys
+# it per workflow, so Test never cancels Lint.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
 jobs:
