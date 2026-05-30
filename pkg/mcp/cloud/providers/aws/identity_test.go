@@ -28,7 +28,7 @@ func TestIdentityBuildsCallerIdentityArgv(t *testing.T) {
 	p, err := newWithBinary("/usr/bin/aws")
 	require.NoError(t, err)
 
-	_, err = p.Identity(context.Background(), f.run)
+	_, err = p.Identity(context.Background(), f.run, "")
 	require.NoError(t, err)
 
 	require.Len(t, f.calls, 1)
@@ -42,7 +42,7 @@ func TestIdentityValidWhenAssumedRole(t *testing.T) {
 	p, err := newWithBinary("/usr/bin/aws")
 	require.NoError(t, err)
 
-	st, err := p.Identity(context.Background(), f.run)
+	st, err := p.Identity(context.Background(), f.run, "")
 	require.NoError(t, err)
 
 	assert.Equal(t, "aws", st.Provider)
@@ -57,7 +57,7 @@ func TestIdentityInvalidWhenNotAssumedRole(t *testing.T) {
 	p, err := newWithBinary("/usr/bin/aws")
 	require.NoError(t, err)
 
-	st, err := p.Identity(context.Background(), f.run)
+	st, err := p.Identity(context.Background(), f.run, "")
 	require.NoError(t, err)
 
 	assert.Equal(t, "arn:aws:iam::111122223333:user/operator", st.AssumedIdentity)
@@ -66,27 +66,25 @@ func TestIdentityInvalidWhenNotAssumedRole(t *testing.T) {
 }
 
 func TestIdentityMatchesExpectedRoleArnWhenPinned(t *testing.T) {
-	t.Setenv(EnvExpectedRoleARN, "arn:aws:iam::111122223333:role/triagent-readonly")
 	f := &fakeRun{results: map[string]cloud.CLIResult{
 		"sts get-caller-identity": {Stdout: callerIdentityAssumedRole},
 	}}
 	p, err := newWithBinary("/usr/bin/aws")
 	require.NoError(t, err)
 
-	st, err := p.Identity(context.Background(), f.run)
+	st, err := p.Identity(context.Background(), f.run, "arn:aws:iam::111122223333:role/triagent-readonly")
 	require.NoError(t, err)
 	assert.True(t, st.Valid, "assumed-role ARN whose role matches the pinned expectation is valid")
 }
 
 func TestIdentityRejectsMismatchedExpectedRoleArn(t *testing.T) {
-	t.Setenv(EnvExpectedRoleARN, "arn:aws:iam::111122223333:role/some-other-role")
 	f := &fakeRun{results: map[string]cloud.CLIResult{
 		"sts get-caller-identity": {Stdout: callerIdentityAssumedRole},
 	}}
 	p, err := newWithBinary("/usr/bin/aws")
 	require.NoError(t, err)
 
-	st, err := p.Identity(context.Background(), f.run)
+	st, err := p.Identity(context.Background(), f.run, "arn:aws:iam::111122223333:role/some-other-role")
 	require.NoError(t, err)
 	assert.False(t, st.Valid, "assumed role not matching the pinned expectation is invalid")
 	assert.NotEmpty(t, st.Hint)
@@ -99,7 +97,7 @@ func TestIdentityInvalidOnNonZeroExit(t *testing.T) {
 	p, err := newWithBinary("/usr/bin/aws")
 	require.NoError(t, err)
 
-	st, err := p.Identity(context.Background(), f.run)
+	st, err := p.Identity(context.Background(), f.run, "")
 	require.NoError(t, err)
 	assert.False(t, st.Valid)
 	assert.NotEmpty(t, st.Hint)
