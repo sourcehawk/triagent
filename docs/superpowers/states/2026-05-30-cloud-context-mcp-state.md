@@ -6,7 +6,7 @@ tracking_issue: #44
 feature_branch: feature/cloud-context-mcp
 feature_worktree: .claude/worktrees/cloud-context-mcp
 sub_pr_approval: autonomous
-integration_pr:
+integration_pr: #53
 status: review
 ---
 
