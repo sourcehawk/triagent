@@ -22,9 +22,9 @@ status: developing
 | Issue | Branch | Worktree path | PR (→ base) | Status |
 | ----- | ------ | ------------- | ----------- | ------ |
 | #45 — scaffold + harness | (merged, branch deleted) | (removed) | #48 → feature/cloud-context-mcp | self-merged |
-| #43 — GCP provider | _tbd_ | _tbd_ | _tbd_ → feature/cloud-context-mcp | not-started |
-| #46 — AWS provider | _tbd_ | _tbd_ | _tbd_ → feature/cloud-context-mcp | not-started |
-| #47 — launcher integration | _tbd_ | _tbd_ | _tbd_ → feature/cloud-context-mcp | not-started |
+| #43 — GCP provider | feature/cloud-context-mcp--gcp | .claude/worktrees/cloud-context-mcp--gcp | _tbd_ → feature/cloud-context-mcp | dispatched |
+| #46 — AWS provider | feature/cloud-context-mcp--aws | .claude/worktrees/cloud-context-mcp--aws | _tbd_ → feature/cloud-context-mcp | dispatched |
+| #47 — launcher integration | feature/cloud-context-mcp--launcher | .claude/worktrees/cloud-context-mcp--launcher | _tbd_ → feature/cloud-context-mcp | dispatched |
 
 ## Contracts
 
@@ -38,6 +38,8 @@ status: developing
 All four contracts landed with #45 (squash-merged as #48). Phase 2 (#43/#46/#47) is now unblocked. The `Provider` interface gained `EnvPassthrough() []string` during #45 review (see Bubble-up log) — #43/#46 must implement it, returning their CLI's credential/impersonation var names; `PATH`/`HOME` are already in the harness base set.
 
 ## Bubble-up log
+
+- **2026-05-30 — known `serve.go` resource conflict between #43 and #46 (dispatch-time, pre-logged).** Both providers wire into `cmd/triagent-mcp/serve.go`: each adds an import (`providers/gcp` vs `providers/aws`) to the same import group and replaces its arm of the `newCloudProvider` stub switch (currently a combined `case "gcp", "aws":`). The import-group collision makes a trivial conflict inevitable at whichever provider PR merges **second**. **Resolution (orchestrator owns it):** dispatch both in parallel; each agent makes a minimal, localized edit (only its own import + its own case arm, leaving the other arm's "not built yet" stub untouched). At the second provider merge, resolve by taking the union — both imports, both real case arms. #47 (launcher) touches a disjoint file set and is conflict-free.
 
 - **2026-05-30 — minimal-env seam missing in the harness (blocks #45 merge).** `cloud.Server.run` (server.go) calls `execCLI(..., argv, nil, ...)`; in Go a nil `cmd.Env` inherits the full parent environment, contradicting the spec's "explicit minimal `cmd.Env`" and `harness.go`'s own doc comment, and leaking the launcher's process env into `gcloud`/`aws`. The env-forwarding seam is owned by the parent package (conventions: subpackages own only CLI specifics), so it must land in #45 before fan-out. Resolution: #45 follow-up adds a provider-contributed env-passthrough (var **names** the CLI needs forwarded) merged with a minimal base set, built once and passed to `execCLI`; `fakeProvider` returns none. **Propagation:** #43/#46 implement the new `Provider` env-passthrough method; #47 unaffected (still injects env onto the `triagent-mcp` process). Interface grows by one method before consumers branch.
 - **2026-05-30 — tests must use `testify` (user directive).** All cloud tests convert to `assert`/`require`; CLAUDE.md amended to make this the repo standard (testify is already used in 166 test files). **Propagation:** #43/#46/#47 inherit the rule via CLAUDE.md; their tests use testify from the start.
