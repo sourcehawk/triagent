@@ -26,7 +26,6 @@ func (f *fakeRun) run(_ context.Context, argv []string) (cloud.CLIResult, error)
 }
 
 func TestIdentityInvalidWhenNoImpersonationTargetPinned(t *testing.T) {
-	t.Setenv(EnvImpersonate, targetSA)
 	p, err := newWithBinary("/usr/bin/gcloud")
 	require.NoError(t, err)
 
@@ -38,21 +37,11 @@ func TestIdentityInvalidWhenNoImpersonationTargetPinned(t *testing.T) {
 	assert.Empty(t, f.calls, "no probe should run without a target")
 }
 
-func TestIdentityInvalidWhenImpersonationEnvNotPinnedToExpected(t *testing.T) {
-	t.Setenv(EnvImpersonate, "someone-else@proj.iam.gserviceaccount.com")
-	p, err := newWithBinary("/usr/bin/gcloud")
-	require.NoError(t, err)
-
-	f := &fakeRun{result: cloud.CLIResult{Stdout: `"token"`}}
-	st, err := p.Identity(context.Background(), f.run, targetSA)
-	require.NoError(t, err)
-	assert.False(t, st.Valid, "impersonation env pinned to a different SA is invalid")
-	assert.NotEmpty(t, st.Hint)
-	assert.Empty(t, f.calls, "a mismatched pin short-circuits before the probe")
-}
-
 func TestIdentityValidWhenImpersonatedReadSucceeds(t *testing.T) {
-	t.Setenv(EnvImpersonate, targetSA)
+	// No t.Setenv: the launcher injects the impersonation env only into the
+	// MCP subprocess, never into its own process. The probe runs launcher-side
+	// here with no ambient env, so validity must rest on the impersonated read
+	// the fake RunFunc returns, not on os.Getenv.
 	p, err := newWithBinary("/usr/bin/gcloud")
 	require.NoError(t, err)
 
@@ -67,7 +56,6 @@ func TestIdentityValidWhenImpersonatedReadSucceeds(t *testing.T) {
 }
 
 func TestIdentityInvalidWhenImpersonatedReadFails(t *testing.T) {
-	t.Setenv(EnvImpersonate, targetSA)
 	p, err := newWithBinary("/usr/bin/gcloud")
 	require.NoError(t, err)
 
@@ -83,7 +71,6 @@ func TestIdentityInvalidWhenImpersonatedReadFails(t *testing.T) {
 }
 
 func TestIdentitySurfacesRunErrorAsHint(t *testing.T) {
-	t.Setenv(EnvImpersonate, targetSA)
 	p, err := newWithBinary("/usr/bin/gcloud")
 	require.NoError(t, err)
 

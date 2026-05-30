@@ -59,6 +59,36 @@ func (p *Profile) Validate() error {
 		}
 	}
 
+	// Cloud sources are wired per session as triagent-cloud-<alias> MCP servers
+	// keyed by alias, so a duplicate or empty alias silently overwrites another
+	// server's entry; an unknown provider, missing identity, or aws source
+	// without a profile reaches preflight as a broken connection. Catch all of
+	// it here.
+	seenAliases := map[string]bool{}
+	for i, c := range p.Cloud {
+		if c.Alias == "" {
+			errs = append(errs, fmt.Sprintf("cloud[%d].alias: required", i))
+		} else if seenAliases[c.Alias] {
+			errs = append(errs, fmt.Sprintf("cloud[%d].alias: duplicate %q", i, c.Alias))
+		}
+		seenAliases[c.Alias] = true
+
+		switch c.Provider {
+		case "gcp", "aws":
+		case "":
+			errs = append(errs, fmt.Sprintf("cloud[%d].provider: required (supported: gcp, aws)", i))
+		default:
+			errs = append(errs, fmt.Sprintf("cloud[%d].provider: unknown %q (supported: gcp, aws)", i, c.Provider))
+		}
+
+		if c.AssumedIdentity == "" {
+			errs = append(errs, fmt.Sprintf("cloud[%d].assumed_identity: required", i))
+		}
+		if c.Provider == "aws" && c.Profile == "" {
+			errs = append(errs, fmt.Sprintf("cloud[%d].profile: required when provider=aws", i))
+		}
+	}
+
 	if len(errs) == 0 {
 		return nil
 	}

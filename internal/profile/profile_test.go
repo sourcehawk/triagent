@@ -237,6 +237,76 @@ func TestValidateMissingTeleportFields(t *testing.T) {
 	}
 }
 
+func validCloudBase() *profile.Profile {
+	return &profile.Profile{
+		Name:      "x",
+		Auth:      profile.Auth{Kind: "kubeconfig"},
+		Playbooks: profile.Playbooks{Entrypoint: "a", Closing: "b"},
+	}
+}
+
+func TestValidateCloudSourcesOK(t *testing.T) {
+	p := validCloudBase()
+	p.Cloud = []profile.CloudSource{
+		{Alias: "prod-gcp", Provider: "gcp", AssumedIdentity: "ro@proj.iam.gserviceaccount.com"},
+		{Alias: "prod-aws", Provider: "aws", AssumedIdentity: "arn:aws:iam::1:role/ro", Profile: "ro"},
+	}
+	assert.NoError(t, p.Validate(), "a valid multi-source cloud profile must validate clean")
+}
+
+func TestValidateCloudDuplicateAlias(t *testing.T) {
+	p := validCloudBase()
+	p.Cloud = []profile.CloudSource{
+		{Alias: "dup", Provider: "gcp", AssumedIdentity: "ro@proj.iam.gserviceaccount.com"},
+		{Alias: "dup", Provider: "aws", AssumedIdentity: "arn:aws:iam::1:role/ro", Profile: "ro"},
+	}
+	err := p.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "duplicate")
+	assert.Contains(t, err.Error(), "dup")
+}
+
+func TestValidateCloudEmptyAlias(t *testing.T) {
+	p := validCloudBase()
+	p.Cloud = []profile.CloudSource{
+		{Provider: "gcp", AssumedIdentity: "ro@proj.iam.gserviceaccount.com"},
+	}
+	err := p.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "alias")
+}
+
+func TestValidateCloudUnknownProvider(t *testing.T) {
+	p := validCloudBase()
+	p.Cloud = []profile.CloudSource{
+		{Alias: "x", Provider: "azure", AssumedIdentity: "whatever"},
+	}
+	err := p.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "provider")
+	assert.Contains(t, err.Error(), "azure")
+}
+
+func TestValidateCloudMissingIdentity(t *testing.T) {
+	p := validCloudBase()
+	p.Cloud = []profile.CloudSource{
+		{Alias: "x", Provider: "gcp"},
+	}
+	err := p.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "assumed_identity")
+}
+
+func TestValidateCloudAWSMissingProfile(t *testing.T) {
+	p := validCloudBase()
+	p.Cloud = []profile.CloudSource{
+		{Alias: "x", Provider: "aws", AssumedIdentity: "arn:aws:iam::1:role/ro"},
+	}
+	err := p.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "profile")
+}
+
 func TestDefaultProfilePromptsPopulated(t *testing.T) {
 	p, err := profile.LoadEmbedded("default")
 	if err != nil {
@@ -518,6 +588,46 @@ kinds_file: kinds.json
 	if _, err := os.Stat(p.KindsPath); err != nil {
 		t.Errorf("KindsPath=%q must point to a real file: %v", p.KindsPath, err)
 	}
+}
+
+func TestLoadPath_CommandAllowlistPathAbsoluteFromRelativeRef(t *testing.T) {
+	// command_allowlist_path is documented as relative to profile.yaml, but the
+	// cloud MCP subprocess os.ReadFiles it against a session-scoped cwd. Load
+	// must absolutize a relative override so the injected env points at the file
+	// regardless of the child's cwd; an absolute override passes through.
+	root := t.TempDir()
+	profDir := filepath.Join(root, "test-profile", "camunda")
+	require.NoError(t, os.MkdirAll(profDir, 0o755))
+	yaml := `name: camunda
+base: default
+auth:
+  kind: kubeconfig
+playbooks:
+  entrypoint: investigation
+  closing: capture_offer
+cloud:
+  - alias: prod-gcp
+    provider: gcp
+    assumed_identity: ro@proj.iam.gserviceaccount.com
+    command_allowlist_path: allow/gcp.json
+  - alias: prod-aws
+    provider: aws
+    assumed_identity: arn:aws:iam::111122223333:role/ro
+    profile: ro
+    command_allowlist_path: /etc/triagent/aws-allow.json
+`
+	require.NoError(t, os.WriteFile(filepath.Join(profDir, "profile.yaml"), []byte(yaml), 0o600))
+
+	t.Chdir(root)
+	p, err := profile.Load("test-profile/camunda/profile.yaml")
+	require.NoError(t, err)
+	require.Len(t, p.Cloud, 2)
+
+	assert.Equal(t, filepath.Join(profDir, "allow", "gcp.json"), p.Cloud[0].CommandAllowlistPath,
+		"a relative command_allowlist_path resolves against the profile dir")
+	assert.True(t, filepath.IsAbs(p.Cloud[0].CommandAllowlistPath))
+	assert.Equal(t, "/etc/triagent/aws-allow.json", p.Cloud[1].CommandAllowlistPath,
+		"an absolute command_allowlist_path passes through unchanged")
 }
 
 func TestLoadPath_KindsFileMissingErrors(t *testing.T) {

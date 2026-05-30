@@ -168,7 +168,9 @@ type CloudSource struct {
 	Profile         string               `yaml:"profile,omitempty"` // aws AWS_PROFILE selector; ignored by gcp
 	Scope           cloud.ScopeAllowlist `yaml:"scope,omitempty"`
 	// CommandAllowlistPath points the cloud MCP at a run_cli allowlist override
-	// file; empty uses the provider's embedded default.
+	// file; empty uses the provider's embedded default. A relative path resolves
+	// against the profile.yaml's directory at load time (absolutized so the MCP
+	// subprocess can read it from any cwd).
 	CommandAllowlistPath string `yaml:"command_allowlist_path,omitempty"`
 }
 

@@ -23,10 +23,13 @@ type callerIdentity struct {
 // the caller ARN, and reports whether the pinned assume-role identity is active.
 //
 // Validity has two modes. With expected set to a role ARN, the caller's
-// underlying role must match it exactly. Without it, the structural check
-// applies: the caller must be an assumed-role ARN, which proves the AWS_PROFILE
-// pin took effect — a plain user/root ARN means base credentials leaked through
-// unimpersonated, so the session is not valid.
+// underlying role must match it exactly, and the displayed identity is that
+// canonical role ARN (not the per-session STS assumed-role ARN, whose session
+// segment changes each run). Without it, the structural check applies: the
+// caller must be an assumed-role ARN, which proves the AWS_PROFILE pin took
+// effect — a plain user/root ARN means base credentials leaked through
+// unimpersonated, so the session is not valid — and the resolved caller ARN is
+// displayed as-is.
 func (p *Provider) Identity(ctx context.Context, run cloud.RunFunc, expected string) (cloud.IdentityStatus, error) {
 	res, err := run(ctx, []string{"sts", "get-caller-identity", "--output", "json"})
 	if err != nil {
@@ -51,6 +54,13 @@ func (p *Provider) Identity(ctx context.Context, run cloud.RunFunc, expected str
 
 	st := cloud.IdentityStatus{Provider: "aws", AssumedIdentity: caller.Arn}
 	st.Valid, st.Hint = evaluateIdentity(caller.Arn, expected)
+	// When a pinned role ARN matched, display it rather than the per-session
+	// STS assumed-role ARN: the STS ARN carries a fresh session segment each
+	// run, so showing it would make the stable configured identity look like it
+	// keeps changing across /api/connections and session_status.
+	if st.Valid && expected != "" {
+		st.AssumedIdentity = expected
+	}
 	return st, nil
 }
 
