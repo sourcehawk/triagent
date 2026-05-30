@@ -1,8 +1,13 @@
 package gcp
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/sourcehawk/triagent/pkg/mcp/cloud"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -65,4 +70,57 @@ func TestDenyFloorAdditionsCoverDangerousGCPSubcommands(t *testing.T) {
 	} {
 		assert.Containsf(t, floor.Subcommands, want, "expected %q on the gcp deny-floor additions", want)
 	}
+}
+
+// TestDenyFloorDropsNestedExfilDecryptOverrides asserts that even a profile
+// override that tries to allowlist a nested object-content / decrypt command is
+// dropped by the GCP deny floor, while metadata-only reads under the same
+// services stay allowable. (`gcloud secrets versions access` is already covered
+// by the base `secrets` prefix and is not re-listed here.)
+func TestDenyFloorDropsNestedExfilDecryptOverrides(t *testing.T) {
+	t.Parallel()
+	p, err := newWithBinary("/usr/bin/gcloud")
+	require.NoError(t, err)
+
+	floored := [][]string{
+		{"storage", "cp"},
+		{"storage", "mv"},
+		{"storage", "rsync"},
+		{"storage", "cat"},
+		{"kms", "decrypt"},
+	}
+	// Metadata-only reads must remain allowable: the floor targets object
+	// CONTENTS and decryption, not listing or describing.
+	metadataOnly := [][]string{
+		{"storage", "ls"},
+		{"storage", "buckets", "describe"},
+		{"kms", "keys", "list"},
+	}
+
+	override := allowlistJSON(t, append(append([][]string{}, floored...), metadataOnly...))
+	loaded, err := cloud.LoadCommandAllowlist(override, p.DenyFloorAdditions())
+	require.NoError(t, err)
+
+	for _, argv := range floored {
+		assert.Falsef(t, loaded.Allows(argv), "override must not re-enable floored %v", argv)
+	}
+	for _, argv := range metadataOnly {
+		assert.Truef(t, loaded.Allows(argv), "metadata-only %v must stay allowable", argv)
+	}
+}
+
+// allowlistJSON writes a command allowlist document with the given subcommand
+// paths to a temp file and returns its path, the seam LoadCommandAllowlist reads
+// a profile override through.
+func allowlistJSON(t *testing.T, paths [][]string) string {
+	t.Helper()
+	var doc cloud.CommandAllowlist
+	for _, p := range paths {
+		doc.Commands = append(doc.Commands, cloud.Command{Path: strings.Join(p, " "), Description: "test"})
+	}
+	b, err := json.Marshal(doc)
+	require.NoError(t, err)
+	path := filepath.Join(t.TempDir(), "commands.json")
+	require.NoError(t, os.WriteFile(path, b, 0o600))
+	return path
 }

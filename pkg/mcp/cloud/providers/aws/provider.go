@@ -80,10 +80,13 @@ func (p *Provider) Binary() string { return p.binary }
 // reachability, permissions, cluster, logs, audit).
 func (p *Provider) DefaultAllowlist() *cloud.CommandAllowlist { return p.allowlist }
 
-// DenyFloorAdditions contributes the AWS-specific subcommands that return
-// credential material or shell access beyond the base floor. The base floor
-// already covers the secrets/ssh/auth/config families and identity flags; these
-// add the credential-returning reads unique to AWS.
+// DenyFloorAdditions contributes the AWS-specific subcommands that return secret
+// material, object contents, decrypted plaintext, or shell access beyond the base
+// floor. The base floor prefix-matches top-level tokens, so it never reaches
+// these nested verbs; each is listed by its full token-wise path. Metadata reads
+// under the same services (describe-secret, list-secrets, head-object,
+// describe-parameters, describe-key) are deliberately absent: the floor targets
+// secret VALUES, object CONTENTS, and decryption, not listing or describing.
 func (p *Provider) DenyFloorAdditions() cloud.DenyFloor {
 	return cloud.DenyFloor{
 		Subcommands: []string{
@@ -92,6 +95,17 @@ func (p *Provider) DenyFloorAdditions() cloud.DenyFloor {
 			"ec2-instance-connect send-serial-console-ssh-public-key",
 			"sts get-session-token",
 			"sts get-federation-token",
+			"secretsmanager get-secret-value",
+			"s3 cp",
+			"s3 mv",
+			"s3 sync",
+			"s3api get-object",
+			"s3api get-object-attributes",
+			"s3api get-object-torrent",
+			"kms decrypt",
+			"ssm get-parameter",
+			"ssm get-parameters",
+			"ssm get-parameters-by-path",
 		},
 	}
 }

@@ -65,7 +65,13 @@ func (p *Provider) Binary() string { return p.binary }
 func (p *Provider) DefaultAllowlist() *cloud.CommandAllowlist { return p.allowlist }
 
 // DenyFloorAdditions contributes gcp-specific subcommands that read credentials,
-// shell into instances, or mutate by side effect, on top of the base floor.
+// shell into instances, exfiltrate or read object contents, decrypt, or mutate by
+// side effect, on top of the base floor. The base floor prefix-matches top-level
+// tokens, so it never reaches the nested storage/kms verbs; each is listed by its
+// full token-wise path. `gcloud secrets versions access` is already covered by
+// the base `secrets` prefix. Metadata reads (`storage ls`, `storage buckets
+// describe`, `kms keys list`) are deliberately absent: the floor targets object
+// CONTENTS and decryption, not listing or describing.
 func (p *Provider) DenyFloorAdditions() cloud.DenyFloor {
 	return cloud.DenyFloor{
 		Subcommands: []string{
@@ -73,6 +79,11 @@ func (p *Provider) DenyFloorAdditions() cloud.DenyFloor {
 			"compute scp",
 			"compute reset-windows-password",
 			"functions call",
+			"storage cp",
+			"storage mv",
+			"storage rsync",
+			"storage cat",
+			"kms decrypt",
 		},
 	}
 }
