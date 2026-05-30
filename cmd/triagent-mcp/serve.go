@@ -446,6 +446,10 @@ func runCloud(ctx context.Context, f serveFlags) error {
 	if f.cloudProvider == "" {
 		return fmt.Errorf("--provider is required (gcp or aws) (set --provider or $%s)", cloud.EnvProvider)
 	}
+	scope, err := parseCloudScope(os.Getenv(cloud.EnvScope))
+	if err != nil {
+		return fmt.Errorf("build cloud mcp server: %w", err)
+	}
 	provider, err := providers.New(f.cloudProvider)
 	if err != nil {
 		return err
@@ -453,7 +457,7 @@ func runCloud(ctx context.Context, f serveFlags) error {
 	srv, err := cloud.New(cloud.Options{
 		Provider:         provider,
 		AllowlistPath:    os.Getenv(cloud.EnvAllowlistPath),
-		Scope:            parseCloudScope(os.Getenv(cloud.EnvScope)),
+		Scope:            scope,
 		ExpectedIdentity: os.Getenv(cloud.EnvExpectedIdentity),
 	})
 	if err != nil {
@@ -465,18 +469,18 @@ func runCloud(ctx context.Context, f serveFlags) error {
 
 // parseCloudScope decodes the JSON-encoded target scope the launcher froze into
 // a cloud.ScopeAllowlist. An empty value yields an empty scope, which leaves the
-// target axes unconstrained; a malformed value is logged and treated the same,
-// so a bad profile entry never silently widens scope.
-func parseCloudScope(raw string) cloud.ScopeAllowlist {
+// target axes unconstrained. A malformed value is an error that aborts startup:
+// failing closed, since a misconfigured scope must never silently widen run_cli
+// by dropping the deployment's restrictions.
+func parseCloudScope(raw string) (cloud.ScopeAllowlist, error) {
 	var scope cloud.ScopeAllowlist
 	if raw == "" {
-		return scope
+		return scope, nil
 	}
 	if err := json.Unmarshal([]byte(raw), &scope); err != nil {
-		log.Warn("mcp serve --kind=cloud: ignoring malformed scope", "error", err)
-		return cloud.ScopeAllowlist{}
+		return cloud.ScopeAllowlist{}, fmt.Errorf("malformed cloud scope in $%s: %w", cloud.EnvScope, err)
 	}
-	return scope
+	return scope, nil
 }
 
 func runGit(ctx context.Context, f serveFlags) error {
