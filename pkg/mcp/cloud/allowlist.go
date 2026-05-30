@@ -109,15 +109,17 @@ func filterAllowlist(list *CommandAllowlist, extra DenyFloor) *CommandAllowlist 
 	return out
 }
 
-// Allows reports whether argv's positional subcommand path exactly equals an
-// allowlisted command path. Flag tokens and their values do not participate;
-// only the leading positionals do. The match is exact rather than prefix so a
-// surplus positional — a shell metacharacter token, an extra argument — never
-// rides through on the back of an allowed prefix.
+// Allows reports whether an allowlisted command path is a token-wise prefix of
+// argv's leading positional subcommand path. Flag tokens and their values do
+// not participate; only the leading positionals do. Prefix rather than exact
+// match lets a describe/get verb chain carry its trailing resource operand
+// (`compute instances describe my-vm`): there is no shell, so a trailing token
+// is an inert argument to the already-dispatched subcommand. Surplus tokens
+// that are shell-control sequences are caught separately in validateArgv.
 func (a *CommandAllowlist) Allows(argv []string) bool {
 	path := subcommandPath(argv)
 	for _, c := range a.Commands {
-		if pathEqual(path, normalizePath(c.Path)) {
+		if pathHasPrefix(path, normalizePath(c.Path)) {
 			return true
 		}
 	}
@@ -164,19 +166,6 @@ func pathHasPrefix(path, prefix []string) bool {
 	}
 	for i := range prefix {
 		if path[i] != prefix[i] {
-			return false
-		}
-	}
-	return true
-}
-
-// pathEqual reports whether two token paths are identical.
-func pathEqual(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
 			return false
 		}
 	}

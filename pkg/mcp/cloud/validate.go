@@ -29,14 +29,20 @@ func (s ScopeAllowlist) allowedFor(flag string) ([]string, bool) {
 	}
 }
 
-// validateArgv enforces the no-bypass contract on one argv before exec: the
-// positional subcommand path is on the allowlist, no token is a deny-floored
-// flag or arg-prefix, and every target-selecting flag value is within scope.
-// It runs entirely on argv tokens — there is no shell, so metacharacter tokens
-// are inert positionals that simply fail the exact allowlist match.
+// validateArgv enforces the no-bypass contract on one argv before exec: no
+// token carries a shell-control sequence, the positional subcommand path is on
+// the allowlist, no token is a deny-floored flag or arg-prefix, and every
+// target-selecting flag value is within scope. It runs entirely on argv tokens —
+// there is no shell, so a shell-control token would be an inert positional
+// anyway; the metachar check rejects it outright as defense in depth.
 func validateArgv(argv []string, allow *CommandAllowlist, scope ScopeAllowlist) error {
 	if len(argv) == 0 {
 		return fmt.Errorf("empty command")
+	}
+	for _, tok := range argv {
+		if isShellControlToken(tok) {
+			return fmt.Errorf("argv token contains a shell-control character: %q", tok)
+		}
 	}
 	if !allow.Allows(argv) {
 		return fmt.Errorf("subcommand not on the allowlist: %q", strings.Join(subcommandPath(argv), " "))
@@ -74,6 +80,19 @@ func validateArgv(argv []string, allow *CommandAllowlist, scope ScopeAllowlist) 
 		}
 	}
 	return nil
+}
+
+// isShellControlToken reports whether tok is or contains a shell-control
+// sequence. The harness never invokes a shell, so these are already inert; this
+// is defense in depth, rejecting `;`, `|`, `&`, backtick, `$(`, `>`, `<`, and
+// embedded newlines so an argv like ["...", "describe", ";", "rm"] is refused
+// outright. A literal resource name ("my-vm") or a key=value flag
+// ("--filter=name=foo") contains none of these and passes.
+func isShellControlToken(tok string) bool {
+	if strings.ContainsAny(tok, ";|&`<>\n") {
+		return true
+	}
+	return strings.Contains(tok, "$(")
 }
 
 // splitFlag separates a "--flag=value" token into its flag and value. For a
