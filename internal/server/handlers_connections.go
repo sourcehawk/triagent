@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +12,9 @@ import (
 	"time"
 
 	"github.com/sourcehawk/triagent/internal/connections"
+	"github.com/sourcehawk/triagent/internal/profile"
+	"github.com/sourcehawk/triagent/pkg/mcp/cloud"
+	"github.com/sourcehawk/triagent/pkg/mcp/cloud/providers"
 )
 
 // Connection-management endpoints. The panel reads /api/connections to
@@ -25,12 +29,25 @@ import (
 // endpoint.
 type connectionsResponse struct {
 	connections.Status
-	SlackChannelPrefix string `json:"slack_channel_prefix"`
+	SlackChannelPrefix string            `json:"slack_channel_prefix"`
+	Cloud              []cloudConnection `json:"cloud"`
+}
+
+// cloudConnection is the read-only view of one profile cloud source: the pinned
+// identity and the request-time probe result. It carries no edit affordance —
+// cloud is configured in the profile, never entered in the panel. The fields
+// mirror cloud.IdentityStatus so the panel renders directly from the probe.
+type cloudConnection struct {
+	Provider        string `json:"provider"`
+	AssumedIdentity string `json:"assumed_identity"`
+	Valid           bool   `json:"valid"`
+	Hint            string `json:"hint,omitempty"`
 }
 
 // connectionsResp builds the full response body for all /api/connections
-// endpoints, merging connection status with profile boot config.
-func (a *apiHandlers) connectionsResp() connectionsResponse {
+// endpoints, merging connection status with profile boot config and the
+// request-time cloud identity probe.
+func (a *apiHandlers) connectionsResp(ctx context.Context) connectionsResponse {
 	var prefix string
 	if a.prof != nil {
 		prefix = a.prof.Slack.ChannelPrefix
@@ -38,11 +55,51 @@ func (a *apiHandlers) connectionsResp() connectionsResponse {
 	return connectionsResponse{
 		Status:             a.connections.Status(),
 		SlackChannelPrefix: prefix,
+		Cloud:              a.cloudConnections(ctx),
 	}
 }
 
+// cloudConnections probes each profile cloud source at request time and projects
+// the result into the read-only panel view. Returns nil when no profile or no
+// cloud sources are configured. The probe degrades, never blocks: an invalid
+// source still appears, with its hint, so the operator can fix a stale
+// credential before starting a session.
+func (a *apiHandlers) cloudConnections(ctx context.Context) []cloudConnection {
+	if a.prof == nil || len(a.prof.Cloud) == 0 {
+		return nil
+	}
+	probe := a.cloudProbe
+	if probe == nil {
+		probe = defaultCloudProbe
+	}
+	out := make([]cloudConnection, 0, len(a.prof.Cloud))
+	for _, src := range a.prof.Cloud {
+		st := probe(ctx, src)
+		out = append(out, cloudConnection{
+			Provider:        st.Provider,
+			AssumedIdentity: st.AssumedIdentity,
+			Valid:           st.Valid,
+			Hint:            st.Hint,
+		})
+	}
+	return out
+}
+
+// defaultCloudProbe is the real request-time prober: it maps a profile cloud
+// source to the providers package's neutral Source and runs ProbeSource, which
+// constructs the provider and shells its whoami CLI, degrading a construction
+// error to an invalid status.
+func defaultCloudProbe(ctx context.Context, src profile.CloudSource) cloud.IdentityStatus {
+	return providers.ProbeSource(ctx, providers.Source{
+		Provider:        src.Provider,
+		AssumedIdentity: src.AssumedIdentity,
+		Profile:         src.Profile,
+	})
+}
+
 // handleGetConnections returns which integrations have a usable token, plus
-// profile boot config (slack_channel_prefix).
+// profile boot config (slack_channel_prefix) and the request-time cloud
+// identity probe.
 //
 // GET /api/connections
 func (a *apiHandlers) handleGetConnections(w http.ResponseWriter, r *http.Request) {
@@ -50,7 +107,7 @@ func (a *apiHandlers) handleGetConnections(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	writeJSON(w, http.StatusOK, a.connectionsResp())
+	writeJSON(w, http.StatusOK, a.connectionsResp(r.Context()))
 }
 
 // handlePutSlackToken validates a Slack token via auth.test, then persists
@@ -80,7 +137,7 @@ func (a *apiHandlers) handlePutSlackToken(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, a.connectionsResp())
+	writeJSON(w, http.StatusOK, a.connectionsResp(r.Context()))
 }
 
 // handlePutIncidentioToken validates an incident.io API key by calling
@@ -108,7 +165,7 @@ func (a *apiHandlers) handlePutIncidentioToken(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, a.connectionsResp())
+	writeJSON(w, http.StatusOK, a.connectionsResp(r.Context()))
 }
 
 // handleDeleteConnection clears the token for the given kind.
@@ -124,7 +181,7 @@ func (a *apiHandlers) handleDeleteConnection(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, a.connectionsResp())
+	writeJSON(w, http.StatusOK, a.connectionsResp(r.Context()))
 }
 
 // channelDTO is the redacted shape returned by /api/slack/channels: just

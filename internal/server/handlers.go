@@ -21,6 +21,7 @@ import (
 	"github.com/sourcehawk/triagent/internal/repos"
 	"github.com/sourcehawk/triagent/internal/sessions"
 	"github.com/sourcehawk/triagent/internal/watches"
+	"github.com/sourcehawk/triagent/pkg/mcp/cloud"
 )
 
 // apiHandlers carries the dependencies the JSON handlers need without
@@ -63,6 +64,11 @@ type apiHandlers struct {
 	// this with a stub that skips kubernetes I/O. When nil, preflight.Run
 	// is used.
 	preflightFn func(preflight.Options) (*preflight.Result, error)
+
+	// cloudProbe runs the read-only identity probe for one profile cloud
+	// source when building the /api/connections cloud array. Nil uses the
+	// real prober (providers.ProbeSource); tests inject a stub.
+	cloudProbe func(context.Context, profile.CloudSource) cloud.IdentityStatus
 
 	// sessionFn builds the live claude session after rehydrate resolves
 	// the new external state. Tests inject a stub so the test process
