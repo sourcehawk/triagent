@@ -215,8 +215,14 @@ function CloudConnectionsSection({ cloud }: { cloud: CloudConnection[] }) {
         cloud
       </div>
       <p className="mb-2 text-xs text-zinc-500">
-        Read-only cloud identities pinned in the deployment profile. Fix a stale
-        credential through your own cloud login before starting a session.
+        Read-only cloud identities pinned in the deployment profile&rsquo;s{" "}
+        <code className="font-mono text-zinc-400">cloud:</code> block, not
+        entered here. The service-account impersonation (GCP) or assume-role
+        profile (AWS) is configured there; see the Cloud providers docs page for
+        setup. Fix a stale credential through your own cloud login (
+        <code className="font-mono text-zinc-400">gcloud auth login</code>,{" "}
+        <code className="font-mono text-zinc-400">aws sso login</code>) before
+        starting a session.
       </p>
       <div className="space-y-2">
         {cloud.map((c, i) => (
