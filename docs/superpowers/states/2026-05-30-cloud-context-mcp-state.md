@@ -7,7 +7,7 @@ feature_branch: feature/cloud-context-mcp
 feature_worktree: .claude/worktrees/cloud-context-mcp
 sub_pr_approval: autonomous
 integration_pr:
-status: developing
+status: review
 ---
 
 # Read-only cloud-context MCP (GCP and AWS) — orchestration state
@@ -16,7 +16,7 @@ status: developing
 
 - **Phase 1 (foundational)** — `#45` (scaffold + harness; produces every contract). **Done** — self-merged as #48.
 - **Phase 2a (providers, parallel)** — `#43` (GCP provider), `#46` (AWS provider). **Done** — self-merged as #49 / #50. Wave-boundary checkpoint clean: e2e `make test-go` + `make lint` green; coherence sweep found no align-now drift (identical provider layout/constructor/idiom; two differences both deliberate-justified by the gcp-impersonation vs aws-assume-role mechanisms).
-- **Phase 2b (parallel)** — `#47` (launcher integration; builds the shared provider factory + profile/mcpconfig/preflight/connections/frontend) and a **probe-env remediation** sub-PR (parent `cloud` package: make `cloud.Probe` use the minimal env, per Bubble-up log). Disjoint file sets (`#47`: factory + `cmd/.../serve.go` + `internal/*` + frontend; probe-env: `pkg/mcp/cloud/probe.go` + `server.go`), so they run concurrently.
+- **Phase 2b (parallel)** — `#47` (launcher integration) and the **probe-env remediation**. **Done** — self-merged as #52 / #51. All sub-PRs merged; every sub-issue closed; only epic #44 remains, to close via the integration PR.
 
 ## PRs / worktrees
 
@@ -25,7 +25,7 @@ status: developing
 | #45 — scaffold + harness | (merged, branch deleted) | (removed) | #48 → feature/cloud-context-mcp | self-merged |
 | #43 — GCP provider | (merged, branch deleted) | (removed) | #49 → feature/cloud-context-mcp | self-merged |
 | #46 — AWS provider | (merged, branch deleted) | (removed) | #50 → feature/cloud-context-mcp | self-merged |
-| #47 — launcher integration | feature/cloud-context-mcp--launcher | .claude/worktrees/cloud-context-mcp--launcher | _tbd_ → feature/cloud-context-mcp | dispatched |
+| #47 — launcher integration | (merged, branch deleted) | (removed) | #52 → feature/cloud-context-mcp | self-merged |
 | probe-env remediation (epic #44) | (merged, branch deleted) | (removed) | #51 → feature/cloud-context-mcp | self-merged |
 
 ## Contracts
@@ -36,7 +36,7 @@ status: developing
 | `cloud-identity-probe` | stub-on-producer-branch (`cloud.Probe` + `IdentityStatus` exported by #45) | #45 (#48) | locked |
 | `cloud-serve-cli` | data-only (`serve --kind=cloud --provider=<gcp\|aws>`) | #45 (#48) | locked |
 | `cloud-env-contract` | data-only (`TRIAGENT_CLOUD_*` consts in `cloud/env.go`; provider impersonation env via `Provider.EnvPassthrough() []string`) | #45 (#48), provider names in #43/#46 | locked |
-| `cloud-provider-factory` | new (discovered): `pkg/mcp/cloud/providers.New(name) (cloud.Provider, error)`, importing gcp+aws; `serve.go` + `preflight` + `connections` consume it | #47 (Wave 2b) | pending |
+| `cloud-provider-factory` | new (discovered): `pkg/mcp/cloud/providers.New(name) (cloud.Provider, error)`, importing gcp+aws; `serve.go` + `preflight` + `connections` consume it | #47 (#52) | locked |
 
 All four contracts landed with #45 (squash-merged as #48). Phase 2 (#43/#46/#47) is now unblocked. The `Provider` interface gained `EnvPassthrough() []string` during #45 review (see Bubble-up log) — #43/#46 must implement it, returning their CLI's credential/impersonation var names; `PATH`/`HOME` are already in the harness base set.
 
