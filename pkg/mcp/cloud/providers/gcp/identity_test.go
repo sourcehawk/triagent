@@ -30,7 +30,7 @@ func runReturning(out string) cloud.RunFunc {
 }
 
 func TestIdentityResolvesActiveAccountAsTarget(t *testing.T) {
-	t.Setenv(impersonationEnv, "ro-sa@proj.iam.gserviceaccount.com")
+	t.Setenv(EnvImpersonate, "ro-sa@proj.iam.gserviceaccount.com")
 	p, err := newWithBinary("/usr/bin/gcloud")
 	require.NoError(t, err)
 
@@ -42,7 +42,7 @@ func TestIdentityResolvesActiveAccountAsTarget(t *testing.T) {
 }
 
 func TestIdentityInvalidWhenActiveAccountIsNotTheTarget(t *testing.T) {
-	t.Setenv(impersonationEnv, "ro-sa@proj.iam.gserviceaccount.com")
+	t.Setenv(EnvImpersonate, "ro-sa@proj.iam.gserviceaccount.com")
 	p, err := newWithBinary("/usr/bin/gcloud")
 	require.NoError(t, err)
 
@@ -55,7 +55,7 @@ func TestIdentityInvalidWhenActiveAccountIsNotTheTarget(t *testing.T) {
 }
 
 func TestIdentityInvalidWhenNoActiveAccount(t *testing.T) {
-	t.Setenv(impersonationEnv, "ro-sa@proj.iam.gserviceaccount.com")
+	t.Setenv(EnvImpersonate, "ro-sa@proj.iam.gserviceaccount.com")
 	p, err := newWithBinary("/usr/bin/gcloud")
 	require.NoError(t, err)
 
@@ -67,7 +67,7 @@ func TestIdentityInvalidWhenNoActiveAccount(t *testing.T) {
 }
 
 func TestIdentityInvalidWhenNoImpersonationTargetPinned(t *testing.T) {
-	t.Setenv(impersonationEnv, "")
+	t.Setenv(EnvImpersonate, "")
 	p, err := newWithBinary("/usr/bin/gcloud")
 	require.NoError(t, err)
 
@@ -78,7 +78,7 @@ func TestIdentityInvalidWhenNoImpersonationTargetPinned(t *testing.T) {
 }
 
 func TestIdentitySurfacesRunErrorAsHint(t *testing.T) {
-	t.Setenv(impersonationEnv, "ro-sa@proj.iam.gserviceaccount.com")
+	t.Setenv(EnvImpersonate, "ro-sa@proj.iam.gserviceaccount.com")
 	p, err := newWithBinary("/usr/bin/gcloud")
 	require.NoError(t, err)
 
@@ -92,7 +92,7 @@ func TestIdentitySurfacesRunErrorAsHint(t *testing.T) {
 }
 
 func TestIdentityCallsAuthListWithJSONFormat(t *testing.T) {
-	t.Setenv(impersonationEnv, "ro-sa@proj.iam.gserviceaccount.com")
+	t.Setenv(EnvImpersonate, "ro-sa@proj.iam.gserviceaccount.com")
 	p, err := newWithBinary("/usr/bin/gcloud")
 	require.NoError(t, err)
 

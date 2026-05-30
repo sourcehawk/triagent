@@ -21,11 +21,11 @@ import (
 //go:embed default_commands.json
 var defaultCommandsJSON []byte
 
-// impersonationEnv is the env var the launcher sets to pin the read-only
+// EnvImpersonate is the env var the launcher sets to pin the read-only
 // service account gcloud impersonates. The provider reads it (never sets it) to
 // learn which identity Identity must resolve to; it is on the agent deny floor
 // as a flag, so the agent can never select it.
-const impersonationEnv = "CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT"
+const EnvImpersonate = "CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT"
 
 var _ cloud.Provider = (*Provider)(nil)
 
@@ -82,7 +82,7 @@ func (p *Provider) DenyFloorAdditions() cloud.DenyFloor {
 // HOME are forwarded by the harness base set, so they are absent here.
 func (p *Provider) EnvPassthrough() []string {
 	return []string{
-		impersonationEnv,
+		EnvImpersonate,
 		"CLOUDSDK_CONFIG",
 		"CLOUDSDK_CORE_PROJECT",
 	}

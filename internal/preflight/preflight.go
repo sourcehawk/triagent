@@ -158,6 +158,7 @@ func Run(opts Options) (*Result, error) {
 		KubeconfigPath: kubeconfigPath,
 		Profile:        opts.Profile,
 		LinkedRepos:        opts.LinkedRepos,
+		CloudSources:       cloudSources(opts.Profile),
 		GitCacheDir:        opts.GitCacheDir,
 		UserPlaybooksDir:   opts.UserPlaybooksDir,
 		PluginPlaybooksDir: opts.PluginPlaybooksDir,
@@ -186,6 +187,15 @@ func Run(opts Options) (*Result, error) {
 		DocsPrefix:     docsPrefix,
 		KubeconfigPath: kubeconfigPath,
 	}, nil
+}
+
+// cloudSources returns the profile's read-only cloud connections, or nil when
+// no profile is loaded. Each becomes a triagent-cloud-<alias> MCP server.
+func cloudSources(prof *profile.Profile) []profile.CloudSource {
+	if prof == nil {
+		return nil
+	}
+	return prof.Cloud
 }
 
 // freezeKubeconfig writes a session-private copy of the operator's
