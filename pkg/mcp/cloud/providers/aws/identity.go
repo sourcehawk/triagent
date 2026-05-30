@@ -4,19 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/sourcehawk/triagent/pkg/mcp/cloud"
 )
-
-// EnvExpectedRoleARN optionally pins the IAM role ARN the assumed-role caller
-// must resolve to. When set, Identity rejects any caller whose underlying role
-// does not match it, the strict check. When unset, Identity falls back to the
-// structural check (the caller must be an assumed-role ARN at all, proving the
-// AWS_PROFILE assume-role pin took effect rather than the operator's plain base
-// identity leaking through).
-const EnvExpectedRoleARN = "TRIAGENT_CLOUD_AWS_EXPECTED_ROLE_ARN"
 
 // callerIdentity is the projection of `aws sts get-caller-identity --output
 // json`. Only the fields the probe and inventory fallback use are decoded.
@@ -31,12 +22,12 @@ type callerIdentity struct {
 // the command is also allowlisted so it works under the validated core), parses
 // the caller ARN, and reports whether the pinned assume-role identity is active.
 //
-// Validity has two modes. With TRIAGENT_CLOUD_AWS_EXPECTED_ROLE_ARN set, the
-// caller's underlying role must match it exactly. Without it, the structural
-// check applies: the caller must be an assumed-role ARN, which proves the
-// AWS_PROFILE pin took effect — a plain user/root ARN means base credentials
-// leaked through unimpersonated, so the session is not valid.
-func (p *Provider) Identity(ctx context.Context, run cloud.RunFunc) (cloud.IdentityStatus, error) {
+// Validity has two modes. With expected set to a role ARN, the caller's
+// underlying role must match it exactly. Without it, the structural check
+// applies: the caller must be an assumed-role ARN, which proves the AWS_PROFILE
+// pin took effect — a plain user/root ARN means base credentials leaked through
+// unimpersonated, so the session is not valid.
+func (p *Provider) Identity(ctx context.Context, run cloud.RunFunc, expected string) (cloud.IdentityStatus, error) {
 	res, err := run(ctx, []string{"sts", "get-caller-identity", "--output", "json"})
 	if err != nil {
 		return cloud.IdentityStatus{Provider: "aws", Valid: false, Hint: err.Error()}, nil
@@ -59,7 +50,7 @@ func (p *Provider) Identity(ctx context.Context, run cloud.RunFunc) (cloud.Ident
 	}
 
 	st := cloud.IdentityStatus{Provider: "aws", AssumedIdentity: caller.Arn}
-	st.Valid, st.Hint = evaluateIdentity(caller.Arn, os.Getenv(EnvExpectedRoleARN))
+	st.Valid, st.Hint = evaluateIdentity(caller.Arn, expected)
 	return st, nil
 }
 

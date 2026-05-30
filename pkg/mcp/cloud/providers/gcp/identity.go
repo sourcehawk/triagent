@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/sourcehawk/triagent/pkg/mcp/cloud"
 )
@@ -18,12 +17,9 @@ type authAccount struct {
 // Identity is the read-only whoami. It is called by cloud.Probe with an
 // unvalidated RunFunc, so it may use the deny-floored `auth` subcommand
 // directly: it reads the active account and reports the session valid only when
-// that account equals the pinned impersonation target the launcher set in
-// CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT. A degraded auth state surfaces
-// through Valid and Hint, never a Go error.
-func (p *Provider) Identity(ctx context.Context, run cloud.RunFunc) (cloud.IdentityStatus, error) {
-	target := os.Getenv(EnvImpersonate)
-
+// that account equals expected, the impersonation target the launcher pinned. A
+// degraded auth state surfaces through Valid and Hint, never a Go error.
+func (p *Provider) Identity(ctx context.Context, run cloud.RunFunc, expected string) (cloud.IdentityStatus, error) {
 	res, err := run(ctx, []string{"auth", "list", "--filter=status:ACTIVE", "--format=json"})
 	if err != nil {
 		return cloud.IdentityStatus{Provider: "gcp", Valid: false, Hint: err.Error()}, nil
@@ -42,15 +38,15 @@ func (p *Provider) Identity(ctx context.Context, run cloud.RunFunc) (cloud.Ident
 	st := cloud.IdentityStatus{Provider: "gcp", AssumedIdentity: active}
 
 	switch {
-	case target == "":
+	case expected == "":
 		st.Valid = false
 		st.Hint = "no impersonation target pinned; set " + EnvImpersonate + " on the cloud MCP subprocess"
 	case active == "":
 		st.Valid = false
 		st.Hint = "no active gcloud account; run: gcloud auth login"
-	case active != target:
+	case active != expected:
 		st.Valid = false
-		st.Hint = fmt.Sprintf("active account %q is not the pinned identity %q", active, target)
+		st.Hint = fmt.Sprintf("active account %q is not the pinned identity %q", active, expected)
 	default:
 		st.Valid = true
 	}

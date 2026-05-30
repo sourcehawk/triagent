@@ -14,4 +14,10 @@ const (
 	// EnvScope carries the target scope allowlist the launcher froze for this
 	// session, as JSON the cloud package decodes into ScopeAllowlist.
 	EnvScope = "TRIAGENT_CLOUD_SCOPE"
+	// EnvExpectedIdentity carries the identity the launcher pinned for this
+	// session, uniform across providers: the impersonation target for gcp, the
+	// expected role ARN for aws. The serve subprocess reads it once at startup and
+	// threads it into the identity probe; the provider validates the resolved
+	// identity against it.
+	EnvExpectedIdentity = "TRIAGENT_CLOUD_EXPECTED_IDENTITY"
 )

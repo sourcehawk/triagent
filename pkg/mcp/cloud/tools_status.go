@@ -20,7 +20,7 @@ type SessionStatusOutput = IdentityStatus
 // errors on an invalid identity — a stale credential surfaces as Valid:false
 // with a Hint, the same visible-degrade contract the launcher renders.
 func (s *Server) sessionStatus(ctx context.Context, _ *mcp.CallToolRequest, _ SessionStatusInput) (*mcp.CallToolResult, SessionStatusOutput, error) {
-	st, err := Probe(ctx, s.provider)
+	st, err := Probe(ctx, s.provider, s.expectedIdentity, s.subprocessEnv())
 	if err != nil {
 		return errorResult(err.Error()), SessionStatusOutput{}, nil
 	}

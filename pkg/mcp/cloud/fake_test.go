@@ -46,6 +46,6 @@ func (f *fakeProvider) Inventory(context.Context, RunFunc) (Inventory, error) {
 	return f.inventory, nil
 }
 
-func (f *fakeProvider) Identity(context.Context, RunFunc) (IdentityStatus, error) {
+func (f *fakeProvider) Identity(context.Context, RunFunc, string) (IdentityStatus, error) {
 	return f.identity, f.identityErr
 }

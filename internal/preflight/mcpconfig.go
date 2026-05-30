@@ -181,19 +181,21 @@ func kubeEnv(in mcpConfigInputs) map[string]string {
 
 // cloudSourceEnv builds the subprocess env for one triagent-cloud-<alias>
 // server: the provider selector, the optional allowlist-override path, the
-// JSON-encoded scope the cloud package decodes, and the per-provider
-// pinned-identity env.
+// JSON-encoded scope the cloud package decodes, the pinned identity the probe
+// validates against, and the per-provider credential env the CLI authenticates
+// with.
 //
-// The two clouds pin identity through different env, by mechanism. GCP
-// impersonates the assumed identity directly, so a single env
-// (CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT) is both the impersonation target
-// and the expected identity. AWS selects an assume-role profile (AWS_PROFILE)
-// for credentials and checks the role ARN (TRIAGENT_CLOUD_AWS_EXPECTED_ROLE_ARN)
-// for strict validity, so it needs both a profile selector and the expected ARN.
-// The env-name constants come from the provider packages, never raw literals.
+// The pinned identity is uniform: TRIAGENT_CLOUD_EXPECTED_IDENTITY carries it
+// for both clouds, and the probe validates the resolved identity against it. The
+// credential env differs by mechanism: GCP impersonates the assumed identity
+// directly (CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT), AWS selects an
+// assume-role profile (AWS_PROFILE) whose role_arn is the deployment's read-only
+// role. The env-name constants come from the provider packages, never raw
+// literals.
 func cloudSourceEnv(src profile.CloudSource) (map[string]string, error) {
 	env := map[string]string{
-		cloud.EnvProvider: src.Provider,
+		cloud.EnvProvider:         src.Provider,
+		cloud.EnvExpectedIdentity: src.AssumedIdentity,
 	}
 	if src.CommandAllowlistPath != "" {
 		env[cloud.EnvAllowlistPath] = src.CommandAllowlistPath
@@ -209,7 +211,6 @@ func cloudSourceEnv(src profile.CloudSource) (map[string]string, error) {
 		env[gcp.EnvImpersonate] = src.AssumedIdentity
 	case "aws":
 		env[aws.EnvProfile] = src.Profile
-		env[aws.EnvExpectedRoleARN] = src.AssumedIdentity
 	}
 	return env, nil
 }

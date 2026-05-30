@@ -3,12 +3,18 @@ package providers
 import (
 	"context"
 	"os"
-	"sync"
+	"strings"
 
 	"github.com/sourcehawk/triagent/pkg/mcp/cloud"
 	"github.com/sourcehawk/triagent/pkg/mcp/cloud/providers/aws"
 	"github.com/sourcehawk/triagent/pkg/mcp/cloud/providers/gcp"
 )
+
+// baseEnvPassthrough is the minimal env every provider CLI needs regardless of
+// cloud: PATH so the resolved binary can find its own dependencies, HOME so it
+// can locate per-user config. It mirrors the launcher-side serve harness; the
+// per-source credential vars are overlaid on top.
+var baseEnvPassthrough = []string{"PATH", "HOME"}
 
 // Source is a neutral description of one cloud connection to probe: the
 // provider name, the pinned identity, and (aws only) the assume-role profile.
@@ -20,68 +26,72 @@ type Source struct {
 	Profile         string // aws AWS_PROFILE selector; ignored by gcp
 }
 
-// probeEnvMu serializes the env pinning ProbeSource does. The whoami probe runs
-// in the launcher process, where the provider reads its expected-identity env
-// via os.Getenv; ProbeSource pins that env around the probe and restores it, so
-// concurrent probes for different sources cannot read each other's pin.
-var probeEnvMu sync.Mutex
-
 // ProbeSource constructs the source's provider and runs the read-only identity
-// probe, pinning the per-provider expected-identity env for the duration so the
-// probe validates against this source's pinned identity. It degrades, never
-// blocks: a provider construction error (e.g. a missing CLI binary) returns an
-// invalid status with the error as the hint, exactly like a failed probe.
+// probe, threading the source's pinned identity and the subprocess credential
+// env explicitly so concurrent probes for different sources never share state.
+// It degrades, never blocks: a provider construction error (e.g. a missing CLI
+// binary) returns an invalid status with the error as the hint, exactly like a
+// failed probe.
 func ProbeSource(ctx context.Context, src Source) cloud.IdentityStatus {
 	p, err := New(src.Provider)
 	if err != nil {
 		return cloud.IdentityStatus{Provider: src.Provider, Valid: false, Hint: err.Error()}
 	}
 
-	probeEnvMu.Lock()
-	defer probeEnvMu.Unlock()
-	defer pinIdentityEnv(src)()
-
-	st, _ := cloud.Probe(ctx, p)
+	st, _ := cloud.Probe(ctx, p, src.AssumedIdentity, sourceEnvFor(p, src))
 	return st
 }
 
-// pinIdentityEnv sets the per-provider expected-identity env for src and returns
-// a restore func. gcp impersonates the assumed identity directly; aws selects an
-// assume-role profile and checks the expected role ARN. The names come from the
-// provider packages, never raw literals.
-func pinIdentityEnv(src Source) func() {
-	switch src.Provider {
-	case "gcp":
-		return setEnv(map[string]string{gcp.EnvImpersonate: src.AssumedIdentity})
-	case "aws":
-		return setEnv(map[string]string{
-			aws.EnvProfile:         src.Profile,
-			aws.EnvExpectedRoleARN: src.AssumedIdentity,
-		})
-	default:
-		return func() {}
-	}
+// passthroughLister is the slice of the cloud.Provider contract sourceEnvFor
+// needs: which env names the provider's CLI carries from the parent process.
+type passthroughLister interface {
+	EnvPassthrough() []string
 }
 
-// setEnv sets each name to its value and returns a func restoring the prior
-// values (including unset for names that were absent).
-func setEnv(vals map[string]string) func() {
-	prior := make(map[string]*string, len(vals))
-	for name, val := range vals {
-		if old, ok := os.LookupEnv(name); ok {
-			prior[name] = &old
-		} else {
-			prior[name] = nil
-		}
-		_ = os.Setenv(name, val)
+// sourceEnvFor builds the explicit subprocess env for one source: the base
+// PATH/HOME plus the provider's declared config-dir passthrough names, carried
+// from the launcher process env, with the per-source credential var overlaid.
+// The launcher process itself does not hold the pinned credential env (that is
+// injected only into the serve subprocess), so ProbeSource supplies it here
+// rather than reading it from os.Environ.
+func sourceEnvFor(p passthroughLister, src Source) []string {
+	keep := make(map[string]bool, len(baseEnvPassthrough)+len(p.EnvPassthrough()))
+	for _, name := range baseEnvPassthrough {
+		keep[name] = true
 	}
-	return func() {
-		for name, old := range prior {
-			if old == nil {
-				_ = os.Unsetenv(name)
-			} else {
-				_ = os.Setenv(name, *old)
-			}
+	for _, name := range p.EnvPassthrough() {
+		keep[name] = true
+	}
+
+	overlay := credentialEnv(src)
+	var env []string
+	for _, kv := range os.Environ() {
+		name, _, ok := strings.Cut(kv, "=")
+		if !ok || !keep[name] {
+			continue
 		}
+		if _, overridden := overlay[name]; overridden {
+			continue
+		}
+		env = append(env, kv)
+	}
+	for name, val := range overlay {
+		env = append(env, name+"="+val)
+	}
+	return env
+}
+
+// credentialEnv is the per-provider credential the CLI authenticates with for
+// the source: gcp impersonates the assumed identity directly; aws selects the
+// assume-role profile. The env-name constants come from the provider packages,
+// never raw literals.
+func credentialEnv(src Source) map[string]string {
+	switch src.Provider {
+	case "gcp":
+		return map[string]string{gcp.EnvImpersonate: src.AssumedIdentity}
+	case "aws":
+		return map[string]string{aws.EnvProfile: src.Profile}
+	default:
+		return nil
 	}
 }

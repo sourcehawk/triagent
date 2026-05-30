@@ -36,8 +36,11 @@ type Provider interface {
 	// accounts for aws). It execs only through run, never directly.
 	Inventory(ctx context.Context, run RunFunc) (Inventory, error)
 	// Identity is the read-only whoami: which pinned identity is active and
-	// whether it is valid. It execs only through run, never directly.
-	Identity(ctx context.Context, run RunFunc) (IdentityStatus, error)
+	// whether it is valid. expected is the identity the launcher pinned for this
+	// session (the impersonation target for gcp, the expected role ARN for aws,
+	// empty when none is pinned); the provider validates the resolved identity
+	// against it. It execs only through run, never directly.
+	Identity(ctx context.Context, run RunFunc, expected string) (IdentityStatus, error)
 }
 
 // RunFunc is the harness exec core, injected into providers so they never exec

@@ -29,14 +29,19 @@ type Options struct {
 	// Argv referencing a target outside the scope is rejected before exec. The
 	// launcher fills it from TRIAGENT_CLOUD_SCOPE.
 	Scope ScopeAllowlist
+	// ExpectedIdentity is the identity the launcher pinned for this session,
+	// threaded into the identity probe so it validates the resolved identity
+	// against it. The launcher fills it from TRIAGENT_CLOUD_EXPECTED_IDENTITY.
+	ExpectedIdentity string
 }
 
 // Server holds the configured cloud-context MCP server.
 type Server struct {
-	impl      *mcp.Server
-	provider  Provider
-	allowlist *CommandAllowlist
-	scope     ScopeAllowlist
+	impl             *mcp.Server
+	provider         Provider
+	allowlist        *CommandAllowlist
+	scope            ScopeAllowlist
+	expectedIdentity string
 }
 
 // New constructs a cloud-context MCP server. Provider is required. The command
@@ -56,10 +61,11 @@ func New(opts Options) (*Server, error) {
 		Version: "0.1.0",
 	}, nil)
 	s := &Server{
-		impl:      impl,
-		provider:  opts.Provider,
-		allowlist: allow,
-		scope:     opts.Scope,
+		impl:             impl,
+		provider:         opts.Provider,
+		allowlist:        allow,
+		scope:            opts.Scope,
+		expectedIdentity: opts.ExpectedIdentity,
 	}
 	s.registerOn(impl)
 	return s, nil
