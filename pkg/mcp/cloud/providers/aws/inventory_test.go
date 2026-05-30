@@ -38,10 +38,8 @@ func TestInventoryProjectsActiveAccounts(t *testing.T) {
 func TestInventoryFallsBackToCallerAccountOnAccessDenied(t *testing.T) {
 	f := &fakeRun{
 		results: map[string]cloud.CLIResult{
-			"sts get-caller-identity": {Stdout: callerIdentityAssumedRole},
-		},
-		errs: map[string]error{
-			"organizations list-accounts": errAccessDenied,
+			"organizations list-accounts": {ExitCode: 254, Stderr: "An error occurred (AccessDeniedException) when calling the ListAccounts operation: ..."},
+			"sts get-caller-identity":     {Stdout: callerIdentityAssumedRole},
 		},
 	}
 	p, err := newWithBinary("/usr/bin/aws")
@@ -54,10 +52,10 @@ func TestInventoryFallsBackToCallerAccountOnAccessDenied(t *testing.T) {
 	assert.Equal(t, "111122223333", inv.Scopes[0].ID)
 }
 
-func TestInventoryFallsBackOnAccessDeniedExitCode(t *testing.T) {
+func TestInventoryFallsBackWhenOrgsNotInUse(t *testing.T) {
 	f := &fakeRun{
 		results: map[string]cloud.CLIResult{
-			"organizations list-accounts": {ExitCode: 254, Stdout: "An error occurred (AccessDeniedException) when calling the ListAccounts operation: ..."},
+			"organizations list-accounts": {ExitCode: 254, Stderr: "An error occurred (AWSOrganizationsNotInUseException) when calling the ListAccounts operation"},
 			"sts get-caller-identity":     {Stdout: callerIdentityAssumedRole},
 		},
 	}
@@ -68,4 +66,37 @@ func TestInventoryFallsBackOnAccessDeniedExitCode(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, inv.Scopes, 1)
 	assert.Equal(t, "111122223333", inv.Scopes[0].ID)
+}
+
+func TestInventorySurfacesNonAccessDeniedFailure(t *testing.T) {
+	f := &fakeRun{
+		results: map[string]cloud.CLIResult{
+			"organizations list-accounts": {ExitCode: 254, Stderr: "An error occurred (ThrottlingException) when calling the ListAccounts operation: Rate exceeded"},
+			"sts get-caller-identity":     {Stdout: callerIdentityAssumedRole},
+		},
+	}
+	p, err := newWithBinary("/usr/bin/aws")
+	require.NoError(t, err)
+
+	_, err = p.Inventory(context.Background(), f.run)
+	require.Error(t, err, "a throttling failure must surface, not silently fall back")
+	assert.Contains(t, err.Error(), "ThrottlingException", "the error surfaces the captured stderr")
+	// The fallback caller-identity call must not have run.
+	for _, c := range f.calls {
+		assert.NotEqual(t, []string{"sts", "get-caller-identity", "--output", "json"}, c,
+			"a non-AccessDenied failure must not trigger the single-account fallback")
+	}
+}
+
+func TestInventorySurfacesTransportError(t *testing.T) {
+	f := &fakeRun{
+		errs: map[string]error{
+			"organizations list-accounts": errAccessDenied,
+		},
+	}
+	p, err := newWithBinary("/usr/bin/aws")
+	require.NoError(t, err)
+
+	_, err = p.Inventory(context.Background(), f.run)
+	require.Error(t, err, "a process that could not be run is a transport failure, surfaced not masked")
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/sourcehawk/triagent/pkg/mcp/cloud"
 )
@@ -21,15 +22,23 @@ type organizationsAccount struct {
 }
 
 // Inventory projects the AWS accounts the pinned identity can read. The primary
-// source is `aws organizations list-accounts`; when the identity lacks
-// Organizations access (AccessDenied, surfaced as a non-zero exit or a transport
-// error) it falls back to the single account the caller is in, derived from `aws
-// sts get-caller-identity`. Both commands are allowlisted so the projection works
-// under the validated run core.
+// source is `aws organizations list-accounts`; only when that fails with an
+// Organizations-unavailable condition (AccessDenied or the account not being a
+// member of an organization) does it fall back to the single account the caller
+// is in, derived from `aws sts get-caller-identity`. Any other failure — a
+// transport error, throttling, a network fault — is surfaced rather than masked
+// behind the single-account fallback. Both commands are allowlisted so the
+// projection works under the validated run core.
 func (p *Provider) Inventory(ctx context.Context, run cloud.RunFunc) (cloud.Inventory, error) {
 	res, err := run(ctx, []string{"organizations", "list-accounts", "--output", "json"})
-	if err != nil || res.ExitCode != 0 {
-		return p.callerAccountInventory(ctx, run)
+	if err != nil {
+		return cloud.Inventory{}, fmt.Errorf("aws organizations list-accounts: %w", err)
+	}
+	if res.ExitCode != 0 {
+		if isOrgsUnavailable(res.Stderr) {
+			return p.callerAccountInventory(ctx, run)
+		}
+		return cloud.Inventory{}, fmt.Errorf("aws organizations list-accounts failed (exit %d): %s", res.ExitCode, res.Stderr)
 	}
 
 	var parsed listAccountsResult
@@ -45,6 +54,25 @@ func (p *Provider) Inventory(ctx context.Context, run cloud.RunFunc) (cloud.Inve
 		scopes = append(scopes, cloud.Scope{ID: a.ID, Name: a.Name})
 	}
 	return cloud.Inventory{Scopes: scopes}, nil
+}
+
+// isOrgsUnavailable reports whether a non-zero `organizations list-accounts`
+// stderr is the benign "Organizations is not available to this identity"
+// condition — the only failure the single-account fallback is correct for. AWS
+// returns AccessDenied when the role lacks Organizations permissions and
+// AWSOrganizationsNotInUseException (or "not a member of an organization") when
+// the account is standalone.
+func isOrgsUnavailable(stderr string) bool {
+	for _, marker := range []string{
+		"AccessDenied",
+		"not a member of an organization",
+		"AWSOrganizationsNotInUseException",
+	} {
+		if strings.Contains(stderr, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 // callerAccountInventory derives the single-account inventory from the caller
