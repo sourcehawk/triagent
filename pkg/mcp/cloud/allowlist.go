@@ -85,19 +85,28 @@ func LoadCommandAllowlist(path string, extra DenyFloor) (*CommandAllowlist, erro
 		return nil, fmt.Errorf("parse command allowlist: %w", err)
 	}
 
-	floor := mergeDenyFloor(extra)
-	filtered := make([]Command, 0, len(list.Commands))
 	for _, c := range list.Commands {
 		if c.Path == "" {
 			return nil, fmt.Errorf("command allowlist entry missing path: %+v", c)
 		}
-		if floor.deniesSubcommand(normalizePath(c.Path)) {
+	}
+	return filterAllowlist(&list, extra), nil
+}
+
+// filterAllowlist returns a copy of list with every command whose subcommand
+// path falls under the base deny floor plus extra dropped. Applied identically
+// to a loaded file and to a provider's in-memory default, so neither source can
+// advertise a floored command.
+func filterAllowlist(list *CommandAllowlist, extra DenyFloor) *CommandAllowlist {
+	floor := mergeDenyFloor(extra)
+	out := &CommandAllowlist{Commands: make([]Command, 0, len(list.Commands))}
+	for _, c := range list.Commands {
+		if c.Path == "" || floor.deniesSubcommand(normalizePath(c.Path)) {
 			continue
 		}
-		filtered = append(filtered, c)
+		out.Commands = append(out.Commands, c)
 	}
-	list.Commands = filtered
-	return &list, nil
+	return out
 }
 
 // Allows reports whether argv's positional subcommand path exactly equals an
