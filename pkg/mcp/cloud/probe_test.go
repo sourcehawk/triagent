@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestProbeReturnsProviderIdentity(t *testing.T) {
@@ -17,40 +20,25 @@ func TestProbeReturnsProviderIdentity(t *testing.T) {
 		},
 	}
 	st, err := Probe(context.Background(), p)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !st.Valid || st.AssumedIdentity != "ro-sa@proj.iam.gserviceaccount.com" {
-		t.Fatalf("probe did not return the provider identity: %+v", st)
-	}
+	require.NoError(t, err)
+	assert.True(t, st.Valid)
+	assert.Equal(t, "ro-sa@proj.iam.gserviceaccount.com", st.AssumedIdentity)
 }
 
 func TestProbeSurfacesProviderErrorAsInvalid(t *testing.T) {
 	t.Parallel()
 	p := &fakeProvider{name: "aws", identityErr: errors.New("token expired")}
 	st, err := Probe(context.Background(), p)
-	if err != nil {
-		t.Fatalf("Probe should degrade, not error: %v", err)
-	}
-	if st.Valid {
-		t.Fatal("expected Valid=false when the provider errors")
-	}
-	if st.Provider != "aws" {
-		t.Fatalf("expected provider name carried through, got %q", st.Provider)
-	}
-	if st.Hint == "" {
-		t.Fatal("expected the provider error surfaced as a hint")
-	}
+	require.NoError(t, err, "Probe should degrade, not error")
+	assert.False(t, st.Valid, "expected Valid=false when the provider errors")
+	assert.Equal(t, "aws", st.Provider, "expected provider name carried through")
+	assert.NotEmpty(t, st.Hint, "expected the provider error surfaced as a hint")
 }
 
 func TestProbeInvalidWhenIdentityEmpty(t *testing.T) {
 	t.Parallel()
 	p := &fakeProvider{name: "gcp", identity: IdentityStatus{Provider: "gcp", Valid: true}}
 	st, err := Probe(context.Background(), p)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if st.Valid {
-		t.Fatal("an empty resolved identity must not be reported valid")
-	}
+	require.NoError(t, err)
+	assert.False(t, st.Valid, "an empty resolved identity must not be reported valid")
 }

@@ -1,6 +1,10 @@
 package cloud
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+)
 
 func TestValidateArgvRejectsDenyFloorAndScope(t *testing.T) {
 	t.Parallel()
@@ -31,11 +35,10 @@ func TestValidateArgvRejectsDenyFloorAndScope(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			err := validateArgv(tc.argv, al, scope)
-			if tc.ok && err != nil {
-				t.Fatalf("expected argv to validate, got error: %v", err)
-			}
-			if !tc.ok && err == nil {
-				t.Fatal("expected validation error, got nil")
+			if tc.ok {
+				assert.NoError(t, err, "expected argv to validate")
+			} else {
+				assert.Error(t, err, "expected validation error")
 			}
 		})
 	}
@@ -47,15 +50,12 @@ func TestValidateArgvEqualsFormFlag(t *testing.T) {
 	scope := ScopeAllowlist{Projects: []string{"prod"}}
 	// --project=other in equals form must be caught by the scope check, and a
 	// deny-floored flag in equals form must be caught by the floor.
-	if err := validateArgv([]string{"compute", "instances", "list", "--project=other"}, al, scope); err == nil {
-		t.Fatal("expected --project=other (equals form) to fail the scope check")
-	}
-	if err := validateArgv([]string{"compute", "instances", "list", "--impersonate-service-account=x"}, al, scope); err == nil {
-		t.Fatal("expected --impersonate-service-account=x (equals form) to be denied")
-	}
-	if err := validateArgv([]string{"compute", "instances", "list", "--project=prod"}, al, scope); err != nil {
-		t.Fatalf("expected --project=prod (equals form, in scope) to validate, got: %v", err)
-	}
+	assert.Error(t, validateArgv([]string{"compute", "instances", "list", "--project=other"}, al, scope),
+		"expected --project=other (equals form) to fail the scope check")
+	assert.Error(t, validateArgv([]string{"compute", "instances", "list", "--impersonate-service-account=x"}, al, scope),
+		"expected --impersonate-service-account=x (equals form) to be denied")
+	assert.NoError(t, validateArgv([]string{"compute", "instances", "list", "--project=prod"}, al, scope),
+		"expected --project=prod (equals form, in scope) to validate")
 }
 
 func TestValidateArgvEmptyScopeAllowsAnyTarget(t *testing.T) {
@@ -63,7 +63,6 @@ func TestValidateArgvEmptyScopeAllowsAnyTarget(t *testing.T) {
 	al := &CommandAllowlist{Commands: []Command{{Path: "projects list"}}}
 	// An empty scope means the deployment did not constrain targets; the scope
 	// check must not reject a --project then.
-	if err := validateArgv([]string{"projects", "list", "--project", "anything"}, al, ScopeAllowlist{}); err != nil {
-		t.Fatalf("empty scope should not reject a target, got: %v", err)
-	}
+	assert.NoError(t, validateArgv([]string{"projects", "list", "--project", "anything"}, al, ScopeAllowlist{}),
+		"empty scope should not reject a target")
 }

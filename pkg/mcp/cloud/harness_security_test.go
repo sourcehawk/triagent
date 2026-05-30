@@ -6,6 +6,9 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestExecCLINeverUsesShell is the source-level half of the no-shell guarantee:
@@ -14,13 +17,10 @@ import (
 func TestExecCLINeverUsesShell(t *testing.T) {
 	t.Parallel()
 	src, err := os.ReadFile("harness.go")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	for _, banned := range []string{`"-c"`, "sh -c", "bash -c", `"sh"`, `"bash"`} {
-		if bytes.Contains(src, []byte(banned)) {
-			t.Fatalf("harness.go must never construct a shell command; found %q", banned)
-		}
+		assert.False(t, bytes.Contains(src, []byte(banned)),
+			"harness.go must never construct a shell command; found %q", banned)
 	}
 }
 
@@ -32,32 +32,21 @@ func TestExecCLIMetacharactersAreInert(t *testing.T) {
 	t.Parallel()
 	argv := []string{";", "echo", "pwned", "|", "$(whoami)", "&&", "`id`"}
 	r, err := execCLI(context.Background(), "/bin/echo", argv, nil, 4096)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	got := strings.TrimRight(r.Stdout, "\n")
 	want := strings.Join(argv, " ")
-	if got != want {
-		t.Fatalf("metacharacters were not inert: got %q want %q", got, want)
-	}
-	if strings.Contains(r.Stdout, "pwned\n") && got != want {
-		t.Fatal("a second process appears to have run")
-	}
+	require.Equal(t, want, got, "metacharacters were not inert")
+	assert.False(t, strings.Contains(r.Stdout, "pwned\n") && got != want,
+		"a second process appears to have run")
 }
 
 // TestExecCLITruncates caps output at the byte limit and flags truncation.
 func TestExecCLITruncates(t *testing.T) {
 	t.Parallel()
 	r, err := execCLI(context.Background(), "/bin/echo", []string{strings.Repeat("x", 100)}, nil, 10)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !r.Truncated {
-		t.Fatalf("expected Truncated, got %+v", r)
-	}
-	if len(r.Stdout) > 10 {
-		t.Fatalf("output exceeded limit: got %d bytes", len(r.Stdout))
-	}
+	require.NoError(t, err)
+	assert.True(t, r.Truncated, "expected Truncated, got %+v", r)
+	assert.LessOrEqual(t, len(r.Stdout), 10, "output exceeded limit")
 }
 
 // TestExecCLIMinimalEnv confirms the subprocess runs with the caller's explicit
@@ -66,13 +55,8 @@ func TestExecCLITruncates(t *testing.T) {
 func TestExecCLIMinimalEnv(t *testing.T) {
 	t.Setenv("TRIAGENT_CLOUD_HARNESS_LEAK_CANARY", "should-not-appear")
 	r, err := execCLI(context.Background(), "/usr/bin/env", nil, []string{"FOO=bar"}, 4096)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(r.Stdout, "TRIAGENT_CLOUD_HARNESS_LEAK_CANARY") {
-		t.Fatal("subprocess inherited the parent environment; env must be explicit")
-	}
-	if !strings.Contains(r.Stdout, "FOO=bar") {
-		t.Fatalf("explicit env not applied: %q", r.Stdout)
-	}
+	require.NoError(t, err)
+	assert.NotContains(t, r.Stdout, "TRIAGENT_CLOUD_HARNESS_LEAK_CANARY",
+		"subprocess inherited the parent environment; env must be explicit")
+	assert.Contains(t, r.Stdout, "FOO=bar", "explicit env not applied")
 }

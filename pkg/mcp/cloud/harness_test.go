@@ -3,6 +3,9 @@ package cloud
 import (
 	"context"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestExecCLIExitCode surfaces the child's exit code without treating a
@@ -11,10 +14,6 @@ import (
 func TestExecCLIExitCode(t *testing.T) {
 	t.Parallel()
 	r, err := execCLI(context.Background(), "/bin/false", nil, nil, 4096)
-	if err != nil {
-		t.Fatalf("non-zero exit should not be a Go error: %v", err)
-	}
-	if r.ExitCode != 1 {
-		t.Fatalf("expected exit code 1, got %d", r.ExitCode)
-	}
+	require.NoError(t, err, "non-zero exit should not be a Go error")
+	assert.Equal(t, 1, r.ExitCode)
 }
