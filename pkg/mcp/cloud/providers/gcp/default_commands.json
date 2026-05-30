@@ -1,0 +1,36 @@
+{
+  "commands": [
+    { "path": "projects list", "description": "inventory: list the projects the pinned identity can see" },
+    { "path": "projects describe", "description": "inventory: project metadata, lifecycle state, and labels" },
+    { "path": "projects get-iam-policy", "description": "permissions: the IAM policy bound on a project" },
+
+    { "path": "compute instances list", "description": "inventory: compute instances in a project" },
+    { "path": "compute instances describe", "description": "reachability: an instance's network interfaces, tags, and service account" },
+    { "path": "compute networks list", "description": "reachability: VPC networks in a project" },
+    { "path": "compute networks describe", "description": "reachability: a VPC network's subnet and peering layout" },
+    { "path": "compute networks subnets list", "description": "reachability: subnets and their CIDR ranges" },
+    { "path": "compute networks subnets describe", "description": "reachability: a subnet's range, region, and secondary ranges" },
+    { "path": "compute firewall-rules list", "description": "reachability: firewall rules governing traffic to a workload" },
+    { "path": "compute firewall-rules describe", "description": "reachability: a firewall rule's direction, ports, and target tags" },
+    { "path": "compute routes list", "description": "reachability: routes that steer egress out of a network" },
+    { "path": "compute routes describe", "description": "reachability: a single route's next-hop and priority" },
+    { "path": "compute addresses list", "description": "reachability: reserved internal and external IP addresses" },
+    { "path": "compute forwarding-rules list", "description": "reachability: load-balancer forwarding rules and their backends" },
+
+    { "path": "container clusters list", "description": "cluster: GKE clusters and their endpoints in a project" },
+    { "path": "container clusters describe", "description": "cluster: a GKE cluster's networking, workload-identity, and node config" },
+    { "path": "container node-pools list", "description": "cluster: node pools backing a GKE cluster" },
+    { "path": "container node-pools describe", "description": "cluster: a node pool's machine type, autoscaling, and image config" },
+
+    { "path": "iam service-accounts list", "description": "permissions: service accounts defined in a project" },
+    { "path": "iam service-accounts describe", "description": "permissions: a service account's display name and disabled state" },
+    { "path": "iam service-accounts get-iam-policy", "description": "permissions: who can impersonate or manage a service account" },
+    { "path": "iam roles describe", "description": "permissions: the permissions a role grants" },
+
+    { "path": "logging read", "description": "logs: read entries from a project's log buckets with a filter" },
+    { "path": "logging logs list", "description": "audit: enumerate available log streams, including data_access and activity audit logs" },
+    { "path": "logging sinks list", "description": "audit: where log entries are routed for retention" },
+
+    { "path": "monitoring dashboards list", "description": "cluster: monitoring dashboards configured for the project" }
+  ]
+}
