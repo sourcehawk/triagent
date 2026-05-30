@@ -151,7 +151,7 @@ func TestPlaybookSyncState_UnknownWhenNeitherSideHasIt(t *testing.T) {
 // Locked (system-tier) ids short-circuit to "synced" — they ship
 // with the launcher binary and have no upstream counterpart that
 // drift could be defined against. The shortcut requires a populated
-// metaCache; with metaCache empty (e.g. dump-meta failed at startup)
+// metaCache; with metaCache empty (e.g. loadMeta failed at startup)
 // the resolver falls through to the regular compare path. Pinning
 // both branches so a future change can't silently break either.
 func TestPlaybookSyncState_LockedRequiresMetaCache(t *testing.T) {
@@ -173,7 +173,7 @@ func TestPlaybookSyncState_LockedRequiresMetaCache(t *testing.T) {
 	t.Run("locked id with nil cache returns Unknown — degraded state", func(t *testing.T) {
 		t.Parallel()
 		// Same locked id, but no metaCache.set call — simulates the
-		// dump-meta-failed-at-startup degraded state. isLockedID
+		// loadMeta-failed-at-startup degraded state. isLockedID
 		// returns false, the regular compare path runs, finds no
 		// user file, no upstream file, lands on Unknown.
 		a := newSyncStateAPI(t)

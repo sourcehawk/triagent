@@ -108,8 +108,9 @@ type playbookSyncStateOpts struct {
 // Locked / system-tier ids short-circuit to SyncStatusSynced — they
 // ship with the binary, the notion of "drifted from upstream" doesn't
 // apply. NOTE: locked detection requires a populated metaCache; if the
-// startup dump-meta call failed, isLockedID returns false even for
-// system ids and they fall through to the regular compare path. The
+// in-process catalog load (loadMeta) failed at startup, isLockedID
+// returns false even for system ids and they fall through to the
+// regular compare path. The
 // list endpoint hides the inconsistency (a nil cache produces zero
 // Pass-1 entries), but a direct sync-state call for a locked id in
 // that degraded state will return SyncStatusUnknown — covered by

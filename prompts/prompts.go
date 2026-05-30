@@ -331,8 +331,9 @@ type BaseEnv struct {
 }
 
 // ToolCatalogEntry is one tool in the triagent-mcp catalog as exposed to
-// the editor agent. Mirrors the on-the-wire shape of `triagent-mcp
-// dump-meta`'s tools array, minus the per-input description prose
+// the editor agent. Mirrors the on-the-wire shape of the launcher's
+// in-process tool catalog (internal/server/meta.go), minus the
+// per-input description prose
 // (kept tight for the prompt budget — the agent's playbook-authoring
 // job needs tool name + arg names + a one-line description, not full
 // schemas).

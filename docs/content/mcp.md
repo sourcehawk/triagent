@@ -141,10 +141,12 @@ failed call.
 
 Behind the scenes:
 
-- Tool inputs are reflected from the Go input struct via `jsonschema:` tags. Editing a tool's struct in triagent-mcp
-  instantly updates the catalog the launcher renders, with no hand-curated docs to drift.
-- The catalog is loaded once at launcher startup via `triagent-mcp dump-meta` and cached. Re-launch to pick up new
-  tools after a triagent-mcp upgrade.
+- Tool inputs are reflected from the Go input struct via `jsonschema:` tags. Editing a tool's struct updates the
+  catalog the launcher renders, with no hand-curated docs to drift.
+- The catalog is built once at launcher startup by aggregating each MCP's `ToolSpecs()` in-process via
+  `internal/server/meta.go` (`loadMeta` / `toolCatalog`) and cached. Because the catalog is compiled into the launcher,
+  new tools surface when you rebuild and restart the launcher (or upgrade to a release that includes them), not by
+  swapping the MCP binary alone.
 
 ## Using MCP tools as an operator
 
@@ -160,5 +162,6 @@ the next operator gets the help too.
 ## Adding a new MCP server
 
 Out of scope for this doc, but the shape: implement the new kind in `pkg/mcp/<kind>/`, register it in
-`cmd/triagent-mcp/serve.go`, add a `ToolSpecs()` aggregator entry to `cmd/triagent-mcp/dump-meta.go`, and extend the
-launcher's preflight to spawn it. The catalog view picks it up automatically once `dump-meta` reflects the new tools.
+`cmd/triagent-mcp/serve.go`, add the kind's `ToolSpecs()` to the in-process aggregator in
+`internal/server/meta.go::toolCatalog()`, and extend the launcher's preflight to spawn it. The catalog view picks it up
+automatically once the aggregated catalog reflects the new tools.

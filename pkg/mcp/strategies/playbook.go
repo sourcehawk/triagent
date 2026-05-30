@@ -200,9 +200,8 @@ type Branch struct {
 
 // LoadPlaybooks is a thin convenience wrapper around LoadPlaybooksFrom
 // that takes only a plugin dir (no system, no user overrides). Used
-// by tests + the dump-meta CLI subcommand. Production callers go
-// through LoadPlaybooksFrom directly so they can layer the system
-// tier + user dir.
+// by tests. Production callers go through LoadPlaybooksFrom directly
+// so they can layer the system tier + user dir.
 func LoadPlaybooks(pluginDir string) (map[string]*Playbook, error) {
 	return LoadPlaybooksFrom(pluginDir, "")
 }
@@ -1079,8 +1078,9 @@ type RawPlaybook struct {
 
 // SystemRawPlaybooks walks <systemDir>/<type>/*.yaml and returns
 // the raw YAML for each playbook keyed by id, paired with its type
-// (the directory name). Used by `triagent-mcp dump-meta` so the launcher
-// can show operators the source YAML alongside the parsed graph.
+// (the directory name). Used by the launcher's in-process catalog
+// (internal/server/meta.go::loadMeta) so it can show operators the
+// source YAML alongside the parsed graph.
 //
 // systemDir is the launcher-managed clone of the upstream playbooks
 // repo. Empty dir → empty map. Skip rules match loadSystemTypedDir:

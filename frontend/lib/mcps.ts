@@ -118,7 +118,7 @@ export function chipClasses(c: MCPCategory): string {
 }
 
 // logicalServer maps a wire alias (the form used in mcp.json + the
-// MCPStatusBar chips) to the LOGICAL kind alias used by the dump-meta
+// MCPStatusBar chips) to the LOGICAL kind alias used by the launcher's
 // tool catalog. Per-repo git instances all collapse to the single
 // `triagent-git` catalog entry — the tool surface is identical regardless of
 // which repo a given instance points at.

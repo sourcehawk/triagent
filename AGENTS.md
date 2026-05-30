@@ -20,7 +20,7 @@ pkg/
   mcp/subagent/         shared sub-agent runner with explicit AllowedTools whitelist + telemetry
                         forwarding
   mcp/citations/        shared citation validator for sub-agent prose tools
-  mcp/toolspec/         tool catalog types consumed by `triagent-mcp dump-meta`
+  mcp/toolspec/         tool catalog types aggregated in-process by internal/server/meta.go
   auth/                 launcher auth helpers (per-launch token, cookie/bearer split)
 internal/
   server/               HTTP layer (browser routes + /api/internal MCP loopback)
@@ -83,8 +83,9 @@ Makefile                build / test / frontend / docs / release targets
 Durable conventions and anti-patterns live in [`CLAUDE.md`](CLAUDE.md). The short version:
 
 - One Go module, two binaries, embedded frontend; no separate frontend deploy.
-- MCP servers expose `New(Options)` + `Run(ctx)` + sibling `specs.go::ToolSpecs()`; the catalog feeds
-  `triagent-mcp dump-meta` and the wire test fails if registration drifts.
+- MCP servers expose `New(Options)` + `Run(ctx)` + sibling `specs.go::ToolSpecs()`; the launcher aggregates each
+  MCP's `ToolSpecs()` in-process at startup via `internal/server/meta.go` (`loadMeta` / `toolCatalog`), and each
+  package's spec/wire tests fail if registration drifts.
 - Sub-agent tools route through `pkg/mcp/subagent` with an explicit `AllowedTools` whitelist; never reinvent.
 - Single multiplexed SSE per browser tab via `<StreamProvider>`; URL is the source of truth for view state.
 - TDD on the Go side; race-clean is non-negotiable.

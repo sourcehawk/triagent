@@ -7,7 +7,7 @@
 
 MCPs live in `pkg/mcp/<kind>/` and are exposed via `cmd/triagent-mcp/serve.go`. One `triagent-mcp` binary takes a `--kind=<server>` subcommand (`git`, `wiki`, `slack`, `incidentio`, `k8s`, `sessions`, `strategies`, `meta`, `agent-operator`, `parallel`, `teleport`, `signal-ingest`, etc.). Adding a new MCP = new `pkg/mcp/<name>/` package + one `case` in `cmd/triagent-mcp/serve.go`.
 
-Each MCP package exposes `New(Options) (*Server, error)` + `(*Server).Run(ctx)` and a sibling `specs.go` with `ToolSpecs() []toolspec.ToolSpec`. The catalog feeds `triagent-mcp dump-meta`; keep it in sync with handler registrations or the wire test fails.
+Each MCP package exposes `New(Options) (*Server, error)` + `(*Server).Run(ctx)` and a sibling `specs.go` with `ToolSpecs() []toolspec.ToolSpec`. The launcher aggregates each package's `ToolSpecs()` in-process at startup via `internal/server/meta.go` (`loadMeta` / `toolCatalog`); keep it in sync with handler registrations or the package's spec/wire tests fail.
 
 ## Context
 
@@ -18,7 +18,7 @@ The interface contract (`New` / `Run` / `ToolSpecs`) is mechanical so adding an 
 ## Consequences
 
 - Single release artifact bundles every MCP capability.
-- Adding an MCP is mechanical (one case statement); the wire test catches drift between handler registration and the `ToolSpecs` catalog.
+- Adding an MCP is mechanical (one case statement); each package's spec/wire tests catch drift between handler registration and the `ToolSpecs` catalog.
 - Bug in any one MCP ships in every kind binary — accept the coupling as the price of shared infrastructure.
 - MCP server descriptions and tool prose stay product-neutral; consumer framing (e.g. "incident response") happens at the consumer side via description passthrough.
 - Prefer small, configurable tool surfaces over per-type tool families. Curated tools beat raw-query exposure for vast telemetry namespaces (Prom, k8s) — complementary, not contradictory.

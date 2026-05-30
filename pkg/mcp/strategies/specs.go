@@ -4,9 +4,9 @@ import "github.com/sourcehawk/triagent/pkg/mcp/toolspec"
 
 // ToolSpecs returns the strategies-server tool catalog with each
 // tool's input shape introspected from its Go struct (and its
-// jsonschema tags). Used by `triagent-mcp dump-meta` to surface input
-// pickers + per-input descriptions in the launcher's editor and the
-// MCP catalog view.
+// jsonschema tags). Aggregated by the launcher's in-process catalog
+// (internal/server/meta.go::toolCatalog) to surface input pickers +
+// per-input descriptions in the editor and the MCP catalog view.
 //
 // Order mirrors the registration order in server.go's register()
 // for parity with the agent-facing list_tools view.

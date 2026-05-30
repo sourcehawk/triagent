@@ -192,7 +192,7 @@ func (a *apiHandlers) handleRelatedPlaybooks(w http.ResponseWriter, r *http.Requ
 
 	meta := a.metaCache.get()
 	if meta == nil {
-		// Cache not populated (dump-meta failed at startup or during
+		// Cache not populated (loadMeta failed at startup or during
 		// tests). Treat as "no playbooks" → empty related set.
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"related": []relatedMatch{}})
