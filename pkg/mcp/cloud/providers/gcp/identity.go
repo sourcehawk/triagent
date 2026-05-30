@@ -2,7 +2,6 @@ package gcp
 
 import (
 	"context"
-	"os"
 
 	"github.com/sourcehawk/triagent/pkg/mcp/cloud"
 )
@@ -15,10 +14,12 @@ import (
 // SA, so comparing the base account to the target would mark a correctly
 // configured session invalid.
 //
-// The probe reads the in-process impersonation env (the launcher sets it on the
-// subprocess; the agent cannot reach it), confirms it is pinned to the expected
-// target, then runs a minimal impersonated read to prove the pin took effect. A
-// degraded auth state surfaces through Valid and Hint, never a Go error.
+// The probe runs a minimal impersonated read through the RunFunc to prove the
+// pin took effect. The impersonation env lives on the MCP subprocess the RunFunc
+// shells out to (the launcher sets it there; the agent cannot reach it), so the
+// proof rides on the read alone — the launcher process that drives the preflight
+// probe never carries that env in its own os.Environ. A degraded auth state
+// surfaces through Valid and Hint, never a Go error.
 //
 // NOTE: validated against gcloud's documented impersonation behavior; verify
 // against a live gcloud before relying on the exact print-access-token shape.
@@ -28,14 +29,6 @@ func (p *Provider) Identity(ctx context.Context, run cloud.RunFunc, expected str
 	if expected == "" {
 		st.Valid = false
 		st.Hint = "no impersonation target pinned; set " + EnvImpersonate + " on the cloud MCP subprocess"
-		return st, nil
-	}
-
-	pinned := os.Getenv(EnvImpersonate)
-	if pinned != expected {
-		st.Valid = false
-		st.Hint = EnvImpersonate + " is not pinned to the expected identity " + expected +
-			"; the launcher must set it on the cloud MCP subprocess"
 		return st, nil
 	}
 
