@@ -26,6 +26,24 @@ gcloud auth login
 
 The deployment grants the operator `roles/iam.serviceAccountTokenCreator` on a read-only service account. This is a one-time admin step, and the price of not storing a secret: the operator's own login plus the impersonated service account gives a clean audit trail (human plus role).
 
+That binding lets the operator *act as* the service account; it is separate from what the service account itself may *read*. The service account needs read-only access on each project in the source's scope. The minimal set of predefined roles covering the default tool surface (inventory, reachability, IAM read, GKE, logs, audit):
+
+```sh
+SA=triage-readonly@prod.iam.gserviceaccount.com
+for role in \
+  roles/browser \
+  roles/compute.viewer \
+  roles/container.viewer \
+  roles/iam.securityReviewer \
+  roles/logging.viewer \
+  roles/monitoring.viewer; do
+  gcloud projects add-iam-policy-binding prod-platform \
+    --member="serviceAccount:$SA" --role="$role"
+done
+```
+
+`roles/browser` lists and reads projects, `compute.viewer` and `container.viewer` cover networking and GKE, `iam.securityReviewer` reads IAM policies and service accounts, and the logging and monitoring viewers cover the logs and audit axes. If you would rather not curate, the single basic role `roles/viewer` is read-only across all of these and is the simpler, broader alternative. Role names are current as of writing; verify against GCP's IAM reference, which evolves.
+
 The profile pins that service account as `assumed_identity`. The harness sets `CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT=<pinned-sa>` on the cloud MCP subprocess, so every `gcloud` call runs as the pinned service account while authenticating from the operator's base credentials. The agent never picks the identity, and because the pin lives in environment rather than in argv, `--impersonate-service-account` stays on the agent's deny floor without contradiction.
 
 The whoami probe reports the source valid when impersonation is pinned to the configured service account and a minimal impersonated token read succeeds, proving the pin took effect. Under impersonation the operator's own base account stays active, so the probe does not require the active `gcloud` account to equal the service account; it confirms the pin and the read instead.
@@ -48,6 +66,54 @@ region         = eu-west-1
 ```
 
 The profile's `profile:` field selects that assume-role profile via `AWS_PROFILE`, and `assumed_identity` is the expected role ARN. The harness sets `AWS_PROFILE=<pinned>` on the cloud MCP subprocess, so the AWS CLI assumes the read-only role from the operator's base credentials. As with GCP, the pin lives in environment, so `--profile` stays on the agent's deny floor.
+
+The read-only role needs a permission policy and a trust policy. The minimal permission policy, scoped to exactly the default tool surface:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "TriageReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "sts:GetCallerIdentity",
+        "organizations:ListAccounts",
+        "organizations:DescribeOrganization",
+        "ec2:Describe*",
+        "iam:GetRole", "iam:ListRoles",
+        "iam:ListAttachedRolePolicies", "iam:ListRolePolicies", "iam:GetRolePolicy",
+        "iam:GetPolicy", "iam:GetPolicyVersion", "iam:ListPolicies",
+        "iam:SimulatePrincipalPolicy",
+        "eks:ListClusters", "eks:DescribeCluster",
+        "eks:ListNodegroups", "eks:DescribeNodegroup",
+        "eks:ListFargateProfiles", "eks:DescribeFargateProfile",
+        "logs:DescribeLogGroups", "logs:DescribeLogStreams",
+        "logs:FilterLogEvents", "logs:GetLogEvents",
+        "cloudtrail:LookupEvents", "cloudtrail:DescribeTrails", "cloudtrail:GetTrailStatus"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+The trust policy lets the operator's base principal assume the role:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": { "AWS": "arn:aws:iam::123456789012:root" },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+```
+
+Scope the trust `Principal` to the specific operator users or SSO role rather than the whole account root where you can. If you would rather not curate the permission policy, the AWS-managed `ReadOnlyAccess` policy is the broader, simpler alternative. Action names are current as of writing; verify against AWS's service-authorization reference, which evolves.
 
 The whoami probe resolves the active caller with `aws sts get-caller-identity`. It reports valid when the caller is an assumed-role ARN whose underlying role matches the pinned `assumed_identity`. A plain user or root ARN means the assume-role pin did not take effect and base credentials leaked through, so the source degrades.
 
@@ -120,6 +186,8 @@ Identity-selecting flags (`--account`, `--profile`) never reach scope validation
 What the agent can run through `run_cli` is governed by a positive command allowlist of normalized subcommand paths, for example `compute firewall-rules list` for GCP or `ec2 describe-security-groups` for AWS. Each provider ships an embedded read-only default covering the six axes. Point `command_allowlist_path` at a file (relative to the profile.yaml) to override it; an empty value uses the embedded default. The allowlist is the single source of truth, so the discovery tool advertises exactly what is permitted.
 
 Underneath the allowlist sits a hardcoded deny floor the config can never re-enable, mirroring how the k8s MCP always filters Secret regardless of its kinds config. The floor covers dangerous subcommands (`secrets`, `ssh`, `scp`, `cp`, `sync`, `auth`, `config`), dangerous flags (`--impersonate-service-account`, `--account`, `--profile`, `--endpoint-url`, `--cli-input-json`, `--cli-input-yaml`, `--configuration`), and argument values beginning with `file://`, `fileb://`, `@`, `http://`, or `https://` (local-file read and SSRF vectors). A too-broad allowlist override cannot punch through it.
+
+The command allowlist and the IAM grant are independent layers and must stay aligned. The recommended policies above are least-privilege for the default allowlist. Tightening the allowlist needs no IAM change; if you widen it with `command_allowlist_path`, widen the identity's read-only grant to match, or the added commands fail at the cloud rather than at the harness. Never widen either beyond read-only. The authoritative list of what a configured source permits is whatever the agent's `list_allowed_commands` tool returns, which reads the same allowlist `run_cli` enforces; each provider's shipped default lives in its `default_commands.json` under `pkg/mcp/cloud/providers/<provider>/`.
 
 ## Visible degrade
 
