@@ -26,7 +26,7 @@ status: developing
 | #43 — GCP provider | (merged, branch deleted) | (removed) | #49 → feature/cloud-context-mcp | self-merged |
 | #46 — AWS provider | (merged, branch deleted) | (removed) | #50 → feature/cloud-context-mcp | self-merged |
 | #47 — launcher integration | feature/cloud-context-mcp--launcher | .claude/worktrees/cloud-context-mcp--launcher | _tbd_ → feature/cloud-context-mcp | dispatched |
-| probe-env remediation (epic #44) | feature/cloud-context-mcp--probe-env | .claude/worktrees/cloud-context-mcp--probe-env | _tbd_ → feature/cloud-context-mcp | dispatched |
+| probe-env remediation (epic #44) | (merged, branch deleted) | (removed) | #51 → feature/cloud-context-mcp | self-merged |
 
 ## Contracts
 
