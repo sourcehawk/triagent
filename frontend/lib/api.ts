@@ -89,6 +89,20 @@ export type ConnectionStatus = {
   slack: boolean;
   incidentio: boolean;
   slack_channel_prefix: string;
+  // cloud is the read-only list of profile-configured cloud connections,
+  // each probed at request time. Configured in the profile, never entered
+  // in the panel.
+  cloud?: CloudConnection[];
+};
+
+// CloudConnection is one read-only cloud source: the pinned identity and the
+// request-time identity-probe result. valid drives the checkmark; hint is the
+// reauth advice shown when the probe failed.
+export type CloudConnection = {
+  provider: string;
+  assumed_identity: string;
+  valid: boolean;
+  hint?: string;
 };
 
 export type SlackChannel = {
