@@ -187,6 +187,43 @@ linked_repos: []
 #     allowed_tools: [mcp__prom-bridge__query]
 extra_mcps: []
 
+# Read-only cloud-context sources (GCP / AWS). Each entry attaches a
+# `triagent-cloud-<alias>` MCP to every investigation so the agent can
+# read cloud context (reachability, IAM, GKE/EKS config, logs, audit)
+# alongside the cluster. Read-only by construction: the agent runs a
+# fixed `gcloud`/`aws` binary against an allowlist, as a pinned identity
+# it cannot select or escalate. Configured here, never in the UI.
+#
+# The identity is pinned, not entered: for gcp the harness impersonates
+# `assumed_identity` (a service-account email) via
+# CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT off the operator's own
+# `gcloud auth login`; for aws it selects `profile` (an AWS_PROFILE whose
+# role_arn is the read-only role, source_profile the operator's base) and
+# checks the resolved caller against `assumed_identity` (the role ARN).
+# `scope` is the projects/accounts/regions allowlist any command may
+# reference; an empty axis is unconstrained. `command_allowlist_path`
+# overrides the provider's embedded read-only default.
+#
+# Setup (one-time, per deployment): grant the operator
+# roles/iam.serviceAccountTokenCreator on the gcp SA, or configure the
+# aws assume-role profile. See:
+#   https://github.com/sourcehawk/triagent/blob/main/docs/content/cloud-providers.md
+# Example:
+#   cloud:
+#     - alias: prod-gcp
+#       provider: gcp
+#       assumed_identity: triage-readonly@prod.iam.gserviceaccount.com
+#       scope:
+#         projects: [prod-platform]
+#         regions:  [us-central1]
+#     - alias: prod-aws
+#       provider: aws
+#       assumed_identity: arn:aws:iam::123456789012:role/triage-readonly
+#       profile: triage-readonly
+#       scope:
+#         accounts: ["123456789012"]
+#         regions:  [eu-west-1]
+
 # Inline prompt overrides. Map of <prompt filename> → <path
 # relative to this profile.yaml>. Lets you keep a flat profile
 # dir instead of nesting under `prompts/`. The conventional
