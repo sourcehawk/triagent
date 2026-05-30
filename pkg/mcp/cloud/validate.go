@@ -6,8 +6,11 @@ import (
 )
 
 // ScopeAllowlist is the deployment's set of cloud targets any run_cli argv may
-// reference. An empty field means that target axis is unconstrained. The agent
-// cannot pivot to an un-allowlisted project, account, or region.
+// reference. An empty field means that target axis is unconstrained. Project and
+// region/zone are enforced here against argv (allowedFor maps --project and
+// --region/--zone). Account reach is not validated at the argv layer: it is
+// constrained by the pinned identity or role the session assumes, and the
+// identity-selecting flags (--account, --profile) sit on the deny floor.
 type ScopeAllowlist struct {
 	Projects []string `json:"projects,omitempty"`
 	Accounts []string `json:"accounts,omitempty"`
