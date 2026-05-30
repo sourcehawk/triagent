@@ -39,7 +39,8 @@ All four contracts are produced by #45, so Phase 2 cannot start until #45 merges
 
 ## Bubble-up log
 
-- _No concerns yet._
+- **2026-05-30 — minimal-env seam missing in the harness (blocks #45 merge).** `cloud.Server.run` (server.go) calls `execCLI(..., argv, nil, ...)`; in Go a nil `cmd.Env` inherits the full parent environment, contradicting the spec's "explicit minimal `cmd.Env`" and `harness.go`'s own doc comment, and leaking the launcher's process env into `gcloud`/`aws`. The env-forwarding seam is owned by the parent package (conventions: subpackages own only CLI specifics), so it must land in #45 before fan-out. Resolution: #45 follow-up adds a provider-contributed env-passthrough (var **names** the CLI needs forwarded) merged with a minimal base set, built once and passed to `execCLI`; `fakeProvider` returns none. **Propagation:** #43/#46 implement the new `Provider` env-passthrough method; #47 unaffected (still injects env onto the `triagent-mcp` process). Interface grows by one method before consumers branch.
+- **2026-05-30 — tests must use `testify` (user directive).** All cloud tests convert to `assert`/`require`; CLAUDE.md amended to make this the repo standard (testify is already used in 166 test files). **Propagation:** #43/#46/#47 inherit the rule via CLAUDE.md; their tests use testify from the start.
 
 ## Resume checklist
 
