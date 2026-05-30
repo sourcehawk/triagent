@@ -12,8 +12,7 @@ import (
 	"github.com/charmbracelet/log"
 	"github.com/sourcehawk/triagent/pkg/mcp/agentoperator"
 	"github.com/sourcehawk/triagent/pkg/mcp/cloud"
-	"github.com/sourcehawk/triagent/pkg/mcp/cloud/providers/aws"
-	"github.com/sourcehawk/triagent/pkg/mcp/cloud/providers/gcp"
+	"github.com/sourcehawk/triagent/pkg/mcp/cloud/providers"
 	"github.com/sourcehawk/triagent/pkg/mcp/git"
 	"github.com/sourcehawk/triagent/pkg/mcp/incidentio"
 	"github.com/sourcehawk/triagent/pkg/mcp/k8s"
@@ -446,7 +445,7 @@ func runCloud(ctx context.Context, f serveFlags) error {
 	if f.cloudProvider == "" {
 		return fmt.Errorf("--provider is required (gcp or aws) (set --provider or $%s)", cloud.EnvProvider)
 	}
-	provider, err := newCloudProvider(f.cloudProvider)
+	provider, err := providers.New(f.cloudProvider)
 	if err != nil {
 		return err
 	}
@@ -460,20 +459,6 @@ func runCloud(ctx context.Context, f serveFlags) error {
 	}
 	log.Info("mcp serve --kind=cloud starting", "provider", f.cloudProvider)
 	return srv.Run(ctx)
-}
-
-// newCloudProvider constructs the cloud.Provider for the named provider. Each
-// implementation lives in pkg/mcp/cloud/providers/<name>; an unknown provider is
-// named in the error.
-func newCloudProvider(name string) (cloud.Provider, error) {
-	switch name {
-	case "gcp":
-		return gcp.New()
-	case "aws":
-		return aws.New()
-	default:
-		return nil, fmt.Errorf("unknown cloud --provider %q (want gcp or aws)", name)
-	}
 }
 
 // parseCloudScope decodes the JSON-encoded target scope the launcher froze into
