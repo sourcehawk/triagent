@@ -26,6 +26,12 @@ const projectsListJSON = `[
   }
 ]`
 
+func runReturning(out string) cloud.RunFunc {
+	return func(context.Context, []string) (cloud.CLIResult, error) {
+		return cloud.CLIResult{Stdout: out}, nil
+	}
+}
+
 func TestInventoryProjectsIDAndName(t *testing.T) {
 	t.Parallel()
 	p, err := newWithBinary("/usr/bin/gcloud")
