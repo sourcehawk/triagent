@@ -439,8 +439,9 @@ func runProm(ctx context.Context, f serveFlags) error {
 
 // runCloud wires the read-only cloud-context MCP. --provider selects the
 // concrete backend; New plugs it in behind cloud.Provider. The launcher passes
-// the allowlist override path and target scope through the subprocess env
-// (cloud.EnvAllowlistPath, cloud.EnvScope), never argv.
+// the allowlist override path, target scope, and pinned identity through the
+// subprocess env (cloud.EnvAllowlistPath, cloud.EnvScope,
+// cloud.EnvExpectedIdentity), never argv.
 func runCloud(ctx context.Context, f serveFlags) error {
 	if f.cloudProvider == "" {
 		return fmt.Errorf("--provider is required (gcp or aws) (set --provider or $%s)", cloud.EnvProvider)
@@ -450,9 +451,10 @@ func runCloud(ctx context.Context, f serveFlags) error {
 		return err
 	}
 	srv, err := cloud.New(cloud.Options{
-		Provider:      provider,
-		AllowlistPath: os.Getenv(cloud.EnvAllowlistPath),
-		Scope:         parseCloudScope(os.Getenv(cloud.EnvScope)),
+		Provider:         provider,
+		AllowlistPath:    os.Getenv(cloud.EnvAllowlistPath),
+		Scope:            parseCloudScope(os.Getenv(cloud.EnvScope)),
+		ExpectedIdentity: os.Getenv(cloud.EnvExpectedIdentity),
 	})
 	if err != nil {
 		return fmt.Errorf("build cloud mcp server: %w", err)

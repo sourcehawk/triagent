@@ -422,12 +422,12 @@ func TestWriteMCPConfig_GCPCloudSource_RegistersServerWithImpersonationEnv(t *te
 	require.NotNil(t, env)
 	assert.Equal(t, "gcp", env[cloud.EnvProvider])
 	assert.Equal(t, "/etc/triagent/gcp-allow.json", env[cloud.EnvAllowlistPath])
-	// gcp impersonates the assumed identity directly; that one env is both
-	// the impersonation target and the expected identity.
+	// The pinned identity is uniform across providers.
+	assert.Equal(t, "triage-ro@prod.iam.gserviceaccount.com", env[cloud.EnvExpectedIdentity])
+	// gcp impersonates the assumed identity directly as its credential env.
 	assert.Equal(t, "triage-ro@prod.iam.gserviceaccount.com", env[gcp.EnvImpersonate])
 	// AWS-specific env must not leak onto a gcp source.
 	assert.NotContains(t, env, aws.EnvProfile)
-	assert.NotContains(t, env, aws.EnvExpectedRoleARN)
 
 	rawScope, _ := env[cloud.EnvScope].(string)
 	require.NotEmpty(t, rawScope, "scope must be JSON-encoded into the env")
@@ -460,9 +460,10 @@ func TestWriteMCPConfig_AWSCloudSource_RegistersServerWithProfileAndExpectedRole
 	env, _ := srv["env"].(map[string]any)
 	require.NotNil(t, env)
 	assert.Equal(t, "aws", env[cloud.EnvProvider])
-	// aws needs BOTH a profile selector and the expected role ARN.
+	// The pinned identity is uniform across providers.
+	assert.Equal(t, "arn:aws:iam::123456789012:role/triage-ro", env[cloud.EnvExpectedIdentity])
+	// aws selects an assume-role profile as its credential env.
 	assert.Equal(t, "triage-ro", env[aws.EnvProfile])
-	assert.Equal(t, "arn:aws:iam::123456789012:role/triage-ro", env[aws.EnvExpectedRoleARN])
 	// gcp impersonation env must not leak onto an aws source.
 	assert.NotContains(t, env, gcp.EnvImpersonate)
 }
