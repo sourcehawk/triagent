@@ -52,6 +52,7 @@ var denyFloor = DenyFloor{
 	Flags: []string{
 		"--impersonate-service-account", "--account", "--profile",
 		"--endpoint-url", "--cli-input-json", "--cli-input-yaml", "--configuration",
+		"--flags-file", "--access-token-file",
 	},
 	ArgPrefixes: []string{"file://", "fileb://", "@", "http://", "https://"},
 }
