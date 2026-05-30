@@ -225,8 +225,8 @@ function CloudConnectionsSection({ cloud }: { cloud: CloudConnection[] }) {
         starting a session.
       </p>
       <div className="space-y-2">
-        {cloud.map((c, i) => (
-          <CloudPill key={`${c.provider}-${c.assumed_identity}-${i}`} conn={c} />
+        {cloud.map((c) => (
+          <CloudPill key={c.alias} conn={c} />
         ))}
       </div>
     </div>
@@ -241,11 +241,11 @@ function CloudPill({ conn }: { conn: CloudConnection }) {
     >
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
+          <span className="truncate text-xs font-medium text-zinc-200">
+            {conn.alias}
+          </span>
           <span className="text-[10px] uppercase tracking-wide text-zinc-500">
             {conn.provider}
-          </span>
-          <span className="truncate font-mono text-xs text-zinc-200">
-            {conn.assumed_identity}
           </span>
         </div>
         {conn.valid ? (
@@ -261,6 +261,9 @@ function CloudPill({ conn }: { conn: CloudConnection }) {
             unavailable
           </span>
         )}
+      </div>
+      <div className="mt-1 truncate font-mono text-xs text-zinc-400">
+        {conn.assumed_identity}
       </div>
       {!conn.valid && conn.hint && (
         <div className="mt-1 text-xs text-amber-200/70">{conn.hint}</div>

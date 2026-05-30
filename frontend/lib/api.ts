@@ -95,10 +95,12 @@ export type ConnectionStatus = {
   cloud?: CloudConnection[];
 };
 
-// CloudConnection is one read-only cloud source: the pinned identity and the
-// request-time identity-probe result. valid drives the checkmark; hint is the
-// reauth advice shown when the probe failed.
+// CloudConnection is one read-only cloud source: the alias keying its
+// triagent-cloud-<alias> MCP, the pinned identity, and the request-time
+// identity-probe result. valid drives the checkmark; hint is the reauth advice
+// shown when the probe failed.
 export type CloudConnection = {
+  alias: string;
   provider: string;
   assumed_identity: string;
   valid: boolean;

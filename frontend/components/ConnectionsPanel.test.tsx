@@ -30,16 +30,18 @@ describe("ConnectionsPanel cloud pills", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders a read-only cloud pill per entry with the assumed identity", async () => {
+  it("renders a read-only cloud pill per entry with the alias and assumed identity", async () => {
     vi.spyOn(api, "getConnections").mockResolvedValue({
       ...baseStatus,
       cloud: [
         {
+          alias: "prod-gcp",
           provider: "gcp",
           assumed_identity: "triage-ro@prod.iam.gserviceaccount.com",
           valid: true,
         },
         {
+          alias: "prod-aws",
           provider: "aws",
           assumed_identity: "arn:aws:iam::1:role/triage-ro",
           valid: false,
@@ -50,8 +52,10 @@ describe("ConnectionsPanel cloud pills", () => {
 
     await renderPanelAndOpenModal();
 
+    expect(await screen.findByText("prod-gcp")).toBeInTheDocument();
+    expect(screen.getByText("prod-aws")).toBeInTheDocument();
     expect(
-      await screen.findByText("triage-ro@prod.iam.gserviceaccount.com"),
+      screen.getByText("triage-ro@prod.iam.gserviceaccount.com"),
     ).toBeInTheDocument();
     expect(
       screen.getByText("arn:aws:iam::1:role/triage-ro"),
@@ -63,6 +67,7 @@ describe("ConnectionsPanel cloud pills", () => {
       ...baseStatus,
       cloud: [
         {
+          alias: "prod-aws",
           provider: "aws",
           assumed_identity: "arn:aws:iam::1:role/triage-ro",
           valid: false,
@@ -81,6 +86,7 @@ describe("ConnectionsPanel cloud pills", () => {
       ...baseStatus,
       cloud: [
         {
+          alias: "prod-gcp",
           provider: "gcp",
           assumed_identity: "triage-ro@prod.iam.gserviceaccount.com",
           valid: true,

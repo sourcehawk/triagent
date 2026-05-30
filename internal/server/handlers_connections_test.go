@@ -314,6 +314,7 @@ func TestGetConnections_IncludesCloudArrayProbedAtRequestTime(t *testing.T) {
 
 	var resp struct {
 		Cloud []struct {
+			Alias           string `json:"alias"`
 			Provider        string `json:"provider"`
 			AssumedIdentity string `json:"assumed_identity"`
 			Valid           bool   `json:"valid"`
@@ -323,10 +324,12 @@ func TestGetConnections_IncludesCloudArrayProbedAtRequestTime(t *testing.T) {
 	require.NoError(t, json.NewDecoder(rr.Body).Decode(&resp))
 	require.Len(t, resp.Cloud, 2)
 
+	assert.Equal(t, "prod-gcp", resp.Cloud[0].Alias)
 	assert.Equal(t, "gcp", resp.Cloud[0].Provider)
 	assert.Equal(t, "ro@p.iam.gserviceaccount.com", resp.Cloud[0].AssumedIdentity)
 	assert.True(t, resp.Cloud[0].Valid)
 
+	assert.Equal(t, "prod-aws", resp.Cloud[1].Alias)
 	assert.Equal(t, "aws", resp.Cloud[1].Provider)
 	assert.False(t, resp.Cloud[1].Valid)
 	assert.Equal(t, "run: aws sso login", resp.Cloud[1].Hint)
