@@ -3,10 +3,18 @@ package cloud
 import (
 	"context"
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/sourcehawk/triagent/pkg/mcp/telemetry"
 )
+
+// baseEnvPassthrough is the minimal env every provider CLI needs regardless of
+// cloud: PATH so the resolved binary can find its own dependencies, HOME so it
+// can locate per-user config. Providers add their credential/impersonation
+// names via Provider.EnvPassthrough.
+var baseEnvPassthrough = []string{"PATH", "HOME"}
 
 // Options configures the cloud-context MCP server.
 type Options struct {
@@ -82,7 +90,29 @@ func (s *Server) run(ctx context.Context, argv []string) (CLIResult, error) {
 	if err := validateArgv(argv, s.allowlist, s.scope); err != nil {
 		return CLIResult{}, err
 	}
-	return execCLI(ctx, s.provider.Binary(), argv, nil, defaultOutputLimit)
+	return execCLI(ctx, s.provider.Binary(), argv, s.subprocessEnv(), defaultOutputLimit)
+}
+
+// subprocessEnv builds the explicit, minimal environment for a provider CLI
+// invocation: only the base names plus the provider's declared passthrough
+// names, read from the launcher-controlled process env. Everything else is
+// dropped, so the launcher's ambient secrets never reach the CLI.
+func (s *Server) subprocessEnv() []string {
+	keep := make(map[string]bool, len(baseEnvPassthrough))
+	for _, name := range baseEnvPassthrough {
+		keep[name] = true
+	}
+	for _, name := range s.provider.EnvPassthrough() {
+		keep[name] = true
+	}
+	var env []string
+	for _, kv := range os.Environ() {
+		name, _, ok := strings.Cut(kv, "=")
+		if ok && keep[name] {
+			env = append(env, kv)
+		}
+	}
+	return env
 }
 
 // registerOn wires the cloud tools onto impl. Called from New and from the wire

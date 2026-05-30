@@ -26,6 +26,12 @@ type Provider interface {
 	// the always-on deny floor. The base floor lives in this package; providers
 	// only add to it, never relax it.
 	DenyFloorAdditions() DenyFloor
+	// EnvPassthrough lists the environment variable NAMES this provider's CLI
+	// needs forwarded from the launcher-controlled process env to the subprocess
+	// (base credentials, the pinned-identity impersonation target, config dirs).
+	// The harness forwards only these plus a minimal base set; every other parent
+	// env var is dropped, so ambient launcher secrets never reach the CLI.
+	EnvPassthrough() []string
 	// Inventory projects the provider's accessible scopes (projects for gcp,
 	// accounts for aws). It execs only through run, never directly.
 	Inventory(ctx context.Context, run RunFunc) (Inventory, error)

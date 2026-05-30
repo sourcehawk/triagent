@@ -7,13 +7,14 @@ import "context"
 // this fake exercises the parent package's harness, tools, and probe without
 // shelling any real cloud CLI.
 type fakeProvider struct {
-	name        string
-	binary      string
-	allowlist   *CommandAllowlist
-	denyFloor   DenyFloor
-	inventory   Inventory
-	identity    IdentityStatus
-	identityErr error
+	name           string
+	binary         string
+	allowlist      *CommandAllowlist
+	denyFloor      DenyFloor
+	inventory      Inventory
+	identity       IdentityStatus
+	identityErr    error
+	envPassthrough []string
 }
 
 func (f *fakeProvider) Name() string {
@@ -38,6 +39,8 @@ func (f *fakeProvider) DefaultAllowlist() *CommandAllowlist {
 }
 
 func (f *fakeProvider) DenyFloorAdditions() DenyFloor { return f.denyFloor }
+
+func (f *fakeProvider) EnvPassthrough() []string { return f.envPassthrough }
 
 func (f *fakeProvider) Inventory(context.Context, RunFunc) (Inventory, error) {
 	return f.inventory, nil
