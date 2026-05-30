@@ -335,6 +335,51 @@ func TestGetConnections_IncludesCloudArrayProbedAtRequestTime(t *testing.T) {
 	assert.Equal(t, "run: aws sso login", resp.Cloud[1].Hint)
 }
 
+// TestGetConnections_DegradedSource_KeepsConfiguredIdentity asserts that when the
+// probe fails before resolving an identity (empty Provider/AssumedIdentity), the
+// cloud entry falls back to the profile source's configured provider, assumed
+// identity, and alias, so the operator still sees WHICH identity was configured
+// alongside valid:false and the failure hint.
+func TestGetConnections_DegradedSource_KeepsConfiguredIdentity(t *testing.T) {
+	t.Parallel()
+	prof := &profile.Profile{
+		Cloud: []profile.CloudSource{
+			{Alias: "prod-aws", Provider: "aws", AssumedIdentity: "arn:aws:iam::1:role/ro", Profile: "ro"},
+		},
+	}
+	a := &apiHandlers{
+		connections: connections.NewWithDir(t.TempDir()),
+		prof:        prof,
+		// Provider construction failed before resolving an identity: the status
+		// carries only the failure signal, no provider or identity.
+		cloudProbe: func(_ context.Context, _ profile.CloudSource) cloud.IdentityStatus {
+			return cloud.IdentityStatus{Valid: false, Hint: "run: aws sso login"}
+		},
+	}
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/connections", nil)
+	a.handleGetConnections(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, "body: %s", rr.Body)
+
+	var resp struct {
+		Cloud []struct {
+			Alias           string `json:"alias"`
+			Provider        string `json:"provider"`
+			AssumedIdentity string `json:"assumed_identity"`
+			Valid           bool   `json:"valid"`
+			Hint            string `json:"hint"`
+		} `json:"cloud"`
+	}
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&resp))
+	require.Len(t, resp.Cloud, 1)
+	assert.Equal(t, "prod-aws", resp.Cloud[0].Alias)
+	assert.Equal(t, "aws", resp.Cloud[0].Provider, "degraded source must fall back to configured provider")
+	assert.Equal(t, "arn:aws:iam::1:role/ro", resp.Cloud[0].AssumedIdentity, "degraded source must fall back to configured identity")
+	assert.False(t, resp.Cloud[0].Valid)
+	assert.Equal(t, "run: aws sso login", resp.Cloud[0].Hint)
+}
+
 func TestGetConnections_NoCloudSources_OmitsOrEmptyCloud(t *testing.T) {
 	t.Parallel()
 	a := newConnectionsAPI(t)

@@ -77,10 +77,22 @@ func (a *apiHandlers) cloudConnections(ctx context.Context) []cloudConnection {
 	out := make([]cloudConnection, 0, len(a.prof.Cloud))
 	for _, src := range a.prof.Cloud {
 		st := probe(ctx, src)
+		// A probe that fails before resolving an identity leaves Provider and
+		// AssumedIdentity blank. Fall back to the configured source values so a
+		// degraded source still shows WHICH identity was pinned alongside its
+		// failure hint; the alias is always the source's.
+		provider := st.Provider
+		if provider == "" {
+			provider = src.Provider
+		}
+		identity := st.AssumedIdentity
+		if identity == "" {
+			identity = src.AssumedIdentity
+		}
 		out = append(out, cloudConnection{
 			Alias:           src.Alias,
-			Provider:        st.Provider,
-			AssumedIdentity: st.AssumedIdentity,
+			Provider:        provider,
+			AssumedIdentity: identity,
 			Valid:           st.Valid,
 			Hint:            st.Hint,
 		})
