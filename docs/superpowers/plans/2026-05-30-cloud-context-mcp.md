@@ -21,9 +21,9 @@ The feature lands via the feature-branch model on `feature/cloud-context-mcp`. F
 | **A — scaffold + harness** | #45 | `pkg/mcp/cloud/`: `Provider` interface, command allowlist + deny floor, `run_cli` harness, `list_allowed_commands`, typed `list_inventory` + `session_status` against a fake provider, the shared identity probe, `serve.go` `--kind=cloud --provider=` wiring, wire test. | — |
 | **B — GCP provider** | #43 | `pkg/mcp/cloud/providers/gcp`: implements `Provider` over `gcloud`; default allowlist + deny-floor additions; impersonation env contract. | A (interface) |
 | **C — AWS provider** | #46 | `pkg/mcp/cloud/providers/aws`: implements `Provider` over `aws`; default allowlist + deny-floor additions; assume-role profile contract. | A (interface) |
-| **D — launcher integration** | NEW | profile `cloud:` block; `mcpconfig.go` aliasing + env injection; `preflight` cloud probe + visible degrade; `connections` cloud array + `GET /api/connections`; frontend read-only pill. | A (probe), B/C (env contracts) |
+| **D — launcher integration** | #47 | shared provider factory `pkg/mcp/cloud/providers`; profile `cloud:` block; `mcpconfig.go` aliasing + env injection; `preflight` cloud probe + visible degrade; `connections` cloud array + `GET /api/connections`; frontend read-only pill. | A (probe), **B + C (provider construction)** |
 
-B, C, and D run in parallel once A's contracts are realized. The plan is written so each PR is independently reviewable and leaves `make test` green.
+B and C run in parallel once A's contracts are realized. D runs **after both B and C merge**: its preflight + connections probe constructs `cloud.Provider` values to call `cloud.Probe`, so it imports the provider packages via a shared factory and cannot compile until both land. Each PR is independently reviewable and leaves `make test` green.
 
 ## File structure
 
@@ -342,9 +342,21 @@ Mirror of PR B over the `aws` CLI. Branches from A's merged state; independent o
 - [ ] `--provider=aws` constructs `aws.New()`; `go test ./... -race` + `make lint` → PASS.
 - [ ] Commit `feat(cloud): wire aws provider into serve.go (#46)`.
 
-## PR D — launcher integration (NEW issue)
+## PR D — launcher integration (#47)
 
-Branches from A's merged state (needs `cloud.Probe`, `IdentityStatus`, env-const names). Independent of B/C at compile time (references env-var name constants, not provider packages).
+Branches from the feature branch **after both B and C have merged** (needs `cloud.Probe`, `IdentityStatus`, the env-const names, and a constructed `cloud.Provider` per source). It depends on the provider packages at compile time: D3/D4 call `cloud.Probe(ctx, cloud.Provider)`, and the only way to obtain a `cloud.Provider` is to construct a concrete gcp/aws value. D therefore introduces a shared factory `pkg/mcp/cloud/providers.New(name) (cloud.Provider, error)` (importing gcp + aws), refactors `cmd/triagent-mcp/serve.go`'s `newCloudProvider` to delegate to it, and uses it in `preflight` and `connections` — mirroring how the launcher already builds `auth.Provider` from `pkg/auth/teleport` / `pkg/auth/kubeconfig`.
+
+### Task D0: Shared provider factory
+
+**Files:**
+- Create: `pkg/mcp/cloud/providers/registry.go`
+- Modify: `cmd/triagent-mcp/serve.go` (delegate `newCloudProvider` to the factory)
+- Test: `pkg/mcp/cloud/providers/registry_test.go`
+
+- [ ] **Step 1:** Failing test — `New("gcp")` returns a non-nil `cloud.Provider` whose `Name()` is `"gcp"`; `New("aws")` likewise; an unknown name errors.
+- [ ] **Step 2:** Implement `New(name)` switching to `gcp.New()` / `aws.New()`; refactor `serve.go`'s `newCloudProvider` to call it (removing the per-arm construction the providers added — the factory is now the single construction site).
+- [ ] **Step 3:** Run `go test ./pkg/mcp/cloud/providers/ ./cmd/triagent-mcp/ -race` → PASS.
+- [ ] **Step 4:** Commit `feat(cloud): shared provider factory; serve.go delegates construction (#47)`.
 
 ### Task D1: Profile `cloud:` block
 

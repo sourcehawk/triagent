@@ -13,6 +13,7 @@ import (
 	"github.com/sourcehawk/triagent/pkg/mcp/agentoperator"
 	"github.com/sourcehawk/triagent/pkg/mcp/cloud"
 	"github.com/sourcehawk/triagent/pkg/mcp/cloud/providers/aws"
+	"github.com/sourcehawk/triagent/pkg/mcp/cloud/providers/gcp"
 	"github.com/sourcehawk/triagent/pkg/mcp/git"
 	"github.com/sourcehawk/triagent/pkg/mcp/incidentio"
 	"github.com/sourcehawk/triagent/pkg/mcp/k8s"
@@ -466,10 +467,10 @@ func runCloud(ctx context.Context, f serveFlags) error {
 // named in the error.
 func newCloudProvider(name string) (cloud.Provider, error) {
 	switch name {
+	case "gcp":
+		return gcp.New()
 	case "aws":
 		return aws.New()
-	case "gcp":
-		return nil, fmt.Errorf("cloud provider %q is not built yet", name)
 	default:
 		return nil, fmt.Errorf("unknown cloud --provider %q (want gcp or aws)", name)
 	}
