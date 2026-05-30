@@ -25,6 +25,9 @@ func (p *Provider) Inventory(ctx context.Context, run cloud.RunFunc) (cloud.Inve
 	if err != nil {
 		return cloud.Inventory{}, fmt.Errorf("gcloud projects list: %w", err)
 	}
+	if res.ExitCode != 0 {
+		return cloud.Inventory{}, fmt.Errorf("gcloud projects list failed (exit %d): %s", res.ExitCode, res.Stderr)
+	}
 
 	var projects []project
 	if err := json.Unmarshal([]byte(res.Stdout), &projects); err != nil {
