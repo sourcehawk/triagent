@@ -8,6 +8,8 @@ import (
 	"io"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/sourcehawk/triagent/pkg/mcp/cloud"
 )
 
 // Profile is the in-memory shape of profile.yaml. Field tags match the
@@ -28,6 +30,7 @@ type Profile struct {
 	LinkedRepos         []LinkedRepo         `yaml:"linked_repos"`
 	ExtraMCPs           []ExtraMCP           `yaml:"extra_mcps"`
 	InvestigationInputs []InvestigationInput `yaml:"investigation_inputs"`
+	Cloud               []CloudSource        `yaml:"cloud"`
 
 	// PromptFiles declares prompt overrides by filename → path (relative
 	// to the profile.yaml's directory). Loaded into Prompts at load time
@@ -145,6 +148,28 @@ type ExtraMCP struct {
 	Args         []string          `yaml:"args,omitempty"`
 	Env          map[string]string `yaml:"env,omitempty"`
 	AllowedTools []string          `yaml:"allowed_tools,omitempty"`
+}
+
+// CloudSource is a deployment-configured, read-only cloud connection the
+// launcher wires per session as a triagent-cloud-<alias> MCP server. It is
+// configured in the profile, never entered in the connections panel: the agent
+// can read the pinned identity but cannot select or escalate it.
+//
+// AssumedIdentity is the canonical pinned identity shown in the connections
+// panel — a service-account email for gcp, a role ARN for aws. The two clouds
+// realize it through different env: gcp impersonates AssumedIdentity directly,
+// while aws selects an assume-role profile (Profile) for credentials and checks
+// AssumedIdentity (the role ARN) for strict validity. Profile is therefore
+// aws-only; gcp ignores it.
+type CloudSource struct {
+	Alias           string               `yaml:"alias"`
+	Provider        string               `yaml:"provider"` // "gcp" | "aws"
+	AssumedIdentity string               `yaml:"assumed_identity"`
+	Profile         string               `yaml:"profile,omitempty"` // aws AWS_PROFILE selector; ignored by gcp
+	Scope           cloud.ScopeAllowlist `yaml:"scope,omitempty"`
+	// CommandAllowlistPath points the cloud MCP at a run_cli allowlist override
+	// file; empty uses the provider's embedded default.
+	CommandAllowlistPath string `yaml:"command_allowlist_path,omitempty"`
 }
 
 type InvestigationInput struct {

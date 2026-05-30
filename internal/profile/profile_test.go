@@ -662,3 +662,46 @@ func TestProfile_ApplyDefaults_PreservesExplicitModels(t *testing.T) {
 	assert.Equal(t, "x", p.Models.Investigation)
 	assert.Equal(t, "y", p.Models.Subagent)
 }
+
+func TestProfile_ParsesCloudBlock(t *testing.T) {
+	t.Parallel()
+	src := `
+name: example
+description: test profile
+auth:
+  kind: kubeconfig
+cloud:
+  - alias: prod-gcp
+    provider: gcp
+    assumed_identity: triage-ro@prod.iam.gserviceaccount.com
+    scope:
+      projects:
+        - prod-a
+        - prod-b
+    command_allowlist_path: /etc/triagent/gcp-allow.json
+  - alias: prod-aws
+    provider: aws
+    assumed_identity: arn:aws:iam::123456789012:role/triage-ro
+    profile: triage-ro
+    scope:
+      regions:
+        - us-east-1
+`
+	p, err := profile.Parse(strings.NewReader(src))
+	require.NoError(t, err)
+	require.Len(t, p.Cloud, 2)
+
+	gcp := p.Cloud[0]
+	assert.Equal(t, "prod-gcp", gcp.Alias)
+	assert.Equal(t, "gcp", gcp.Provider)
+	assert.Equal(t, "triage-ro@prod.iam.gserviceaccount.com", gcp.AssumedIdentity)
+	assert.Equal(t, []string{"prod-a", "prod-b"}, gcp.Scope.Projects)
+	assert.Equal(t, "/etc/triagent/gcp-allow.json", gcp.CommandAllowlistPath)
+
+	aws := p.Cloud[1]
+	assert.Equal(t, "prod-aws", aws.Alias)
+	assert.Equal(t, "aws", aws.Provider)
+	assert.Equal(t, "arn:aws:iam::123456789012:role/triage-ro", aws.AssumedIdentity)
+	assert.Equal(t, "triage-ro", aws.Profile)
+	assert.Equal(t, []string{"us-east-1"}, aws.Scope.Regions)
+}
