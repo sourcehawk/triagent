@@ -98,11 +98,20 @@ func (s *Server) run(ctx context.Context, argv []string) (CLIResult, error) {
 // names, read from the launcher-controlled process env. Everything else is
 // dropped, so the launcher's ambient secrets never reach the CLI.
 func (s *Server) subprocessEnv() []string {
-	keep := make(map[string]bool, len(baseEnvPassthrough))
+	return minimalEnv(s.provider.EnvPassthrough())
+}
+
+// minimalEnv returns the subprocess environment built from os.Environ() filtered
+// to the base passthrough names plus the provider-declared ones — everything
+// else (the launcher's ambient secrets) is dropped. Both the run_cli harness and
+// the identity probe build their subprocess env here so neither can leak the
+// parent environment.
+func minimalEnv(passthrough []string) []string {
+	keep := make(map[string]bool, len(baseEnvPassthrough)+len(passthrough))
 	for _, name := range baseEnvPassthrough {
 		keep[name] = true
 	}
-	for _, name := range s.provider.EnvPassthrough() {
+	for _, name := range passthrough {
 		keep[name] = true
 	}
 	var env []string

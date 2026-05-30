@@ -12,8 +12,9 @@ import "context"
 // credential surfaces visibly instead of failing the caller. A Go error is
 // reserved for a caller contract violation (a nil provider).
 func Probe(ctx context.Context, p Provider) (IdentityStatus, error) {
+	env := minimalEnv(p.EnvPassthrough())
 	run := func(ctx context.Context, argv []string) (CLIResult, error) {
-		return execCLI(ctx, p.Binary(), argv, nil, defaultOutputLimit)
+		return execCLI(ctx, p.Binary(), argv, env, defaultOutputLimit)
 	}
 
 	st, err := p.Identity(ctx, run)
