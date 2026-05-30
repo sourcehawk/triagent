@@ -141,11 +141,12 @@ failed call.
 
 Behind the scenes:
 
-- Tool inputs are reflected from the Go input struct via `jsonschema:` tags. Editing a tool's struct in triagent-mcp
-  instantly updates the catalog the launcher renders, with no hand-curated docs to drift.
+- Tool inputs are reflected from the Go input struct via `jsonschema:` tags. Editing a tool's struct updates the
+  catalog the launcher renders, with no hand-curated docs to drift.
 - The catalog is built once at launcher startup by aggregating each MCP's `ToolSpecs()` in-process via
-  `internal/server/meta.go` (`loadMeta` / `toolCatalog`) and cached. Re-launch to pick up new tools after a
-  triagent-mcp upgrade.
+  `internal/server/meta.go` (`loadMeta` / `toolCatalog`) and cached. Because the catalog is compiled into the launcher,
+  new tools surface when you rebuild and restart the launcher (or upgrade to a release that includes them), not by
+  swapping the MCP binary alone.
 
 ## Using MCP tools as an operator
 

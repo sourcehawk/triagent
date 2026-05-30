@@ -129,7 +129,7 @@ different port.
 2. Add a `case "<kind>":` in `cmd/triagent-mcp/serve.go`.
 3. Add the kind's `ToolSpecs()` to the in-process aggregator in `internal/server/meta.go::toolCatalog()`.
 4. Add a preflight spawn entry in `internal/preflight/mcpconfig.go` (conditional attachment lives there).
-5. Run `make test` — the per-package `tools_wire_test.go` will catch catalog drift.
+5. Run `make test` — each package's spec/wire tests catch drift between `ToolSpecs()` and the registered handlers.
 
 ## Adding a new system playbook
 

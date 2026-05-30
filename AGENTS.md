@@ -84,8 +84,8 @@ Durable conventions and anti-patterns live in [`CLAUDE.md`](CLAUDE.md). The shor
 
 - One Go module, two binaries, embedded frontend; no separate frontend deploy.
 - MCP servers expose `New(Options)` + `Run(ctx)` + sibling `specs.go::ToolSpecs()`; the launcher aggregates each
-  MCP's `ToolSpecs()` in-process at startup via `internal/server/meta.go` (`loadMeta` / `toolCatalog`), and the
-  per-package `tools_wire_test.go` fails if registration drifts.
+  MCP's `ToolSpecs()` in-process at startup via `internal/server/meta.go` (`loadMeta` / `toolCatalog`), and each
+  package's spec/wire tests fail if registration drifts.
 - Sub-agent tools route through `pkg/mcp/subagent` with an explicit `AllowedTools` whitelist; never reinvent.
 - Single multiplexed SSE per browser tab via `<StreamProvider>`; URL is the source of truth for view state.
 - TDD on the Go side; race-clean is non-negotiable.
