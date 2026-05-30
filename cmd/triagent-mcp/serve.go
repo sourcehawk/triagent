@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/log"
 	"github.com/sourcehawk/triagent/pkg/mcp/agentoperator"
 	"github.com/sourcehawk/triagent/pkg/mcp/cloud"
+	"github.com/sourcehawk/triagent/pkg/mcp/cloud/providers/aws"
 	"github.com/sourcehawk/triagent/pkg/mcp/cloud/providers/gcp"
 	"github.com/sourcehawk/triagent/pkg/mcp/git"
 	"github.com/sourcehawk/triagent/pkg/mcp/incidentio"
@@ -469,7 +470,7 @@ func newCloudProvider(name string) (cloud.Provider, error) {
 	case "gcp":
 		return gcp.New()
 	case "aws":
-		return nil, fmt.Errorf("cloud provider %q is not built yet", name)
+		return aws.New()
 	default:
 		return nil, fmt.Errorf("unknown cloud --provider %q (want gcp or aws)", name)
 	}
