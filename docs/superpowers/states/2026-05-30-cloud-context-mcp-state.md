@@ -24,7 +24,7 @@ status: developing
 | ----- | ------ | ------------- | ----------- | ------ |
 | #45 — scaffold + harness | (merged, branch deleted) | (removed) | #48 → feature/cloud-context-mcp | self-merged |
 | #43 — GCP provider | (merged, branch deleted) | (removed) | #49 → feature/cloud-context-mcp | self-merged |
-| #46 — AWS provider | feature/cloud-context-mcp--aws | .claude/worktrees/cloud-context-mcp--aws | _tbd_ → feature/cloud-context-mcp | dispatched |
+| #46 — AWS provider | (merged, branch deleted) | (removed) | #50 → feature/cloud-context-mcp | self-merged |
 | #47 — launcher integration | _tbd (Wave 2b)_ | _tbd (Wave 2b)_ | _tbd_ → feature/cloud-context-mcp | blocked (Wave 2b: needs #43 + #46 merged) |
 
 ## Contracts
