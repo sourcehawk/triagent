@@ -61,6 +61,19 @@ extra_mcps:
   - alias: org-docs
     description: Org-internal docs MCP, hosted via Claude Code.
 
+# Read-only cloud-context sources. Each entry attaches a
+# triagent-cloud-<alias> MCP so the agent can read GCP / AWS context
+# (reachability, IAM, GKE/EKS config, logs, audit) during triage. The
+# identity is pinned here, never entered in the UI. See "Cloud sources"
+# below and the Cloud providers page for SA / assume-role setup.
+cloud:
+  - alias: prod-gcp
+    provider: gcp
+    assumed_identity: triage-readonly@prod.iam.gserviceaccount.com
+    scope:
+      projects: [prod-platform]
+      regions:  [us-central1]
+
 # Authentication for cluster access. Two kinds:
 #   kubeconfig — reads $KUBECONFIG / ~/.kube/config. Zero setup.
 #   teleport   — SSO via `tsh login`. Requires the teleport block below.
@@ -379,10 +392,35 @@ checkouts at the conventional locations under `paths.*` — useful when the team
 upstream dirs fail fast with a clear error so the operator can pre-seed them manually rather than the launcher
 silently running in local-only mode.
 
+## Cloud sources
+
+The `cloud:` block attaches read-only GCP / AWS context MCPs to every investigation, one `triagent-cloud-<alias>` per entry. Each source pins a read-only identity (a service-account email for GCP, a role ARN for AWS) that the agent can read but never select or escalate, with a `scope` allowlist constraining which projects / accounts / regions any command may reference.
+
+```yaml
+cloud:
+  - alias: prod-gcp
+    provider: gcp                                                  # "gcp" | "aws"
+    assumed_identity: triage-readonly@prod.iam.gserviceaccount.com # impersonated SA
+    scope:
+      projects: [prod-platform]
+      regions:  [us-central1]
+  - alias: prod-aws
+    provider: aws
+    assumed_identity: arn:aws:iam::123456789012:role/triage-readonly # expected role ARN
+    profile: triage-readonly                                         # AWS_PROFILE assume-role selector
+    scope:
+      accounts: ["123456789012"]
+      regions:  [eu-west-1]
+    # command_allowlist_path: aws-commands.json   # override the embedded read-only default
+```
+
+The identity setup (granting `roles/iam.serviceAccountTokenCreator` on the GCP service account, configuring the AWS assume-role profile) is a one-time deployment step. See [Cloud providers](/docs/cloud-providers) for the full per-provider setup, the field reference, the scope and command allowlists, and the visible-degrade behaviour when a cloud credential is stale.
+
 ## See also
 
 - [Connections](/docs/connections). Slack and incident.io credential handling. Credentials live outside the profile,
   in `~/.config/triagent/credentials.json`.
+- [Cloud providers](/docs/cloud-providers). The read-only GCP / AWS context the `cloud:` block configures.
 - [Repos](/docs/repos). What `linked_repos` enables per repo, including the architecture-summary cache and codefix.
 - [MCP](/docs/mcp). The tool catalog `extra_mcps` extends.
 - [`profile.yaml`](https://github.com/sourcehawk/triagent/blob/main/internal/profile/profiles/default/profile.yaml).

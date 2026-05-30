@@ -8,7 +8,7 @@ import remarkGfm from "remark-gfm";
 // human label drives the left-rail rendering; the slug is the URL
 // query value the page persists (so deep links into /?view=docs&docs=mcp
 // land on the right page).
-type SectionID = "overview" | "investigations" | "watches" | "mcp" | "playbooks" | "wiki" | "repos" | "connections" | "profiles";
+type SectionID = "overview" | "investigations" | "watches" | "mcp" | "playbooks" | "wiki" | "repos" | "connections" | "cloud-providers" | "profiles";
 
 const SECTIONS: { id: SectionID; label: string; subtitle: string }[] = [
   {
@@ -50,6 +50,11 @@ const SECTIONS: { id: SectionID; label: string; subtitle: string }[] = [
     id: "connections",
     label: "Connections",
     subtitle: "Slack and incident.io integrations",
+  },
+  {
+    id: "cloud-providers",
+    label: "Cloud providers",
+    subtitle: "Read-only GCP and AWS investigation context",
   },
   {
     id: "profiles",
