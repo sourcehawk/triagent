@@ -15,8 +15,8 @@ status: developing
 ## Phases
 
 - **Phase 1 (foundational)** — `#45` (scaffold + harness; produces every contract). **Done** — self-merged as #48.
-- **Phase 2a (providers, parallel)** — `#43` (GCP provider), `#46` (AWS provider). In flight.
-- **Phase 2b (launcher, gated)** — `#47` (launcher integration). Gated on **both** #43 and #46 self-merging: its preflight + connections probe constructs `cloud.Provider` values to call `cloud.Probe`, so it imports the provider packages (see Bubble-up log). Dispatched only after 2a merges and the shared provider factory exists.
+- **Phase 2a (providers, parallel)** — `#43` (GCP provider), `#46` (AWS provider). **Done** — self-merged as #49 / #50. Wave-boundary checkpoint clean: e2e `make test-go` + `make lint` green; coherence sweep found no align-now drift (identical provider layout/constructor/idiom; two differences both deliberate-justified by the gcp-impersonation vs aws-assume-role mechanisms).
+- **Phase 2b (parallel)** — `#47` (launcher integration; builds the shared provider factory + profile/mcpconfig/preflight/connections/frontend) and a **probe-env remediation** sub-PR (parent `cloud` package: make `cloud.Probe` use the minimal env, per Bubble-up log). Disjoint file sets (`#47`: factory + `cmd/.../serve.go` + `internal/*` + frontend; probe-env: `pkg/mcp/cloud/probe.go` + `server.go`), so they run concurrently.
 
 ## PRs / worktrees
 
@@ -25,7 +25,8 @@ status: developing
 | #45 — scaffold + harness | (merged, branch deleted) | (removed) | #48 → feature/cloud-context-mcp | self-merged |
 | #43 — GCP provider | (merged, branch deleted) | (removed) | #49 → feature/cloud-context-mcp | self-merged |
 | #46 — AWS provider | (merged, branch deleted) | (removed) | #50 → feature/cloud-context-mcp | self-merged |
-| #47 — launcher integration | _tbd (Wave 2b)_ | _tbd (Wave 2b)_ | _tbd_ → feature/cloud-context-mcp | blocked (Wave 2b: needs #43 + #46 merged) |
+| #47 — launcher integration | feature/cloud-context-mcp--launcher | .claude/worktrees/cloud-context-mcp--launcher | _tbd_ → feature/cloud-context-mcp | dispatched |
+| probe-env remediation (epic #44) | feature/cloud-context-mcp--probe-env | .claude/worktrees/cloud-context-mcp--probe-env | _tbd_ → feature/cloud-context-mcp | dispatched |
 
 ## Contracts
 
