@@ -114,4 +114,4 @@ func keyOf(argv []string) string {
 	return out
 }
 
-var errAccessDenied = errors.New("An error occurred (AccessDeniedException) when calling the ListAccounts operation")
+var errAccessDenied = errors.New("access denied (AccessDeniedException) when calling the ListAccounts operation")
