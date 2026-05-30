@@ -10,92 +10,86 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// authListJSON is captured `gcloud auth list --format=json` output: an array of
-// accounts, exactly one with status ACTIVE.
-const authListJSON = `[
-  {
-    "account": "ro-sa@proj.iam.gserviceaccount.com",
-    "status": "ACTIVE"
-  },
-  {
-    "account": "operator@example.com",
-    "status": ""
-  }
-]`
+const targetSA = "ro-sa@proj.iam.gserviceaccount.com"
 
-func runReturning(out string) cloud.RunFunc {
-	return func(context.Context, []string) (cloud.CLIResult, error) {
-		return cloud.CLIResult{Stdout: out}, nil
-	}
+// fakeRun returns a canned CLIResult/error for a given argv, recording the
+// argv it was called with so a test can assert the probe drove the right CLI.
+type fakeRun struct {
+	result cloud.CLIResult
+	err    error
+	calls  [][]string
 }
 
-func TestIdentityResolvesActiveAccountAsTarget(t *testing.T) {
-	p, err := newWithBinary("/usr/bin/gcloud")
-	require.NoError(t, err)
-
-	st, err := p.Identity(context.Background(), runReturning(authListJSON), "ro-sa@proj.iam.gserviceaccount.com")
-	require.NoError(t, err)
-	assert.Equal(t, "gcp", st.Provider)
-	assert.Equal(t, "ro-sa@proj.iam.gserviceaccount.com", st.AssumedIdentity)
-	assert.True(t, st.Valid, "active account equals the impersonation target")
-}
-
-func TestIdentityInvalidWhenActiveAccountIsNotTheTarget(t *testing.T) {
-	p, err := newWithBinary("/usr/bin/gcloud")
-	require.NoError(t, err)
-
-	mismatch := `[{"account": "operator@example.com", "status": "ACTIVE"}]`
-	st, err := p.Identity(context.Background(), runReturning(mismatch), "ro-sa@proj.iam.gserviceaccount.com")
-	require.NoError(t, err)
-	assert.Equal(t, "operator@example.com", st.AssumedIdentity)
-	assert.False(t, st.Valid, "active account differs from the impersonation target")
-	assert.NotEmpty(t, st.Hint)
-}
-
-func TestIdentityInvalidWhenNoActiveAccount(t *testing.T) {
-	p, err := newWithBinary("/usr/bin/gcloud")
-	require.NoError(t, err)
-
-	st, err := p.Identity(context.Background(), runReturning(`[]`), "ro-sa@proj.iam.gserviceaccount.com")
-	require.NoError(t, err)
-	assert.Empty(t, st.AssumedIdentity)
-	assert.False(t, st.Valid)
-	assert.NotEmpty(t, st.Hint)
+func (f *fakeRun) run(_ context.Context, argv []string) (cloud.CLIResult, error) {
+	f.calls = append(f.calls, argv)
+	return f.result, f.err
 }
 
 func TestIdentityInvalidWhenNoImpersonationTargetPinned(t *testing.T) {
+	t.Setenv(EnvImpersonate, targetSA)
 	p, err := newWithBinary("/usr/bin/gcloud")
 	require.NoError(t, err)
 
-	st, err := p.Identity(context.Background(), runReturning(authListJSON), "")
+	f := &fakeRun{result: cloud.CLIResult{Stdout: `"token"`}}
+	st, err := p.Identity(context.Background(), f.run, "")
 	require.NoError(t, err)
 	assert.False(t, st.Valid, "no pinned target means the session is not validly pinned")
 	assert.NotEmpty(t, st.Hint)
+	assert.Empty(t, f.calls, "no probe should run without a target")
+}
+
+func TestIdentityInvalidWhenImpersonationEnvNotPinnedToExpected(t *testing.T) {
+	t.Setenv(EnvImpersonate, "someone-else@proj.iam.gserviceaccount.com")
+	p, err := newWithBinary("/usr/bin/gcloud")
+	require.NoError(t, err)
+
+	f := &fakeRun{result: cloud.CLIResult{Stdout: `"token"`}}
+	st, err := p.Identity(context.Background(), f.run, targetSA)
+	require.NoError(t, err)
+	assert.False(t, st.Valid, "impersonation env pinned to a different SA is invalid")
+	assert.NotEmpty(t, st.Hint)
+	assert.Empty(t, f.calls, "a mismatched pin short-circuits before the probe")
+}
+
+func TestIdentityValidWhenImpersonatedReadSucceeds(t *testing.T) {
+	t.Setenv(EnvImpersonate, targetSA)
+	p, err := newWithBinary("/usr/bin/gcloud")
+	require.NoError(t, err)
+
+	f := &fakeRun{result: cloud.CLIResult{Stdout: `"ya29.token"`}}
+	st, err := p.Identity(context.Background(), f.run, targetSA)
+	require.NoError(t, err)
+	assert.Equal(t, "gcp", st.Provider)
+	assert.Equal(t, targetSA, st.AssumedIdentity, "the SA is the identity the session acts as")
+	assert.True(t, st.Valid, "a successful impersonated read proves the pin took effect")
+	require.Len(t, f.calls, 1)
+	assert.Equal(t, []string{"auth", "print-access-token", "--format=json"}, f.calls[0])
+}
+
+func TestIdentityInvalidWhenImpersonatedReadFails(t *testing.T) {
+	t.Setenv(EnvImpersonate, targetSA)
+	p, err := newWithBinary("/usr/bin/gcloud")
+	require.NoError(t, err)
+
+	f := &fakeRun{result: cloud.CLIResult{
+		ExitCode: 1,
+		Stderr:   "ERROR: Permission 'iam.serviceAccounts.getAccessToken' denied",
+	}}
+	st, err := p.Identity(context.Background(), f.run, targetSA)
+	require.NoError(t, err)
+	assert.False(t, st.Valid, "a failed impersonated read means the pin did not take effect")
+	assert.Contains(t, st.Hint, "iam.serviceAccounts.getAccessToken",
+		"the hint surfaces the captured stderr")
 }
 
 func TestIdentitySurfacesRunErrorAsHint(t *testing.T) {
+	t.Setenv(EnvImpersonate, targetSA)
 	p, err := newWithBinary("/usr/bin/gcloud")
 	require.NoError(t, err)
 
-	failing := cloud.RunFunc(func(context.Context, []string) (cloud.CLIResult, error) {
-		return cloud.CLIResult{}, errors.New("gcloud not authenticated")
-	})
-	st, err := p.Identity(context.Background(), failing, "ro-sa@proj.iam.gserviceaccount.com")
+	f := &fakeRun{err: errors.New("gcloud not authenticated")}
+	st, err := p.Identity(context.Background(), f.run, targetSA)
 	require.NoError(t, err, "a degraded auth state surfaces through Valid/Hint, not a Go error")
 	assert.False(t, st.Valid)
 	assert.Contains(t, st.Hint, "gcloud not authenticated")
-}
-
-func TestIdentityCallsAuthListWithJSONFormat(t *testing.T) {
-	p, err := newWithBinary("/usr/bin/gcloud")
-	require.NoError(t, err)
-
-	var gotArgv []string
-	capturing := cloud.RunFunc(func(_ context.Context, argv []string) (cloud.CLIResult, error) {
-		gotArgv = argv
-		return cloud.CLIResult{Stdout: authListJSON}, nil
-	})
-	_, err = p.Identity(context.Background(), capturing, "ro-sa@proj.iam.gserviceaccount.com")
-	require.NoError(t, err)
-	assert.Equal(t, []string{"auth", "list", "--filter=status:ACTIVE", "--format=json"}, gotArgv)
 }

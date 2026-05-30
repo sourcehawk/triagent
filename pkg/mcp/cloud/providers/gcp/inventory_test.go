@@ -26,6 +26,12 @@ const projectsListJSON = `[
   }
 ]`
 
+func runReturning(out string) cloud.RunFunc {
+	return func(context.Context, []string) (cloud.CLIResult, error) {
+		return cloud.CLIResult{Stdout: out}, nil
+	}
+}
+
 func TestInventoryProjectsIDAndName(t *testing.T) {
 	t.Parallel()
 	p, err := newWithBinary("/usr/bin/gcloud")
@@ -62,6 +68,19 @@ func TestInventoryCallsProjectsListWithJSONFormat(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []string{"projects", "list", "--format=json"}, gotArgv,
 		"the inventory argv must match the allowlisted `projects list` verb chain exactly")
+}
+
+func TestInventoryErrorsOnNonZeroExit(t *testing.T) {
+	t.Parallel()
+	p, err := newWithBinary("/usr/bin/gcloud")
+	require.NoError(t, err)
+
+	failing := cloud.RunFunc(func(context.Context, []string) (cloud.CLIResult, error) {
+		return cloud.CLIResult{ExitCode: 1, Stderr: "ERROR: (gcloud.projects.list) PERMISSION_DENIED"}, nil
+	})
+	_, err = p.Inventory(context.Background(), failing)
+	require.Error(t, err, "a non-zero exit is a real failure, not a parse error")
+	assert.Contains(t, err.Error(), "PERMISSION_DENIED", "the error surfaces the captured stderr")
 }
 
 func TestInventoryErrorsWhenRunErrors(t *testing.T) {

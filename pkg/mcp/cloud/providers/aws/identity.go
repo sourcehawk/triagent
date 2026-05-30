@@ -70,23 +70,56 @@ func evaluateIdentity(arn, expectedRoleARN string) (bool, string) {
 
 // assumedRoleARN reports whether arn is an STS assumed-role ARN and, if so,
 // returns the canonical IAM role ARN behind it. An assumed-role ARN has the
-// shape arn:aws:sts::<account>:assumed-role/<role-name>/<session>; the IAM role
-// it stands for is arn:aws:iam::<account>:role/<role-name>.
+// shape arn:<partition>:sts::<account>:assumed-role/<role-path-and-name>/<session>,
+// across the aws, aws-us-gov, and aws-cn partitions. The role keeps any IAM
+// path: the role-path-and-name is everything between "assumed-role/" and the
+// final "/<session>" segment, so a path-prefixed role like
+// assumed-role/team/sub/Role/session resolves to role/team/sub/Role. The IAM
+// role it stands for is arn:<partition>:iam::<account>:role/<role-path-and-name>.
 func assumedRoleARN(arn string) (string, bool) {
-	const prefix = "arn:aws:sts::"
+	const stsInfix = ":sts::"
 	const marker = ":assumed-role/"
-	if !strings.HasPrefix(arn, prefix) {
+	partition, ok := arnPartition(arn)
+	if !ok {
+		return "", false
+	}
+	if !strings.HasPrefix(arn, "arn:"+partition+stsInfix) {
 		return "", false
 	}
 	idx := strings.Index(arn, marker)
 	if idx < 0 {
 		return "", false
 	}
-	account := arn[len(prefix):idx]
+	account := arn[len("arn:"+partition+stsInfix):idx]
 	rest := arn[idx+len(marker):]
-	roleName, _, found := strings.Cut(rest, "/")
-	if !found || roleName == "" || account == "" {
+	// The session name is the final slash-delimited segment; the role path and
+	// name is everything before it.
+	rolePath, _, found := lastCut(rest, "/")
+	if !found || rolePath == "" || account == "" {
 		return "", false
 	}
-	return fmt.Sprintf("arn:aws:iam::%s:role/%s", account, roleName), true
+	return fmt.Sprintf("arn:%s:iam::%s:role/%s", partition, account, rolePath), true
+}
+
+// arnPartition returns the partition segment of an ARN (the field between the
+// first two colons of "arn:<partition>:...").
+func arnPartition(arn string) (string, bool) {
+	rest, ok := strings.CutPrefix(arn, "arn:")
+	if !ok {
+		return "", false
+	}
+	partition, _, found := strings.Cut(rest, ":")
+	if !found || partition == "" {
+		return "", false
+	}
+	return partition, true
+}
+
+// lastCut splits s around the last instance of sep, returning the text before
+// and after it. found reports whether sep appears in s.
+func lastCut(s, sep string) (before, after string, found bool) {
+	if i := strings.LastIndex(s, sep); i >= 0 {
+		return s[:i], s[i+len(sep):], true
+	}
+	return s, "", false
 }

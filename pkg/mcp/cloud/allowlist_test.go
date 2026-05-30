@@ -48,11 +48,37 @@ func TestLoadCommandAllowlistMergesProviderDenyFloorAdditions(t *testing.T) {
 		"compute instances list should remain allowed")
 }
 
-func TestAllowsMatchesLongestPathPrefix(t *testing.T) {
+func TestAllowsMatchesVerbChainAsPrefix(t *testing.T) {
 	t.Parallel()
 	al := &CommandAllowlist{Commands: []Command{{Path: "compute firewall-rules list"}}}
 	assert.True(t, al.Allows([]string{"compute", "firewall-rules", "list", "--project", "prod"}),
 		"argv whose leading tokens match an allowed path should pass")
 	assert.False(t, al.Allows([]string{"compute", "firewall-rules", "delete"}),
 		"a different verb under the same group must not be allowed")
+}
+
+func TestAllowsAcceptsResourceOperandAfterVerbChain(t *testing.T) {
+	t.Parallel()
+	al := &CommandAllowlist{Commands: []Command{{Path: "compute instances describe"}}}
+	// A describe/get command takes a resource operand as a trailing positional;
+	// the allowlisted verb chain must match as a prefix so the operand rides
+	// through. There is no shell, so the operand is an inert argument.
+	assert.True(t, al.Allows([]string{"compute", "instances", "describe", "my-vm", "--project", "prod"}),
+		"an allowlisted verb chain followed by a resource operand must pass")
+	assert.True(t, al.Allows([]string{"compute", "instances", "describe", "my-vm", "us-vm-2"}),
+		"trailing positionals after the verb chain must pass")
+}
+
+func TestAllowsRejectsArgvShorterThanPath(t *testing.T) {
+	t.Parallel()
+	al := &CommandAllowlist{Commands: []Command{{Path: "compute instances describe"}}}
+	assert.False(t, al.Allows([]string{"compute", "instances"}),
+		"an argv shorter than the allowlisted path is not a match")
+}
+
+func TestAllowsRejectsDifferentVerbAtPrefixDepth(t *testing.T) {
+	t.Parallel()
+	al := &CommandAllowlist{Commands: []Command{{Path: "compute instances describe"}}}
+	assert.False(t, al.Allows([]string{"compute", "instances", "delete", "my-vm"}),
+		"a different verb at the same depth must not match")
 }

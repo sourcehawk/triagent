@@ -73,6 +73,7 @@ type IdentityStatus struct {
 // is never surfaced; the harness caps output and reports truncation.
 type CLIResult struct {
 	Stdout    string `json:"stdout"`
+	Stderr    string `json:"stderr,omitempty"`
 	Truncated bool   `json:"truncated"`
 	ExitCode  int    `json:"exit_code"`
 }

@@ -29,6 +29,10 @@ func TestValidateArgvRejectsDenyFloorAndScope(t *testing.T) {
 		{"metachar-semicolon", []string{"compute", "instances", "list", ";", "rm", "-rf", "/"}, false},
 		{"metachar-pipe", []string{"compute", "instances", "list", "|", "cat"}, false},
 		{"metachar-subshell", []string{"compute", "instances", "list", "$(whoami)"}, false},
+		{"metachar-backtick", []string{"compute", "instances", "list", "`id`"}, false},
+		{"metachar-redirect", []string{"compute", "instances", "list", ">", "/tmp/x"}, false},
+		{"metachar-and", []string{"compute", "instances", "list", "&&", "rm"}, false},
+		{"metachar-embedded", []string{"compute", "instances", "list", "--filter=a$(id)"}, false},
 		{"not-allowed", []string{"iam", "service-accounts", "create"}, false},
 		{"empty", []string{}, false},
 	}
@@ -56,6 +60,37 @@ func TestValidateArgvEqualsFormFlag(t *testing.T) {
 		"expected --impersonate-service-account=x (equals form) to be denied")
 	assert.NoError(t, validateArgv([]string{"compute", "instances", "list", "--project=prod"}, al, scope),
 		"expected --project=prod (equals form, in scope) to validate")
+}
+
+func TestValidateArgvAllowsResourceOperand(t *testing.T) {
+	t.Parallel()
+	al := &CommandAllowlist{Commands: []Command{{Path: "compute instances describe"}}}
+	scope := ScopeAllowlist{Projects: []string{"prod"}}
+	// describe/get verbs take a resource operand; the allowlisted verb chain
+	// matches as a prefix, and the operand is an inert positional argument.
+	assert.NoError(t, validateArgv(
+		[]string{"compute", "instances", "describe", "my-vm", "--project", "prod"}, al, scope),
+		"an allowlisted verb chain plus a resource operand must validate")
+}
+
+func TestValidateArgvRejectsMetacharInAnyPosition(t *testing.T) {
+	t.Parallel()
+	al := &CommandAllowlist{Commands: []Command{{Path: "compute instances describe"}}}
+	scope := ScopeAllowlist{}
+	for _, argv := range [][]string{
+		{"compute", "instances", "describe", "my-vm", ";", "rm"},
+		{"compute", "instances", "describe", ";", "my-vm"},
+		{"compute", "instances", "describe", "my-vm|cat"},
+		{"compute", "instances", "describe", "my-vm", "&&", "id"},
+	} {
+		assert.Errorf(t, validateArgv(argv, al, scope),
+			"a metacharacter token in %v must be rejected", argv)
+	}
+	// A literal resource name and a key=value filter contain no shell-control
+	// characters and must pass.
+	assert.NoError(t, validateArgv(
+		[]string{"compute", "instances", "describe", "my-vm", "--filter=name=foo"}, al, scope),
+		"a plain resource name and a key=value filter must pass")
 }
 
 func TestValidateArgvEmptyScopeAllowsAnyTarget(t *testing.T) {

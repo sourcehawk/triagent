@@ -2,65 +2,62 @@ package gcp
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
+	"os"
 
 	"github.com/sourcehawk/triagent/pkg/mcp/cloud"
 )
 
-// authAccount is one entry of `gcloud auth list --format=json`.
-type authAccount struct {
-	Account string `json:"account"`
-	Status  string `json:"status"`
-}
-
 // Identity is the read-only whoami. It is called by cloud.Probe with an
 // unvalidated RunFunc, so it may use the deny-floored `auth` subcommand
-// directly: it reads the active account and reports the session valid only when
-// that account equals expected, the impersonation target the launcher pinned. A
+// directly. Validity means "impersonation is pinned to the expected SA and the
+// pin actually works", not "logged in directly as the SA": gcloud impersonation
+// keeps the operator's base account active while every call assumes the target
+// SA, so comparing the base account to the target would mark a correctly
+// configured session invalid.
+//
+// The probe reads the in-process impersonation env (the launcher sets it on the
+// subprocess; the agent cannot reach it), confirms it is pinned to the expected
+// target, then runs a minimal impersonated read to prove the pin took effect. A
 // degraded auth state surfaces through Valid and Hint, never a Go error.
+//
+// NOTE: validated against gcloud's documented impersonation behavior; verify
+// against a live gcloud before relying on the exact print-access-token shape.
 func (p *Provider) Identity(ctx context.Context, run cloud.RunFunc, expected string) (cloud.IdentityStatus, error) {
-	res, err := run(ctx, []string{"auth", "list", "--filter=status:ACTIVE", "--format=json"})
-	if err != nil {
-		return cloud.IdentityStatus{Provider: "gcp", Valid: false, Hint: err.Error()}, nil
-	}
+	st := cloud.IdentityStatus{Provider: "gcp"}
 
-	var accounts []authAccount
-	if err := json.Unmarshal([]byte(res.Stdout), &accounts); err != nil {
-		return cloud.IdentityStatus{
-			Provider: "gcp",
-			Valid:    false,
-			Hint:     fmt.Sprintf("parse gcloud auth list output: %v", err),
-		}, nil
-	}
-
-	active := activeAccount(accounts)
-	st := cloud.IdentityStatus{Provider: "gcp", AssumedIdentity: active}
-
-	switch {
-	case expected == "":
+	if expected == "" {
 		st.Valid = false
 		st.Hint = "no impersonation target pinned; set " + EnvImpersonate + " on the cloud MCP subprocess"
-	case active == "":
-		st.Valid = false
-		st.Hint = "no active gcloud account; run: gcloud auth login"
-	case active != expected:
-		st.Valid = false
-		st.Hint = fmt.Sprintf("active account %q is not the pinned identity %q", active, expected)
-	default:
-		st.Valid = true
+		return st, nil
 	}
-	return st, nil
-}
 
-// activeAccount returns the first account marked ACTIVE, or "" when none is. The
-// --filter=status:ACTIVE argv already narrows this server-side; the status check
-// is the belt to that braces.
-func activeAccount(accounts []authAccount) string {
-	for _, a := range accounts {
-		if a.Status == "ACTIVE" {
-			return a.Account
-		}
+	pinned := os.Getenv(EnvImpersonate)
+	if pinned != expected {
+		st.Valid = false
+		st.Hint = EnvImpersonate + " is not pinned to the expected identity " + expected +
+			"; the launcher must set it on the cloud MCP subprocess"
+		return st, nil
 	}
-	return ""
+
+	// Minimal impersonated read: succeeds only when the pinned SA can mint a
+	// token, which proves the impersonation grant is in place and active.
+	res, err := run(ctx, []string{"auth", "print-access-token", "--format=json"})
+	if err != nil {
+		st.Valid = false
+		st.Hint = err.Error()
+		return st, nil
+	}
+	if res.ExitCode != 0 {
+		st.Valid = false
+		hint := "impersonation failed; check the serviceAccountTokenCreator grant or re-auth: gcloud auth login"
+		if res.Stderr != "" {
+			hint = res.Stderr + " — " + hint
+		}
+		st.Hint = hint
+		return st, nil
+	}
+
+	st.AssumedIdentity = expected
+	st.Valid = true
+	return st, nil
 }
