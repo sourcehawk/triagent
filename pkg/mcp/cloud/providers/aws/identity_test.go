@@ -90,6 +90,60 @@ func TestIdentityRejectsMismatchedExpectedRoleArn(t *testing.T) {
 	assert.NotEmpty(t, st.Hint)
 }
 
+func TestAssumedRoleARNParsesPartitionsAndPaths(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		arn  string
+		want string
+		ok   bool
+	}{
+		{
+			"commercial",
+			"arn:aws:sts::111122223333:assumed-role/triagent-readonly/session",
+			"arn:aws:iam::111122223333:role/triagent-readonly",
+			true,
+		},
+		{
+			"gov-cloud",
+			"arn:aws-us-gov:sts::111122223333:assumed-role/triagent-readonly/session",
+			"arn:aws-us-gov:iam::111122223333:role/triagent-readonly",
+			true,
+		},
+		{
+			"china",
+			"arn:aws-cn:sts::111122223333:assumed-role/triagent-readonly/session",
+			"arn:aws-cn:iam::111122223333:role/triagent-readonly",
+			true,
+		},
+		{
+			"iam-path",
+			"arn:aws:sts::111122223333:assumed-role/team/sub/triagent-readonly/session",
+			"arn:aws:iam::111122223333:role/team/sub/triagent-readonly",
+			true,
+		},
+		{
+			"plain-user",
+			"arn:aws:iam::111122223333:user/operator",
+			"",
+			false,
+		},
+		{
+			"no-session",
+			"arn:aws:sts::111122223333:assumed-role/triagent-readonly",
+			"",
+			false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := assumedRoleARN(tc.arn)
+			assert.Equal(t, tc.ok, ok)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
 func TestIdentityInvalidOnNonZeroExit(t *testing.T) {
 	f := &fakeRun{results: map[string]cloud.CLIResult{
 		"sts get-caller-identity": {ExitCode: 255, Stdout: ""},
