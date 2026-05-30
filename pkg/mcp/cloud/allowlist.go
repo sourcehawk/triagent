@@ -100,13 +100,15 @@ func LoadCommandAllowlist(path string, extra DenyFloor) (*CommandAllowlist, erro
 	return &list, nil
 }
 
-// Allows reports whether argv's leading subcommand tokens match an allowlisted
-// command path. Flag tokens and their values do not participate in the match;
-// only the positional subcommand path does.
+// Allows reports whether argv's positional subcommand path exactly equals an
+// allowlisted command path. Flag tokens and their values do not participate;
+// only the leading positionals do. The match is exact rather than prefix so a
+// surplus positional — a shell metacharacter token, an extra argument — never
+// rides through on the back of an allowed prefix.
 func (a *CommandAllowlist) Allows(argv []string) bool {
 	path := subcommandPath(argv)
 	for _, c := range a.Commands {
-		if pathHasPrefix(path, normalizePath(c.Path)) {
+		if pathEqual(path, normalizePath(c.Path)) {
 			return true
 		}
 	}
@@ -153,6 +155,19 @@ func pathHasPrefix(path, prefix []string) bool {
 	}
 	for i := range prefix {
 		if path[i] != prefix[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// pathEqual reports whether two token paths are identical.
+func pathEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
 			return false
 		}
 	}
