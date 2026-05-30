@@ -22,6 +22,19 @@ import (
 //go:embed default_commands.json
 var defaultCommandsJSON []byte
 
+// Provider satisfies the cloud.Provider contract.
+var _ cloud.Provider = (*Provider)(nil)
+
+// AWS account scoping decision (bubble-up from #45): the cloud package's
+// ScopeAllowlist.Accounts field is not enforced in validateArgv, and AWS has no
+// single --account flag to scope on. In the operator-ambient model the account
+// is fixed by the assume-role profile (AWS_PROFILE): the pinned identity can only
+// act in the account(s) its role grants, so the identity itself constrains the
+// account and argv-level account scoping is unnecessary here. Region scoping
+// (the --region/--zone axis) is still enforced by validateArgv against
+// ScopeAllowlist.Regions. If a future deployment needs sub-account argv scoping,
+// it belongs in the shared validateArgv, not in this provider.
+
 // Provider is the AWS realization of cloud.Provider. binary is resolved once at
 // construction (overridable in tests); allowlist is the parsed embedded default.
 type Provider struct {
