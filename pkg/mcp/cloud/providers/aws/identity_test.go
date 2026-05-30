@@ -75,6 +75,8 @@ func TestIdentityMatchesExpectedRoleArnWhenPinned(t *testing.T) {
 	st, err := p.Identity(context.Background(), f.run, "arn:aws:iam::111122223333:role/triagent-readonly")
 	require.NoError(t, err)
 	assert.True(t, st.Valid, "assumed-role ARN whose role matches the pinned expectation is valid")
+	assert.Equal(t, "arn:aws:iam::111122223333:role/triagent-readonly", st.AssumedIdentity,
+		"a matched pin displays the canonical configured role ARN, not the per-session STS ARN")
 }
 
 func TestIdentityRejectsMismatchedExpectedRoleArn(t *testing.T) {
