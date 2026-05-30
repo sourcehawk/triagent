@@ -12,7 +12,9 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 
+	"github.com/sourcehawk/triagent/internal/profile"
 	"github.com/sourcehawk/triagent/pkg/auth"
+	"github.com/sourcehawk/triagent/pkg/mcp/cloud"
 )
 
 // fakeProvider lets the preflight gate be tested without a real tsh session.
@@ -223,4 +225,63 @@ func TestRun_EmptyNamespaceAuthenticatedWritesConfig(t *testing.T) {
 	assert.NotEmpty(t, res.MCPConfigPath, "MCP config should still be written for scope-unknown sessions")
 	_, statErr := os.Stat(res.MCPConfigPath)
 	assert.NoError(t, statErr, "MCPConfigPath should reference an existing file")
+}
+
+// A failed cloud probe degrades the source but never fails the session: the
+// session still starts, and the source is marked unavailable in the Result
+// with the probe's hint attached. This is the cloud-source-scoped soft-degrade
+// path; the k8s block-on-failure behaviour is unchanged.
+func TestRun_CloudProbeFailureDegradesNotBlocks(t *testing.T) {
+	t.Parallel()
+	prof := &profile.Profile{
+		Cloud: []profile.CloudSource{
+			{Alias: "prod-gcp", Provider: "gcp", AssumedIdentity: "ro@p.iam.gserviceaccount.com"},
+			{Alias: "prod-aws", Provider: "aws", AssumedIdentity: "arn:aws:iam::1:role/ro", Profile: "ro"},
+		},
+	}
+	res, err := Run(Options{
+		Provider:      fakeProvider{authenticated: true},
+		SessionDir:    t.TempDir(),
+		MCPBinaryPath: "/tmp/triagent-mcp",
+		Profile:       prof,
+		CloudProbe: func(_ context.Context, src profile.CloudSource) cloud.IdentityStatus {
+			if src.Alias == "prod-gcp" {
+				return cloud.IdentityStatus{Provider: "gcp", AssumedIdentity: src.AssumedIdentity, Valid: true}
+			}
+			return cloud.IdentityStatus{Provider: "aws", AssumedIdentity: src.AssumedIdentity, Valid: false, Hint: "run: aws sso login"}
+		},
+	})
+	require.NoError(t, err, "a failed cloud probe must not fail the session")
+	require.Len(t, res.CloudSources, 2)
+
+	byAlias := map[string]CloudSourceStatus{}
+	for _, s := range res.CloudSources {
+		byAlias[s.Alias] = s
+	}
+	assert.True(t, byAlias["prod-gcp"].Valid, "valid source must be available")
+	assert.False(t, byAlias["prod-aws"].Valid, "failed probe must mark the source unavailable")
+	assert.Equal(t, "run: aws sso login", byAlias["prod-aws"].Hint)
+}
+
+// A provider construction error (e.g. the CLI binary missing) degrades the
+// source exactly like a failed probe — it is never a session-fatal error.
+func TestRun_CloudProviderConstructionErrorDegrades(t *testing.T) {
+	t.Parallel()
+	prof := &profile.Profile{
+		Cloud: []profile.CloudSource{
+			{Alias: "no-cli", Provider: "gcp", AssumedIdentity: "ro@p.iam.gserviceaccount.com"},
+		},
+	}
+	// The default real prober runs through providers.New, which errors when
+	// gcloud is absent; assert the session still starts and the source is
+	// marked unavailable with a hint, whatever the host environment.
+	res, err := Run(Options{
+		Provider:      fakeProvider{authenticated: true},
+		SessionDir:    t.TempDir(),
+		MCPBinaryPath: "/tmp/triagent-mcp",
+		Profile:       prof,
+	})
+	require.NoError(t, err, "a provider construction error must not fail the session")
+	require.Len(t, res.CloudSources, 1)
+	assert.Equal(t, "no-cli", res.CloudSources[0].Alias)
 }

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/sourcehawk/triagent/internal/connections"
 	"github.com/sourcehawk/triagent/internal/profile"
+	"github.com/sourcehawk/triagent/pkg/mcp/cloud"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -284,4 +286,63 @@ func TestPutSlackToken_PersistsWorkspaceURLFromAuthTest(t *testing.T) {
 	wsURL, err := a.connections.GetSlackWorkspaceURL()
 	require.NoError(t, err)
 	assert.Equal(t, "https://example.slack.com", wsURL, "trailing slash must be stripped")
+}
+
+func TestGetConnections_IncludesCloudArrayProbedAtRequestTime(t *testing.T) {
+	t.Parallel()
+	prof := &profile.Profile{
+		Cloud: []profile.CloudSource{
+			{Alias: "prod-gcp", Provider: "gcp", AssumedIdentity: "ro@p.iam.gserviceaccount.com"},
+			{Alias: "prod-aws", Provider: "aws", AssumedIdentity: "arn:aws:iam::1:role/ro", Profile: "ro"},
+		},
+	}
+	a := &apiHandlers{
+		connections: connections.NewWithDir(t.TempDir()),
+		prof:        prof,
+		cloudProbe: func(_ context.Context, src profile.CloudSource) cloud.IdentityStatus {
+			if src.Provider == "gcp" {
+				return cloud.IdentityStatus{Provider: "gcp", AssumedIdentity: src.AssumedIdentity, Valid: true}
+			}
+			return cloud.IdentityStatus{Provider: "aws", AssumedIdentity: src.AssumedIdentity, Valid: false, Hint: "run: aws sso login"}
+		},
+	}
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/connections", nil)
+	a.handleGetConnections(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, "body: %s", rr.Body)
+
+	var resp struct {
+		Cloud []struct {
+			Provider        string `json:"provider"`
+			AssumedIdentity string `json:"assumed_identity"`
+			Valid           bool   `json:"valid"`
+			Hint            string `json:"hint"`
+		} `json:"cloud"`
+	}
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&resp))
+	require.Len(t, resp.Cloud, 2)
+
+	assert.Equal(t, "gcp", resp.Cloud[0].Provider)
+	assert.Equal(t, "ro@p.iam.gserviceaccount.com", resp.Cloud[0].AssumedIdentity)
+	assert.True(t, resp.Cloud[0].Valid)
+
+	assert.Equal(t, "aws", resp.Cloud[1].Provider)
+	assert.False(t, resp.Cloud[1].Valid)
+	assert.Equal(t, "run: aws sso login", resp.Cloud[1].Hint)
+}
+
+func TestGetConnections_NoCloudSources_OmitsOrEmptyCloud(t *testing.T) {
+	t.Parallel()
+	a := newConnectionsAPI(t)
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/connections", nil)
+	a.handleGetConnections(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, "body: %s", rr.Body)
+
+	var resp struct {
+		Cloud []json.RawMessage `json:"cloud"`
+	}
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&resp))
+	assert.Empty(t, resp.Cloud, "no cloud sources means an empty cloud array")
 }

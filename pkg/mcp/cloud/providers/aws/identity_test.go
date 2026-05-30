@@ -66,7 +66,7 @@ func TestIdentityInvalidWhenNotAssumedRole(t *testing.T) {
 }
 
 func TestIdentityMatchesExpectedRoleArnWhenPinned(t *testing.T) {
-	t.Setenv(envExpectedRoleARN, "arn:aws:iam::111122223333:role/triagent-readonly")
+	t.Setenv(EnvExpectedRoleARN, "arn:aws:iam::111122223333:role/triagent-readonly")
 	f := &fakeRun{results: map[string]cloud.CLIResult{
 		"sts get-caller-identity": {Stdout: callerIdentityAssumedRole},
 	}}
@@ -79,7 +79,7 @@ func TestIdentityMatchesExpectedRoleArnWhenPinned(t *testing.T) {
 }
 
 func TestIdentityRejectsMismatchedExpectedRoleArn(t *testing.T) {
-	t.Setenv(envExpectedRoleARN, "arn:aws:iam::111122223333:role/some-other-role")
+	t.Setenv(EnvExpectedRoleARN, "arn:aws:iam::111122223333:role/some-other-role")
 	f := &fakeRun{results: map[string]cloud.CLIResult{
 		"sts get-caller-identity": {Stdout: callerIdentityAssumedRole},
 	}}

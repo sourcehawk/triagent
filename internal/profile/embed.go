@@ -291,6 +291,7 @@ func applyBase(override *Profile) (*Profile, error) {
 	if override.InvestigationInputs == nil {
 		override.InvestigationInputs = base.InvestigationInputs
 	}
+	mergeCloud(override, base)
 
 	// Prompts: per-file fallback. If override is missing a key, fall back
 	// to base's content for that key.
@@ -308,4 +309,13 @@ func applyBase(override *Profile) (*Profile, error) {
 	}
 
 	return override, nil
+}
+
+// mergeCloud applies the cloud-source field's replace-on-presence rule: a nil
+// override slice inherits the base's sources; an empty-but-non-nil slice is a
+// deliberate clear that wins. Mirrors linked_repos / extra_mcps.
+func mergeCloud(override, base *Profile) {
+	if override.Cloud == nil {
+		override.Cloud = base.Cloud
+	}
 }

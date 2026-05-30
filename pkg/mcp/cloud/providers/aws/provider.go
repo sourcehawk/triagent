@@ -22,6 +22,13 @@ import (
 //go:embed default_commands.json
 var defaultCommandsJSON []byte
 
+// EnvProfile is the env var the launcher sets to select the assume-role profile
+// whose role_arn is the deployment's read-only role (with the operator's base
+// credentials as source_profile). The provider reads it through the CLI, never
+// sets it; the --profile flag stays on the agent deny floor so the agent can
+// never select the profile itself.
+const EnvProfile = "AWS_PROFILE"
+
 // Provider satisfies the cloud.Provider contract.
 var _ cloud.Provider = (*Provider)(nil)
 
@@ -95,7 +102,7 @@ func (p *Provider) DenyFloorAdditions() cloud.DenyFloor {
 // supplying them as argv. PATH and HOME are forwarded by the harness base set.
 func (p *Provider) EnvPassthrough() []string {
 	return []string{
-		"AWS_PROFILE",
+		EnvProfile,
 		"AWS_REGION",
 		"AWS_DEFAULT_REGION",
 		"AWS_CONFIG_FILE",

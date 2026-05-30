@@ -15,6 +15,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronUp,
+  Cloud,
   CloudUpload,
   Copy,
   Download,
@@ -32,6 +33,7 @@ type Props = { className?: string };
 export const ArrowLeftIcon = ArrowLeft;
 export const ArrowRightIcon = ArrowRight;
 export const CheckIcon = Check;
+export const CloudIcon = Cloud;
 export const ChevronDownIcon = ChevronDown;
 export const ChevronLeftIcon = ChevronLeft;
 export const ChevronRightIcon = ChevronRight;

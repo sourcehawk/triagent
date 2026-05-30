@@ -1,9 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, ApiError, type ConnectionStatus } from "@/lib/api";
+import {
+  api,
+  ApiError,
+  type CloudConnection,
+  type ConnectionStatus,
+} from "@/lib/api";
 import { useDialog } from "@/lib/dialog";
-import { IncidentIoIcon, SlackIcon } from "./Icons";
+import { CheckIcon, CloudIcon, IncidentIoIcon, SlackIcon } from "./Icons";
 import { Spinner } from "./Spinner";
 
 // ConnectionsPanel sits at the bottom of the sidenav next to
@@ -189,7 +194,71 @@ function ManageConnectionsModal({
             onChanged={onChanged}
           />
         </div>
+
+        <CloudConnectionsSection cloud={status?.cloud ?? []} />
       </div>
+    </div>
+  );
+}
+
+// CloudConnectionsSection renders the profile-configured cloud connections as
+// read-only pills: the assumed identity with a checkmark when the probe is
+// valid, the reauth hint when not. Cloud is configured in the profile, never
+// entered here — these pills carry no edit affordance. Omitted entirely when no
+// cloud sources are configured.
+function CloudConnectionsSection({ cloud }: { cloud: CloudConnection[] }) {
+  if (cloud.length === 0) return null;
+  return (
+    <div className="mt-4" data-testid="cloud-connections">
+      <div className="mb-2 flex items-center gap-2 text-xs uppercase tracking-wide text-zinc-500">
+        <CloudIcon className="h-3.5 w-3.5" />
+        cloud
+      </div>
+      <p className="mb-2 text-xs text-zinc-500">
+        Read-only cloud identities pinned in the deployment profile. Fix a stale
+        credential through your own cloud login before starting a session.
+      </p>
+      <div className="space-y-2">
+        {cloud.map((c, i) => (
+          <CloudPill key={`${c.provider}-${c.assumed_identity}-${i}`} conn={c} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CloudPill({ conn }: { conn: CloudConnection }) {
+  return (
+    <div
+      data-cloud-pill
+      className="rounded border border-zinc-800 bg-zinc-900/40 p-3"
+    >
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="text-[10px] uppercase tracking-wide text-zinc-500">
+            {conn.provider}
+          </span>
+          <span className="truncate font-mono text-xs text-zinc-200">
+            {conn.assumed_identity}
+          </span>
+        </div>
+        {conn.valid ? (
+          <span
+            className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-emerald-300/80"
+            title="identity valid"
+          >
+            <CheckIcon className="h-3.5 w-3.5" />
+            valid
+          </span>
+        ) : (
+          <span className="text-[10px] uppercase tracking-wide text-amber-300/80">
+            unavailable
+          </span>
+        )}
+      </div>
+      {!conn.valid && conn.hint && (
+        <div className="mt-1 text-xs text-amber-200/70">{conn.hint}</div>
+      )}
     </div>
   );
 }

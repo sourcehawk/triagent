@@ -9,6 +9,9 @@ import (
 
 	"github.com/sourcehawk/triagent/internal/profile"
 	"github.com/sourcehawk/triagent/internal/repos"
+	"github.com/sourcehawk/triagent/pkg/mcp/cloud"
+	"github.com/sourcehawk/triagent/pkg/mcp/cloud/providers/aws"
+	"github.com/sourcehawk/triagent/pkg/mcp/cloud/providers/gcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -381,4 +384,85 @@ func TestWriteMCPConfig_KubeconfigInjectedIntoEveryServer(t *testing.T) {
 	for alias, srv := range cfg.MCPServers {
 		assert.Equal(t, "/tmp/kubeconfig", srv.Env["KUBECONFIG"], "server %q env KUBECONFIG", alias)
 	}
+}
+
+func TestWriteMCPConfig_NoCloudSources_OmitsCloudServer(t *testing.T) {
+	t.Parallel()
+	in := baseInputs(t)
+	path, err := writeMCPConfig(in)
+	require.NoError(t, err)
+	for alias := range readMCPConfig(t, path) {
+		assert.NotContains(t, alias, MCPAliasCloudPrefix,
+			"no cloud sources means no triagent-cloud-<alias> server")
+	}
+}
+
+func TestWriteMCPConfig_GCPCloudSource_RegistersServerWithImpersonationEnv(t *testing.T) {
+	t.Parallel()
+	in := baseInputs(t)
+	in.CloudSources = []profile.CloudSource{{
+		Alias:                "prod-gcp",
+		Provider:             "gcp",
+		AssumedIdentity:      "triage-ro@prod.iam.gserviceaccount.com",
+		Scope:                cloud.ScopeAllowlist{Projects: []string{"prod-a"}},
+		CommandAllowlistPath: "/etc/triagent/gcp-allow.json",
+	}}
+	path, err := writeMCPConfig(in)
+	require.NoError(t, err)
+	servers := readMCPConfig(t, path)
+
+	alias := MCPAliasCloudPrefix + "prod-gcp"
+	srv, ok := servers[alias]
+	require.True(t, ok, "expected %s server", alias)
+
+	args, _ := srv["args"].([]any)
+	assert.Equal(t, []any{"serve", "--kind=cloud", "--provider=gcp"}, args)
+
+	env, _ := srv["env"].(map[string]any)
+	require.NotNil(t, env)
+	assert.Equal(t, "gcp", env[cloud.EnvProvider])
+	assert.Equal(t, "/etc/triagent/gcp-allow.json", env[cloud.EnvAllowlistPath])
+	// gcp impersonates the assumed identity directly; that one env is both
+	// the impersonation target and the expected identity.
+	assert.Equal(t, "triage-ro@prod.iam.gserviceaccount.com", env[gcp.EnvImpersonate])
+	// AWS-specific env must not leak onto a gcp source.
+	assert.NotContains(t, env, aws.EnvProfile)
+	assert.NotContains(t, env, aws.EnvExpectedRoleARN)
+
+	rawScope, _ := env[cloud.EnvScope].(string)
+	require.NotEmpty(t, rawScope, "scope must be JSON-encoded into the env")
+	var scope cloud.ScopeAllowlist
+	require.NoError(t, json.Unmarshal([]byte(rawScope), &scope))
+	assert.Equal(t, []string{"prod-a"}, scope.Projects)
+}
+
+func TestWriteMCPConfig_AWSCloudSource_RegistersServerWithProfileAndExpectedRole(t *testing.T) {
+	t.Parallel()
+	in := baseInputs(t)
+	in.CloudSources = []profile.CloudSource{{
+		Alias:           "prod-aws",
+		Provider:        "aws",
+		AssumedIdentity: "arn:aws:iam::123456789012:role/triage-ro",
+		Profile:         "triage-ro",
+		Scope:           cloud.ScopeAllowlist{Regions: []string{"us-east-1"}},
+	}}
+	path, err := writeMCPConfig(in)
+	require.NoError(t, err)
+	servers := readMCPConfig(t, path)
+
+	alias := MCPAliasCloudPrefix + "prod-aws"
+	srv, ok := servers[alias]
+	require.True(t, ok, "expected %s server", alias)
+
+	args, _ := srv["args"].([]any)
+	assert.Equal(t, []any{"serve", "--kind=cloud", "--provider=aws"}, args)
+
+	env, _ := srv["env"].(map[string]any)
+	require.NotNil(t, env)
+	assert.Equal(t, "aws", env[cloud.EnvProvider])
+	// aws needs BOTH a profile selector and the expected role ARN.
+	assert.Equal(t, "triage-ro", env[aws.EnvProfile])
+	assert.Equal(t, "arn:aws:iam::123456789012:role/triage-ro", env[aws.EnvExpectedRoleARN])
+	// gcp impersonation env must not leak onto an aws source.
+	assert.NotContains(t, env, gcp.EnvImpersonate)
 }

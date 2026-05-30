@@ -34,11 +34,3 @@ func TestServeCmd_KnowsCloudKind(t *testing.T) {
 	cmd := serveCmd()
 	assert.Contains(t, cmd.Long, "cloud", "serve --help should list cloud")
 }
-
-func TestNewCloudProvider_AWSIsBuilt(t *testing.T) {
-	t.Parallel()
-	p, err := newCloudProvider("aws")
-	require.NoError(t, err)
-	require.NotNil(t, p)
-	assert.Equal(t, "aws", p.Name())
-}

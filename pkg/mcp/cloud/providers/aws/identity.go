@@ -10,13 +10,13 @@ import (
 	"github.com/sourcehawk/triagent/pkg/mcp/cloud"
 )
 
-// envExpectedRoleARN optionally pins the IAM role ARN the assumed-role caller
+// EnvExpectedRoleARN optionally pins the IAM role ARN the assumed-role caller
 // must resolve to. When set, Identity rejects any caller whose underlying role
 // does not match it, the strict check. When unset, Identity falls back to the
 // structural check (the caller must be an assumed-role ARN at all, proving the
 // AWS_PROFILE assume-role pin took effect rather than the operator's plain base
 // identity leaking through).
-const envExpectedRoleARN = "TRIAGENT_CLOUD_AWS_EXPECTED_ROLE_ARN"
+const EnvExpectedRoleARN = "TRIAGENT_CLOUD_AWS_EXPECTED_ROLE_ARN"
 
 // callerIdentity is the projection of `aws sts get-caller-identity --output
 // json`. Only the fields the probe and inventory fallback use are decoded.
@@ -59,7 +59,7 @@ func (p *Provider) Identity(ctx context.Context, run cloud.RunFunc) (cloud.Ident
 	}
 
 	st := cloud.IdentityStatus{Provider: "aws", AssumedIdentity: caller.Arn}
-	st.Valid, st.Hint = evaluateIdentity(caller.Arn, os.Getenv(envExpectedRoleARN))
+	st.Valid, st.Hint = evaluateIdentity(caller.Arn, os.Getenv(EnvExpectedRoleARN))
 	return st, nil
 }
 

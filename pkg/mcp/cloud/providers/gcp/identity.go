@@ -22,7 +22,7 @@ type authAccount struct {
 // CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT. A degraded auth state surfaces
 // through Valid and Hint, never a Go error.
 func (p *Provider) Identity(ctx context.Context, run cloud.RunFunc) (cloud.IdentityStatus, error) {
-	target := os.Getenv(impersonationEnv)
+	target := os.Getenv(EnvImpersonate)
 
 	res, err := run(ctx, []string{"auth", "list", "--filter=status:ACTIVE", "--format=json"})
 	if err != nil {
@@ -44,7 +44,7 @@ func (p *Provider) Identity(ctx context.Context, run cloud.RunFunc) (cloud.Ident
 	switch {
 	case target == "":
 		st.Valid = false
-		st.Hint = "no impersonation target pinned; set " + impersonationEnv + " on the cloud MCP subprocess"
+		st.Hint = "no impersonation target pinned; set " + EnvImpersonate + " on the cloud MCP subprocess"
 	case active == "":
 		st.Valid = false
 		st.Hint = "no active gcloud account; run: gcloud auth login"

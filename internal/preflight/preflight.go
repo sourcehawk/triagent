@@ -18,6 +18,8 @@ import (
 	"github.com/sourcehawk/triagent/internal/promforward"
 	"github.com/sourcehawk/triagent/internal/repos"
 	"github.com/sourcehawk/triagent/pkg/auth"
+	"github.com/sourcehawk/triagent/pkg/mcp/cloud"
+	"github.com/sourcehawk/triagent/pkg/mcp/cloud/providers"
 )
 
 // Options describes a single preflight invocation.
@@ -109,6 +111,21 @@ type Options struct {
 	// entry even if PromTarget is non-nil. Set when the operator opts out
 	// in the preflight form.
 	PromDisabled bool
+
+	// CloudProbe runs the read-only identity probe for one cloud source. Nil
+	// uses the default prober (providers.ProbeSource), which constructs the
+	// source's provider and shells its CLI; tests inject a stub. The probe
+	// degrades, never blocks — a failed probe marks the source unavailable but
+	// the session still starts.
+	CloudProbe func(context.Context, profile.CloudSource) cloud.IdentityStatus
+}
+
+// CloudSourceStatus is one cloud source's preflight outcome: its alias and the
+// identity-probe result. A source with Valid:false started the session degraded
+// — visibly unavailable, with Hint pointing at the fix.
+type CloudSourceStatus struct {
+	Alias string
+	cloud.IdentityStatus
 }
 
 // Result holds the artifacts a successful preflight produces.
@@ -116,6 +133,9 @@ type Result struct {
 	MCPConfigPath  string
 	DocsPrefix     string // e.g. "mcp__example-docs__"; empty when not registered
 	KubeconfigPath string // resolved + frozen path; mirrored back to caller for persistence
+	// CloudSources is the per-source identity-probe outcome for each profile
+	// cloud source. A failed probe degrades that source, never the session.
+	CloudSources []CloudSourceStatus
 }
 
 // Run performs the full preflight sequence. On any failure, in-flight
@@ -158,6 +178,7 @@ func Run(opts Options) (*Result, error) {
 		KubeconfigPath: kubeconfigPath,
 		Profile:        opts.Profile,
 		LinkedRepos:        opts.LinkedRepos,
+		CloudSources:       cloudSources(opts.Profile),
 		GitCacheDir:        opts.GitCacheDir,
 		UserPlaybooksDir:   opts.UserPlaybooksDir,
 		PluginPlaybooksDir: opts.PluginPlaybooksDir,
@@ -185,7 +206,50 @@ func Run(opts Options) (*Result, error) {
 		MCPConfigPath:  mcpPath,
 		DocsPrefix:     docsPrefix,
 		KubeconfigPath: kubeconfigPath,
+		CloudSources:   probeCloudSources(opts.Ctx, cloudSources(opts.Profile), opts.CloudProbe),
 	}, nil
+}
+
+// probeCloudSources runs the identity probe for each cloud source and returns
+// its per-source status. It degrades, never blocks: a failed probe marks the
+// source unavailable with a hint, and the session proceeds regardless. probe
+// defaults to the real prober (providers.ProbeSource) when nil.
+func probeCloudSources(ctx context.Context, sources []profile.CloudSource, probe func(context.Context, profile.CloudSource) cloud.IdentityStatus) []CloudSourceStatus {
+	if len(sources) == 0 {
+		return nil
+	}
+	if probe == nil {
+		probe = defaultCloudProbe
+	}
+	out := make([]CloudSourceStatus, 0, len(sources))
+	for _, src := range sources {
+		out = append(out, CloudSourceStatus{
+			Alias:          src.Alias,
+			IdentityStatus: probe(ctx, src),
+		})
+	}
+	return out
+}
+
+// defaultCloudProbe is the real prober: it maps a profile cloud source to the
+// providers package's neutral Source and runs ProbeSource, which constructs the
+// provider and shells its whoami CLI. A construction error degrades to an
+// invalid status, never a session-fatal error.
+func defaultCloudProbe(ctx context.Context, src profile.CloudSource) cloud.IdentityStatus {
+	return providers.ProbeSource(ctx, providers.Source{
+		Provider:        src.Provider,
+		AssumedIdentity: src.AssumedIdentity,
+		Profile:         src.Profile,
+	})
+}
+
+// cloudSources returns the profile's read-only cloud connections, or nil when
+// no profile is loaded. Each becomes a triagent-cloud-<alias> MCP server.
+func cloudSources(prof *profile.Profile) []profile.CloudSource {
+	if prof == nil {
+		return nil
+	}
+	return prof.Cloud
 }
 
 // freezeKubeconfig writes a session-private copy of the operator's

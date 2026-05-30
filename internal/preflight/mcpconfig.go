@@ -12,6 +12,9 @@ import (
 	"github.com/sourcehawk/triagent/internal/profile"
 	"github.com/sourcehawk/triagent/internal/promforward"
 	"github.com/sourcehawk/triagent/internal/repos"
+	"github.com/sourcehawk/triagent/pkg/mcp/cloud"
+	"github.com/sourcehawk/triagent/pkg/mcp/cloud/providers/aws"
+	"github.com/sourcehawk/triagent/pkg/mcp/cloud/providers/gcp"
 )
 
 var envRefRe = regexp.MustCompile(`^\$\{env:([A-Za-z_][A-Za-z0-9_]*)\}$`)
@@ -47,6 +50,10 @@ const (
 	// MCPAliasGitPrefix is prepended to a repo's effective alias to form
 	// the per-repo MCP server alias (e.g. "triagent-git-zeebe").
 	MCPAliasGitPrefix = "triagent-git-"
+	// MCPAliasCloudPrefix is prepended to a cloud source's alias to form the
+	// per-source MCP server alias (e.g. "triagent-cloud-prod-gcp"), mirroring
+	// the per-repo git prefix.
+	MCPAliasCloudPrefix = "triagent-cloud-"
 )
 
 // Env-var names the launcher injects into each triagent-mcp subcommand. These
@@ -101,6 +108,9 @@ type mcpConfigInputs struct {
 	// and passed to triagent-mcp as --crds-file. TRIAGENT_MCP_CRDS_FILE env wins.
 	Profile *profile.Profile
 	LinkedRepos      []repos.LinkedRepo // each becomes a `triagent-git-<alias>` server entry
+	// CloudSources are the profile's read-only cloud connections; each becomes a
+	// `triagent-cloud-<alias>` server entry pinned to that source's identity.
+	CloudSources       []profile.CloudSource
 	GitCacheDir        string             // optional override for git repo cache root
 	UserPlaybooksDir   string             // optional override-or-extend dir for strategies playbooks
 	PluginPlaybooksDir string             // launcher-managed clone of the upstream playbooks repo (overridable)
@@ -167,6 +177,41 @@ func kubeEnv(in mcpConfigInputs) map[string]string {
 		out[EnvKubeconfig] = in.KubeconfigPath
 	}
 	return out
+}
+
+// cloudSourceEnv builds the subprocess env for one triagent-cloud-<alias>
+// server: the provider selector, the optional allowlist-override path, the
+// JSON-encoded scope the cloud package decodes, and the per-provider
+// pinned-identity env.
+//
+// The two clouds pin identity through different env, by mechanism. GCP
+// impersonates the assumed identity directly, so a single env
+// (CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT) is both the impersonation target
+// and the expected identity. AWS selects an assume-role profile (AWS_PROFILE)
+// for credentials and checks the role ARN (TRIAGENT_CLOUD_AWS_EXPECTED_ROLE_ARN)
+// for strict validity, so it needs both a profile selector and the expected ARN.
+// The env-name constants come from the provider packages, never raw literals.
+func cloudSourceEnv(src profile.CloudSource) (map[string]string, error) {
+	env := map[string]string{
+		cloud.EnvProvider: src.Provider,
+	}
+	if src.CommandAllowlistPath != "" {
+		env[cloud.EnvAllowlistPath] = src.CommandAllowlistPath
+	}
+	scopeRaw, err := json.Marshal(src.Scope)
+	if err != nil {
+		return nil, fmt.Errorf("cloud source %q: encode scope: %w", src.Alias, err)
+	}
+	env[cloud.EnvScope] = string(scopeRaw)
+
+	switch src.Provider {
+	case "gcp":
+		env[gcp.EnvImpersonate] = src.AssumedIdentity
+	case "aws":
+		env[aws.EnvProfile] = src.Profile
+		env[aws.EnvExpectedRoleARN] = src.AssumedIdentity
+	}
+	return env, nil
 }
 
 // resolveKindsFile returns the --crds-file path to pass to triagent-mcp's k8s
@@ -311,6 +356,21 @@ func writeMCPConfig(in mcpConfigInputs) (string, error) {
 			"command": in.MCPBin,
 			"args":    []string{"serve", "--kind=git", "--repo", repo.Owner + "/" + repo.Name},
 			"env":     gitEnv,
+		}
+	}
+
+	for _, src := range in.CloudSources {
+		alias := MCPAliasCloudPrefix + src.Alias
+		cloudEnv, err := cloudSourceEnv(src)
+		if err != nil {
+			return "", err
+		}
+		mergeEnv(cloudEnv, telemetryEnv(in, alias))
+		mergeEnv(cloudEnv, kubeEnv(in))
+		servers[alias] = map[string]any{
+			"command": in.MCPBin,
+			"args":    []string{"serve", "--kind=cloud", "--provider=" + src.Provider},
+			"env":     cloudEnv,
 		}
 	}
 
