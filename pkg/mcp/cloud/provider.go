@@ -1,0 +1,69 @@
+// Package cloud implements the read-only cloud-context MCP server the
+// triagent-mcp binary exposes to Claude. One package serves both GCP and AWS:
+// the cloud-specific behaviour sits behind the Provider interface, selected at
+// launch by --provider and plugged in from pkg/mcp/cloud/providers/<name>.
+//
+// The server is read-only by construction. run_cli never touches a shell, every
+// invocation is validated against a positive command allowlist plus a hardcoded
+// deny floor the config can never re-enable, and the cloud identity is pinned by
+// the deployment through harness-controlled env the agent cannot reach.
+package cloud
+
+import "context"
+
+// Provider is the cloud-specific seam every tool calls through. Selecting
+// --provider chooses the concrete gcp or aws implementation, injected behind
+// this interface (the teleport DI pattern). Implementations live in
+// pkg/mcp/cloud/providers/<name>, never in this package.
+type Provider interface {
+	// Name reports the provider identifier ("gcp" | "aws").
+	Name() string
+	// Binary is the resolved absolute path to the provider CLI (gcloud/aws).
+	Binary() string
+	// DefaultAllowlist is the provider's embedded default command allowlist.
+	DefaultAllowlist() *CommandAllowlist
+	// DenyFloorAdditions contributes provider-specific subcommands and flags to
+	// the always-on deny floor. The base floor lives in this package; providers
+	// only add to it, never relax it.
+	DenyFloorAdditions() DenyFloor
+	// Inventory projects the provider's accessible scopes (projects for gcp,
+	// accounts for aws). It execs only through run, never directly.
+	Inventory(ctx context.Context, run RunFunc) (Inventory, error)
+	// Identity is the read-only whoami: which pinned identity is active and
+	// whether it is valid. It execs only through run, never directly.
+	Identity(ctx context.Context, run RunFunc) (IdentityStatus, error)
+}
+
+// RunFunc is the harness exec core, injected into providers so they never exec
+// directly. It carries the no-shell guarantee: argv tokens reach the provider
+// binary via execve, never a shell.
+type RunFunc func(ctx context.Context, argv []string) (CLIResult, error)
+
+// Inventory is the projected list of accessible scopes the agent uses to orient.
+type Inventory struct {
+	Scopes []Scope `json:"scopes"`
+}
+
+// Scope is one project (gcp) or account (aws) the pinned identity can read.
+type Scope struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// IdentityStatus is the single struct the identity probe returns. The
+// connections array, the session_status tool, and the preflight gate all render
+// from it, so they cannot disagree. JSON tags are a downstream contract.
+type IdentityStatus struct {
+	Provider        string `json:"provider"`
+	AssumedIdentity string `json:"assumed_identity"`
+	Valid           bool   `json:"valid"`
+	Hint            string `json:"hint,omitempty"`
+}
+
+// CLIResult is the shaped result of one run_cli invocation. Raw provider JSON
+// is never surfaced; the harness caps output and reports truncation.
+type CLIResult struct {
+	Stdout    string `json:"stdout"`
+	Truncated bool   `json:"truncated"`
+	ExitCode  int    `json:"exit_code"`
+}
