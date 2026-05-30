@@ -237,6 +237,76 @@ func TestValidateMissingTeleportFields(t *testing.T) {
 	}
 }
 
+func validCloudBase() *profile.Profile {
+	return &profile.Profile{
+		Name:      "x",
+		Auth:      profile.Auth{Kind: "kubeconfig"},
+		Playbooks: profile.Playbooks{Entrypoint: "a", Closing: "b"},
+	}
+}
+
+func TestValidateCloudSourcesOK(t *testing.T) {
+	p := validCloudBase()
+	p.Cloud = []profile.CloudSource{
+		{Alias: "prod-gcp", Provider: "gcp", AssumedIdentity: "ro@proj.iam.gserviceaccount.com"},
+		{Alias: "prod-aws", Provider: "aws", AssumedIdentity: "arn:aws:iam::1:role/ro", Profile: "ro"},
+	}
+	assert.NoError(t, p.Validate(), "a valid multi-source cloud profile must validate clean")
+}
+
+func TestValidateCloudDuplicateAlias(t *testing.T) {
+	p := validCloudBase()
+	p.Cloud = []profile.CloudSource{
+		{Alias: "dup", Provider: "gcp", AssumedIdentity: "ro@proj.iam.gserviceaccount.com"},
+		{Alias: "dup", Provider: "aws", AssumedIdentity: "arn:aws:iam::1:role/ro", Profile: "ro"},
+	}
+	err := p.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "duplicate")
+	assert.Contains(t, err.Error(), "dup")
+}
+
+func TestValidateCloudEmptyAlias(t *testing.T) {
+	p := validCloudBase()
+	p.Cloud = []profile.CloudSource{
+		{Provider: "gcp", AssumedIdentity: "ro@proj.iam.gserviceaccount.com"},
+	}
+	err := p.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "alias")
+}
+
+func TestValidateCloudUnknownProvider(t *testing.T) {
+	p := validCloudBase()
+	p.Cloud = []profile.CloudSource{
+		{Alias: "x", Provider: "azure", AssumedIdentity: "whatever"},
+	}
+	err := p.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "provider")
+	assert.Contains(t, err.Error(), "azure")
+}
+
+func TestValidateCloudMissingIdentity(t *testing.T) {
+	p := validCloudBase()
+	p.Cloud = []profile.CloudSource{
+		{Alias: "x", Provider: "gcp"},
+	}
+	err := p.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "assumed_identity")
+}
+
+func TestValidateCloudAWSMissingProfile(t *testing.T) {
+	p := validCloudBase()
+	p.Cloud = []profile.CloudSource{
+		{Alias: "x", Provider: "aws", AssumedIdentity: "arn:aws:iam::1:role/ro"},
+	}
+	err := p.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "profile")
+}
+
 func TestDefaultProfilePromptsPopulated(t *testing.T) {
 	p, err := profile.LoadEmbedded("default")
 	if err != nil {
