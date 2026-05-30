@@ -66,8 +66,8 @@ cloud:
     # The pinned read-only identity. For gcp, the service-account email the
     # harness impersonates via CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT.
     assumed_identity: triage-readonly@prod.iam.gserviceaccount.com
-    # Targets any run_cli argv may reference. An empty axis is unconstrained;
-    # a non-empty axis means the agent cannot pivot outside it.
+    # Project and region/zone targets enforced on run_cli argv. An empty axis
+    # is unconstrained; a non-empty axis means the agent cannot pivot outside it.
     scope:
       projects: [prod-platform, prod-data]
       regions:  [us-central1, us-east1]
@@ -85,8 +85,8 @@ cloud:
     # source_profile. gcp ignores this field.
     profile: triage-readonly
     scope:
-      accounts: ["123456789012"]
-      regions:  [eu-west-1]
+      regions:  [eu-west-1]                 # enforced on run_cli argv.
+      accounts: ["123456789012"]            # informational; account reach is bounded by the pinned role.
 ```
 
 The fields:
@@ -100,16 +100,20 @@ The fields:
 
 ## Scope allowlist
 
-`scope` constrains which cloud targets any `run_cli` argument may reference, so the agent cannot pivot to an un-allowlisted project, account, or region. It has three axes:
+`scope` constrains which cloud targets a `run_cli` argument may reference, so the agent cannot pivot to an un-allowlisted project or region. The argv-enforced axes are project and region/zone; account reach is governed by the pinned role or profile, not by argv.
 
 ```yaml
 scope:
-  projects: [prod-platform]    # gcp --project values the agent may use
-  accounts: ["123456789012"]   # aws account ids the agent may use
-  regions:  [us-central1]      # --region / --zone values the agent may use
+  projects: [prod-platform]    # gcp --project values the agent may use (argv-enforced)
+  regions:  [us-central1]      # --region / --zone values the agent may use (argv-enforced)
+  accounts: ["123456789012"]   # aws accounts reachable via the pinned role (informational)
 ```
 
-An empty (or omitted) axis is unconstrained on that axis. A non-empty axis is a closed set: a `--project`, `--region`, or `--zone` value outside it fails validation before the command runs. Identity-selecting flags (`--account`, `--profile`) never reach scope validation at all, because the deny floor rejects them first.
+An empty (or omitted) `projects` or `regions` axis is unconstrained on that axis. A non-empty one is a closed set: a `--project`, `--region`, or `--zone` value outside it fails validation before the command runs.
+
+`accounts` is informational and reserved: it documents which AWS accounts the source is expected to reach, but `run_cli` does not validate account ids on argv. What actually bounds account reach is the pinned assume-role profile, whose role can only see the accounts its trust policy and permissions allow. Treat `accounts` as a note to operators, not an enforced allowlist.
+
+Identity-selecting flags (`--account`, `--profile`) never reach scope validation at all, because the deny floor rejects them first.
 
 ## Command allowlist
 

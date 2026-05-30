@@ -171,6 +171,13 @@ func Run(opts Options) (*Result, error) {
 		}
 	}
 
+	// Probe the cloud sources before writing the MCP config so a failed probe
+	// disables the source rather than merely reporting it: only sources whose
+	// probe is Valid are wired as MCP servers. The full set (valid and degraded)
+	// stays in Result.CloudSources so the status surface still shows the
+	// degraded ones with their hint. The probe degrades, never blocks.
+	cloudStatuses := probeCloudSources(opts.Ctx, cloudSources(opts.Profile), opts.CloudProbe)
+
 	mcpPath, err := writeMCPConfig(mcpConfigInputs{
 		Dir:            opts.SessionDir,
 		MCPBin:         opts.MCPBinaryPath,
@@ -178,7 +185,7 @@ func Run(opts Options) (*Result, error) {
 		KubeconfigPath: kubeconfigPath,
 		Profile:        opts.Profile,
 		LinkedRepos:        opts.LinkedRepos,
-		CloudSources:       cloudSources(opts.Profile),
+		CloudSources:       validCloudSources(cloudSources(opts.Profile), cloudStatuses),
 		GitCacheDir:        opts.GitCacheDir,
 		UserPlaybooksDir:   opts.UserPlaybooksDir,
 		PluginPlaybooksDir: opts.PluginPlaybooksDir,
@@ -206,8 +213,25 @@ func Run(opts Options) (*Result, error) {
 		MCPConfigPath:  mcpPath,
 		DocsPrefix:     docsPrefix,
 		KubeconfigPath: kubeconfigPath,
-		CloudSources:   probeCloudSources(opts.Ctx, cloudSources(opts.Profile), opts.CloudProbe),
+		CloudSources:   cloudStatuses,
 	}, nil
+}
+
+// validCloudSources returns the subset of sources whose probe came back Valid,
+// keyed by alias. A degraded source is dropped here so it is never wired as an
+// MCP server, while it remains in Result.CloudSources for the status surface.
+func validCloudSources(sources []profile.CloudSource, statuses []CloudSourceStatus) []profile.CloudSource {
+	valid := make(map[string]bool, len(statuses))
+	for _, s := range statuses {
+		valid[s.Alias] = s.Valid
+	}
+	out := make([]profile.CloudSource, 0, len(sources))
+	for _, src := range sources {
+		if valid[src.Alias] {
+			out = append(out, src)
+		}
+	}
+	return out
 }
 
 // probeCloudSources runs the identity probe for each cloud source and returns

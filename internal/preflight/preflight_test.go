@@ -2,6 +2,7 @@ package preflight
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -261,6 +262,26 @@ func TestRun_CloudProbeFailureDegradesNotBlocks(t *testing.T) {
 	assert.True(t, byAlias["prod-gcp"].Valid, "valid source must be available")
 	assert.False(t, byAlias["prod-aws"].Valid, "failed probe must mark the source unavailable")
 	assert.Equal(t, "run: aws sso login", byAlias["prod-aws"].Hint)
+
+	// The degraded source must NOT be wired as an MCP server, while the valid
+	// one is: a failed probe disables the source, it doesn't merely report it.
+	servers := readMCPServers(t, res.MCPConfigPath)
+	assert.Contains(t, servers, MCPAliasCloudPrefix+"prod-gcp",
+		"valid source must be registered as an MCP server")
+	assert.NotContains(t, servers, MCPAliasCloudPrefix+"prod-aws",
+		"degraded source must be absent from the written MCP config")
+}
+
+// readMCPServers loads the written mcp.json and returns its mcpServers map.
+func readMCPServers(t *testing.T, path string) map[string]any {
+	t.Helper()
+	body, err := os.ReadFile(path)
+	require.NoError(t, err)
+	var cfg struct {
+		MCPServers map[string]any `json:"mcpServers"`
+	}
+	require.NoError(t, json.Unmarshal(body, &cfg))
+	return cfg.MCPServers
 }
 
 // A provider construction error (e.g. the CLI binary missing) degrades the

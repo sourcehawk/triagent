@@ -33,11 +33,13 @@ type connectionsResponse struct {
 	Cloud              []cloudConnection `json:"cloud"`
 }
 
-// cloudConnection is the read-only view of one profile cloud source: the pinned
-// identity and the request-time probe result. It carries no edit affordance —
-// cloud is configured in the profile, never entered in the panel. The fields
-// mirror cloud.IdentityStatus so the panel renders directly from the probe.
+// cloudConnection is the read-only view of one profile cloud source: its alias,
+// the pinned identity, and the request-time probe result. The alias keys the
+// triagent-cloud-<alias> MCP and distinguishes two sources that share a
+// provider and identity but differ in scope. It carries no edit affordance —
+// cloud is configured in the profile, never entered in the panel.
 type cloudConnection struct {
+	Alias           string `json:"alias"`
 	Provider        string `json:"provider"`
 	AssumedIdentity string `json:"assumed_identity"`
 	Valid           bool   `json:"valid"`
@@ -76,6 +78,7 @@ func (a *apiHandlers) cloudConnections(ctx context.Context) []cloudConnection {
 	for _, src := range a.prof.Cloud {
 		st := probe(ctx, src)
 		out = append(out, cloudConnection{
+			Alias:           src.Alias,
 			Provider:        st.Provider,
 			AssumedIdentity: st.AssumedIdentity,
 			Valid:           st.Valid,
