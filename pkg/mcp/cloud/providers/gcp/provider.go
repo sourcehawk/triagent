@@ -27,6 +27,8 @@ var defaultCommandsJSON []byte
 // as a flag, so the agent can never select it.
 const impersonationEnv = "CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT"
 
+var _ cloud.Provider = (*Provider)(nil)
+
 // Provider implements cloud.Provider over the gcloud CLI.
 type Provider struct {
 	binary    string
