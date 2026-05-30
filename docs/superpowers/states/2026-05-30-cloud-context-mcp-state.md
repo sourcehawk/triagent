@@ -21,7 +21,7 @@ status: developing
 
 | Issue | Branch | Worktree path | PR (→ base) | Status |
 | ----- | ------ | ------------- | ----------- | ------ |
-| #45 — scaffold + harness | feature/cloud-context-mcp--scaffold | .claude/worktrees/cloud-context-mcp--scaffold | _tbd_ → feature/cloud-context-mcp | dispatched |
+| #45 — scaffold + harness | (merged, branch deleted) | (removed) | #48 → feature/cloud-context-mcp | self-merged |
 | #43 — GCP provider | _tbd_ | _tbd_ | _tbd_ → feature/cloud-context-mcp | not-started |
 | #46 — AWS provider | _tbd_ | _tbd_ | _tbd_ → feature/cloud-context-mcp | not-started |
 | #47 — launcher integration | _tbd_ | _tbd_ | _tbd_ → feature/cloud-context-mcp | not-started |
@@ -30,12 +30,12 @@ status: developing
 
 | Name | Realization | Realized in | Status |
 | ---- | ----------- | ----------- | ------ |
-| `cloud-provider-interface` | stub-on-producer-branch (`cloud.Provider` + `fakeProvider` land in #45) | #45 | pending |
-| `cloud-identity-probe` | stub-on-producer-branch (`cloud.Probe` + `IdentityStatus` exported by #45) | #45 | pending |
-| `cloud-serve-cli` | data-only (`serve --kind=cloud --provider=<gcp\|aws>`) | n/a | pending |
-| `cloud-env-contract` | data-only (`TRIAGENT_CLOUD_*` + impersonation env consts) | #45 / #43 / #46 | pending |
+| `cloud-provider-interface` | stub-on-producer-branch (`cloud.Provider` + `fakeProvider` land in #45) | #45 (#48) | locked |
+| `cloud-identity-probe` | stub-on-producer-branch (`cloud.Probe` + `IdentityStatus` exported by #45) | #45 (#48) | locked |
+| `cloud-serve-cli` | data-only (`serve --kind=cloud --provider=<gcp\|aws>`) | #45 (#48) | locked |
+| `cloud-env-contract` | data-only (`TRIAGENT_CLOUD_*` consts in `cloud/env.go`; provider impersonation env via `Provider.EnvPassthrough() []string`) | #45 (#48), provider names in #43/#46 | locked |
 
-All four contracts are produced by #45, so Phase 2 cannot start until #45 merges into the feature branch. They flip to `locked` once #45's interface, probe, and env constants land.
+All four contracts landed with #45 (squash-merged as #48). Phase 2 (#43/#46/#47) is now unblocked. The `Provider` interface gained `EnvPassthrough() []string` during #45 review (see Bubble-up log) — #43/#46 must implement it, returning their CLI's credential/impersonation var names; `PATH`/`HOME` are already in the harness base set.
 
 ## Bubble-up log
 
