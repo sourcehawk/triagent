@@ -42,31 +42,24 @@ type Provider struct {
 	allowlist *cloud.CommandAllowlist
 }
 
-// New constructs the AWS provider, resolving the aws binary on PATH and parsing
-// the embedded default allowlist. A missing aws binary is not a construction
-// error: Binary falls back to the literal "aws" and the exec surfaces the
-// failure as a visible degrade through the identity probe's Hint, rather than
-// failing the launcher at startup. New errors only when the embedded allowlist
-// is malformed (a build-time defect).
+// New constructs the AWS provider, resolving aws to an absolute path once via
+// exec.LookPath so a poisoned PATH cannot redirect the binary at run time.
 func New() (*Provider, error) {
-	bin := "aws"
-	if resolved, err := exec.LookPath("aws"); err == nil {
-		bin = resolved
-	}
-	allow, err := parseAllowlist()
+	bin, err := exec.LookPath("aws")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("aws: resolve aws binary: %w", err)
 	}
-	return &Provider{binary: bin, allowlist: allow}, nil
+	return newWithBinary(bin)
 }
 
-// parseAllowlist decodes the embedded default command allowlist.
-func parseAllowlist() (*cloud.CommandAllowlist, error) {
+// newWithBinary builds the provider against an already-resolved binary path. It
+// is the seam tests inject a fixed path through, bypassing exec.LookPath.
+func newWithBinary(binary string) (*Provider, error) {
 	var list cloud.CommandAllowlist
 	if err := json.Unmarshal(defaultCommandsJSON, &list); err != nil {
 		return nil, fmt.Errorf("aws: parse default allowlist: %w", err)
 	}
-	return &list, nil
+	return &Provider{binary: binary, allowlist: &list}, nil
 }
 
 // Name reports the provider identifier.

@@ -25,7 +25,7 @@ func TestIdentityBuildsCallerIdentityArgv(t *testing.T) {
 	f := &fakeRun{results: map[string]cloud.CLIResult{
 		"sts get-caller-identity": {Stdout: callerIdentityAssumedRole},
 	}}
-	p, err := New()
+	p, err := newWithBinary("/usr/bin/aws")
 	require.NoError(t, err)
 
 	_, err = p.Identity(context.Background(), f.run)
@@ -39,7 +39,7 @@ func TestIdentityValidWhenAssumedRole(t *testing.T) {
 	f := &fakeRun{results: map[string]cloud.CLIResult{
 		"sts get-caller-identity": {Stdout: callerIdentityAssumedRole},
 	}}
-	p, err := New()
+	p, err := newWithBinary("/usr/bin/aws")
 	require.NoError(t, err)
 
 	st, err := p.Identity(context.Background(), f.run)
@@ -54,7 +54,7 @@ func TestIdentityInvalidWhenNotAssumedRole(t *testing.T) {
 	f := &fakeRun{results: map[string]cloud.CLIResult{
 		"sts get-caller-identity": {Stdout: callerIdentityPlainUser},
 	}}
-	p, err := New()
+	p, err := newWithBinary("/usr/bin/aws")
 	require.NoError(t, err)
 
 	st, err := p.Identity(context.Background(), f.run)
@@ -70,7 +70,7 @@ func TestIdentityMatchesExpectedRoleArnWhenPinned(t *testing.T) {
 	f := &fakeRun{results: map[string]cloud.CLIResult{
 		"sts get-caller-identity": {Stdout: callerIdentityAssumedRole},
 	}}
-	p, err := New()
+	p, err := newWithBinary("/usr/bin/aws")
 	require.NoError(t, err)
 
 	st, err := p.Identity(context.Background(), f.run)
@@ -83,7 +83,7 @@ func TestIdentityRejectsMismatchedExpectedRoleArn(t *testing.T) {
 	f := &fakeRun{results: map[string]cloud.CLIResult{
 		"sts get-caller-identity": {Stdout: callerIdentityAssumedRole},
 	}}
-	p, err := New()
+	p, err := newWithBinary("/usr/bin/aws")
 	require.NoError(t, err)
 
 	st, err := p.Identity(context.Background(), f.run)
@@ -96,7 +96,7 @@ func TestIdentityInvalidOnNonZeroExit(t *testing.T) {
 	f := &fakeRun{results: map[string]cloud.CLIResult{
 		"sts get-caller-identity": {ExitCode: 255, Stdout: ""},
 	}}
-	p, err := New()
+	p, err := newWithBinary("/usr/bin/aws")
 	require.NoError(t, err)
 
 	st, err := p.Identity(context.Background(), f.run)

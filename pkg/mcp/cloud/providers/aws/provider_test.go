@@ -11,16 +11,16 @@ import (
 )
 
 func TestNewResolvesProvider(t *testing.T) {
-	p, err := New()
+	p, err := newWithBinary("/usr/bin/aws")
 	require.NoError(t, err)
 	require.NotNil(t, p)
 
 	assert.Equal(t, "aws", p.Name())
-	assert.NotEmpty(t, p.Binary(), "Binary should resolve to a non-empty path")
+	assert.Equal(t, "/usr/bin/aws", p.Binary())
 }
 
 func TestDefaultAllowlistCoversReadOnlyAxes(t *testing.T) {
-	p, err := New()
+	p, err := newWithBinary("/usr/bin/aws")
 	require.NoError(t, err)
 
 	allow := p.DefaultAllowlist()
@@ -53,7 +53,7 @@ func TestDefaultAllowlistCoversReadOnlyAxes(t *testing.T) {
 }
 
 func TestDenyFloorAdditionsCoverCredentialReturningCommands(t *testing.T) {
-	p, err := New()
+	p, err := newWithBinary("/usr/bin/aws")
 	require.NoError(t, err)
 
 	floor := p.DenyFloorAdditions()
@@ -64,7 +64,7 @@ func TestDenyFloorAdditionsCoverCredentialReturningCommands(t *testing.T) {
 }
 
 func TestEnvPassthroughForwardsProfileAndRegionNames(t *testing.T) {
-	p, err := New()
+	p, err := newWithBinary("/usr/bin/aws")
 	require.NoError(t, err)
 
 	got := p.EnvPassthrough()

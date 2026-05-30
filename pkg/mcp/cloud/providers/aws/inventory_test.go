@@ -21,7 +21,7 @@ func TestInventoryProjectsActiveAccounts(t *testing.T) {
 	f := &fakeRun{results: map[string]cloud.CLIResult{
 		"organizations list-accounts": {Stdout: listAccountsOutput},
 	}}
-	p, err := New()
+	p, err := newWithBinary("/usr/bin/aws")
 	require.NoError(t, err)
 
 	inv, err := p.Inventory(context.Background(), f.run)
@@ -44,7 +44,7 @@ func TestInventoryFallsBackToCallerAccountOnAccessDenied(t *testing.T) {
 			"organizations list-accounts": errAccessDenied,
 		},
 	}
-	p, err := New()
+	p, err := newWithBinary("/usr/bin/aws")
 	require.NoError(t, err)
 
 	inv, err := p.Inventory(context.Background(), f.run)
@@ -61,7 +61,7 @@ func TestInventoryFallsBackOnAccessDeniedExitCode(t *testing.T) {
 			"sts get-caller-identity":     {Stdout: callerIdentityAssumedRole},
 		},
 	}
-	p, err := New()
+	p, err := newWithBinary("/usr/bin/aws")
 	require.NoError(t, err)
 
 	inv, err := p.Inventory(context.Background(), f.run)
