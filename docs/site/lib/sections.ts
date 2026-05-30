@@ -11,6 +11,7 @@ export type SectionID =
   | "repos"
   | "wiki"
   | "connections"
+  | "cloud-providers"
   | "profiles";
 
 export type Section = {
@@ -59,6 +60,11 @@ export const SECTIONS: Section[] = [
     id: "connections",
     label: "Connections",
     subtitle: "Slack and incident.io integrations",
+  },
+  {
+    id: "cloud-providers",
+    label: "Cloud providers",
+    subtitle: "Read-only GCP and AWS investigation context",
   },
   {
     id: "profiles",
