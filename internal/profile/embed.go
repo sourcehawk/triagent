@@ -172,6 +172,24 @@ func LoadPath(ref string) (*Profile, error) {
 		p.KindsPath = abs
 	}
 
+	// command_allowlist_path is documented as relative to this profile.yaml, but
+	// the cloud MCP subprocess reads it against a session-scoped cwd. Resolve a
+	// relative override against the profile dir (and absolutize) so the injected
+	// env points at the file regardless of the child's cwd. Done before
+	// applyBase so it only touches sources declared in this file; base cloud
+	// sources come from an embedded profile and carry no filesystem paths.
+	for i := range p.Cloud {
+		rel := p.Cloud[i].CommandAllowlistPath
+		if rel == "" || filepath.IsAbs(rel) {
+			continue
+		}
+		abs, err := filepath.Abs(filepath.Join(dir, rel))
+		if err != nil {
+			return nil, fmt.Errorf("absolutize command_allowlist_path %s: %w", rel, err)
+		}
+		p.Cloud[i].CommandAllowlistPath = abs
+	}
+
 	p, err = applyBase(p)
 	if err != nil {
 		return nil, err
