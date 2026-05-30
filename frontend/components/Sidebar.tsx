@@ -682,11 +682,9 @@ function SidebarInner({
               be active.
             </p>
             <p className="break-words">
-              The catalog is loaded once at launcher start from{" "}
-              <code className="break-all rounded bg-zinc-800 px-1 py-0.5 font-mono text-xs">
-                triagent-mcp dump-meta
-              </code>
-              ; rebuild the binary to pick up new tools.
+              The catalog is built once at launcher start by aggregating each
+              MCP&apos;s tool specs in-process; rebuild the binary to pick up new
+              tools.
             </p>
           </div>
         ) : view === "watches" ? (

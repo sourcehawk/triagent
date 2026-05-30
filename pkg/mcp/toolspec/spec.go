@@ -4,9 +4,9 @@
 //
 // Each MCP server kind (k8s, strategies, prom, git) exposes a
 // `ToolSpecs()` function that returns the list of its tools paired
-// with a reflected view of each tool's input struct. dump-meta
-// aggregates them at build/dump time and ships the result to the
-// frontend via the launcher's metaCache.
+// with a reflected view of each tool's input struct. The launcher
+// aggregates them in-process at startup (internal/server/meta.go::
+// toolCatalog) and ships the result to the frontend via metaCache.
 //
 // The underlying source of truth stays the Go struct + its
 // `jsonschema:` tags — there's only one place to edit when an
@@ -20,8 +20,8 @@ import (
 
 // ToolSpec describes one registered tool, with enough metadata for
 // the frontend to render a name + description + input picker. The
-// shape mirrors the dump-meta catalog entry so callers can serialise
-// it directly.
+// shape mirrors the launcher's catalog entry (internal/server/meta.go)
+// so callers can serialise it directly.
 type ToolSpec struct {
 	Server      string      `json:"server"`
 	Name        string      `json:"name"`

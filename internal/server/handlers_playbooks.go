@@ -363,7 +363,7 @@ func (a *apiHandlers) isLockedID(id string) bool {
 	return ok && mp.Locked
 }
 
-// collectPlaybooks merges the embedded set (from cached dump-meta) with
+// collectPlaybooks merges the embedded set (from the cached in-process catalog) with
 // the user playbook dir and returns the resolved list. Errors reading
 // the user dir are swallowed — the editor still shows the embedded
 // set in that case. Each entry carries the playbook's active state,
@@ -386,7 +386,7 @@ func (a *apiHandlers) collectPlaybooks() []playbookListItem {
 			summary := summarisePlaybookYAML(mp.YAML)
 			disabled := summary.active != nil && !*summary.active
 			// Type is the directory the file lives in upstream
-			// (mp.Type, set by dump-meta from the parent dir name).
+			// (mp.Type, set by loadMeta from the parent dir name).
 			// The YAML's `type:` field was removed when we switched
 			// to directory-as-type, so summary.pbType is no longer
 			// populated for the new layout.
@@ -512,7 +512,7 @@ func (a *apiHandlers) collectPlaybooks() []playbookListItem {
 // schemaMismatch returns true when the supplied schema_version
 // differs from the triagent-mcp version this launcher's metaCache was
 // loaded against. Falls back to "no mismatch" when the cache wasn't
-// populated (dump-meta failed at startup) — better silent than to
+// populated (loadMeta failed at startup) — better silent than to
 // flag everything as mismatched in that degraded state.
 func (a *apiHandlers) schemaMismatch(playbookVersion int) bool {
 	meta := a.metaCache.get()

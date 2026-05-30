@@ -17,7 +17,7 @@ This guide covers environment setup, build/test cycles, codebase layout, and con
 triagent/
 ├── cmd/
 │   ├── triagent/       # launcher binary entrypoint
-│   └── triagent-mcp/   # MCP multiplexer entrypoint (serve + dump-meta)
+│   └── triagent-mcp/   # MCP multiplexer entrypoint (serve)
 ├── internal/           # launcher-private packages
 │   ├── auto/           # agent-as-operator subsystem
 │   ├── claude/         # claude subprocess management
@@ -127,9 +127,9 @@ different port.
    - `server.go` — `New(Options) (*Server, error)` + `(*Server).Run(ctx context.Context) error`
    - `specs.go` — `ToolSpecs() []toolspec.ToolSpec` (must stay in sync with handler registrations)
 2. Add a `case "<kind>":` in `cmd/triagent-mcp/serve.go`.
-3. Add the kind to the `ToolSpecs()` aggregator in `cmd/triagent-mcp/dump-meta.go`.
+3. Add the kind's `ToolSpecs()` to the in-process aggregator in `internal/server/meta.go::toolCatalog()`.
 4. Add a preflight spawn entry in `internal/preflight/mcpconfig.go` (conditional attachment lives there).
-5. Run `make test` — the wire test in `cmd/triagent-mcp/` will catch catalog drift.
+5. Run `make test` — the per-package `tools_wire_test.go` will catch catalog drift.
 
 ## Adding a new system playbook
 

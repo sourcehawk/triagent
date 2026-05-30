@@ -7,7 +7,7 @@
 
 MCPs live in `pkg/mcp/<kind>/` and are exposed via `cmd/triagent-mcp/serve.go`. One `triagent-mcp` binary takes a `--kind=<server>` subcommand (`git`, `wiki`, `slack`, `incidentio`, `k8s`, `sessions`, `strategies`, `meta`, `agent-operator`, `parallel`, `teleport`, `signal-ingest`, etc.). Adding a new MCP = new `pkg/mcp/<name>/` package + one `case` in `cmd/triagent-mcp/serve.go`.
 
-Each MCP package exposes `New(Options) (*Server, error)` + `(*Server).Run(ctx)` and a sibling `specs.go` with `ToolSpecs() []toolspec.ToolSpec`. The catalog feeds `triagent-mcp dump-meta`; keep it in sync with handler registrations or the wire test fails.
+Each MCP package exposes `New(Options) (*Server, error)` + `(*Server).Run(ctx)` and a sibling `specs.go` with `ToolSpecs() []toolspec.ToolSpec`. The launcher aggregates each package's `ToolSpecs()` in-process at startup via `internal/server/meta.go` (`loadMeta` / `toolCatalog`); keep it in sync with handler registrations or the per-package `tools_wire_test.go` fails.
 
 ## Context
 

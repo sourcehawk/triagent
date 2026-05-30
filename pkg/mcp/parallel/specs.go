@@ -3,7 +3,8 @@ package parallel
 import "github.com/sourcehawk/triagent/pkg/mcp/toolspec"
 
 // ToolSpecs returns the parallel-server tool catalog. Mirrors the
-// per-server pattern (k8s/strategies/prom/...) so dump-meta can
+// per-server pattern (k8s/strategies/prom/...) so the launcher's
+// in-process catalog (internal/server/meta.go::toolCatalog) can
 // aggregate without per-server casing.
 func ToolSpecs() []toolspec.ToolSpec {
 	return []toolspec.ToolSpec{

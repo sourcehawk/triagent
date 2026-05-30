@@ -26,8 +26,9 @@ type Props = {
 // MCPCatalogView is a standalone reference page. It works without an
 // active investigation: the catalog is global (every kind triagent-mcp can
 // serve), so operators can browse tool surfaces before kicking off any
-// session. Source of truth is the cached `triagent-mcp dump-meta` output the
-// launcher loads at startup; this component just fetches it via /api/tools.
+// session. Source of truth is the catalog the launcher aggregates from
+// each MCP's ToolSpecs() in-process at startup; this component just
+// fetches it via /api/tools.
 // Cap on server sections per page. Picked to keep the catalog scannable
 // without forcing scroll — each section is collapsed by default but its
 // header still occupies meaningful vertical space, and the parent <main>
@@ -125,9 +126,8 @@ export function MCPCatalogView({ focusServer, onFocusServer }: Props) {
 
       {tools !== null && tools.length === 0 && (
         <div className="rounded border border-zinc-800 bg-zinc-900/40 p-4 text-sm text-zinc-400">
-          The launcher couldn't load the tool catalog from{" "}
-          <code className="font-mono">triagent-mcp dump-meta</code>. Rebuild the
-          binary (<code className="font-mono">cd mcp && make build</code>),
+          The launcher couldn't build the in-process tool catalog at startup.
+          Rebuild the binary (<code className="font-mono">make build</code>),
           restart the launcher, and reload this page.
         </div>
       )}

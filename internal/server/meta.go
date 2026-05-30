@@ -92,9 +92,9 @@ func loadMeta(_ context.Context, pluginPlaybooksDir, systemPlaybooksDir string) 
 }
 
 // toolCatalog aggregates each MCP package's ToolSpecs() into one
-// ordered launcher-side catalog. Order matches the historical
-// dump-meta ordering so the editor's tool dropdown groups render
-// in the same sequence operators see elsewhere.
+// ordered launcher-side catalog. Order is fixed here so the editor's
+// tool dropdown groups render in the same sequence operators see
+// elsewhere.
 func toolCatalog() []MetaTool {
 	specs := make([]toolspec.ToolSpec, 0, 64)
 	specs = append(specs, k8s.ToolSpecs()...)
