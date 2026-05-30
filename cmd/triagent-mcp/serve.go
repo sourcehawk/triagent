@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/log"
 	"github.com/sourcehawk/triagent/pkg/mcp/agentoperator"
 	"github.com/sourcehawk/triagent/pkg/mcp/cloud"
+	"github.com/sourcehawk/triagent/pkg/mcp/cloud/providers/gcp"
 	"github.com/sourcehawk/triagent/pkg/mcp/git"
 	"github.com/sourcehawk/triagent/pkg/mcp/incidentio"
 	"github.com/sourcehawk/triagent/pkg/mcp/k8s"
@@ -460,13 +461,14 @@ func runCloud(ctx context.Context, f serveFlags) error {
 	return srv.Run(ctx)
 }
 
-// newCloudProvider constructs the cloud.Provider for the named provider. The
-// gcp and aws implementations land in pkg/mcp/cloud/providers/<name> in their
-// own PRs; until then a known provider reports that it is not yet built and an
-// unknown one is named in the error.
+// newCloudProvider constructs the cloud.Provider for the named provider. Each
+// implementation lives in pkg/mcp/cloud/providers/<name>; an unknown provider is
+// named in the error.
 func newCloudProvider(name string) (cloud.Provider, error) {
 	switch name {
-	case "gcp", "aws":
+	case "gcp":
+		return gcp.New()
+	case "aws":
 		return nil, fmt.Errorf("cloud provider %q is not built yet", name)
 	default:
 		return nil, fmt.Errorf("unknown cloud --provider %q (want gcp or aws)", name)
