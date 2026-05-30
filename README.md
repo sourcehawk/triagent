@@ -1,14 +1,12 @@
 # Triagent
 
-> Agentic incident investigation, driven from your browser.
+> An AI teammate for cloud incident triage, driven from your browser.
 
-Triagent is a localhost web app that pairs the [Claude](https://claude.com/claude-code) reasoning agent with read-only
-Kubernetes access, an extensible [MCP](https://modelcontextprotocol.io) catalog (Prometheus, Slack, GitHub,
-incident.io, your own), a guided playbook walker, and a persistent team wiki. You run `triagent start`, hand it the
-symptom, and it drives a focused diagnosis you can paste into a ticket when it's done.
+Triagent is a web app you run on your own machine. You hand it a symptom, and an AI assistant (powered by [Claude](https://claude.com/claude-code)) investigates it the way you would, working across your infrastructure to check the surfaces where the answer usually hides. When it's done, it hands back a written diagnosis you can paste straight into a ticket.
 
-Every tool call stays visible, so you can audit the chain or interrupt at any point. Finished sessions can be shared
-so the next operator starts from where you ended, not from the alert.
+It connects to the places you already look: Kubernetes, AWS, and GCP (all read-only), Prometheus, Slack, GitHub, and incident.io, plus anything else you wire up via [MCP](https://modelcontextprotocol.io) (the open standard for plugging AI assistants into tools).
+
+Every step it takes is shown live, so you can follow its reasoning, check its work, or interrupt it at any point. Its access to your clusters and cloud accounts is read-only; the only changes it makes beyond your own machine are Git pull requests you review before merging (a new playbook, a wiki entry, a saved investigation). You run it on your own machine, and teams share those playbooks, wiki, and investigations through Git, so whoever's on call next picks up where you left off instead of at the original alert.
 
 **📚 [Read the full documentation →](https://sourcehawk.github.io/triagent/)**
 
@@ -16,33 +14,22 @@ so the next operator starts from where you ended, not from the alert.
 
 ## What it does
 
-Kubernetes triage isn't a `kubectl` command. It's a multi-tab scramble across half a dozen surfaces. Triagent collapses
-that scramble into one conversation against one audit trail:
+Cloud incident triage isn't a single command. It's a multi-tab scramble across half a dozen tools: dashboards, logs, the cloud console, Slack, the incident tracker, the runbook nobody can find. Triagent collapses that scramble into one conversation with one trail you can read back later:
 
-- **The agent reads the procedure, doesn't memorise it.** Domain knowledge lives in playbooks loaded at runtime, not in
-  a system prompt or a fine-tune. Updating what the system can diagnose is a YAML edit.
-- **The tools are a typed catalog, not a shell.** Every action the agent can take is a curated MCP tool with a schema'd
-  input. The agent can't go off-piste, and the catalog doubles as documentation.
-- **Knowledge accumulates as data.** Each investigation can deposit a playbook (procedural) or a wiki entry (factual).
-  Tomorrow's recall is a single tool call instead of a Slack archaeology dig.
+- **It follows your procedures instead of guessing.** The troubleshooting know-how lives in **playbooks**: step-by-step procedures written as YAML that the assistant loads when it runs, not baked into the AI model itself. Teaching it to diagnose something new is a text edit, not a code change or an expensive model retrain.
+- **It can only use the tools you give it.** The assistant doesn't get a shell or free rein on your infrastructure. Every action it can take is one specific, pre-defined tool with a known input. You decide exactly what it's allowed to do, and that list of tools doubles as documentation.
+- **Every investigation makes the next one faster.** When it's done, the assistant can save what it learned: a new playbook (a procedure) or a **wiki** entry (a fact about your systems). Next time, recalling that is a single lookup instead of an archaeology dig through old Slack threads.
 
-With watches on the source (Slack channels, GitHub issue queries, more on the way), the launcher pre-classifies new
-items and proposes investigations on its own. With auto mode on, routine ones run end-to-end before you've read the
-page. You can take over at any moment.
+It can also watch for trouble on its own. Point it at Slack channels or GitHub issue queries (more sources on the way), and it triages new items as they land and proposes investigations without being asked. Turn on **auto mode** and it runs the routine ones start to finish before you've even read the page. You can take over at any moment.
 
 ## What's in the box
 
 Four surfaces, each documented in depth on the [docs site](https://sourcehawk.github.io/triagent/):
 
-- **[Investigations](https://sourcehawk.github.io/triagent/docs/investigations/)**: the live triage view. Hand the
-  agent a symptom and a context (cluster, Slack thread, incident.io link, notes), watch the walker drive the
-  diagnosis, ship the markdown summary.
-- **[Playbooks](https://sourcehawk.github.io/triagent/docs/playbooks/)**: the YAML-defined guided walker the agent
-  follows. Author them in-browser with an AI co-editor.
-- **[Wiki](https://sourcehawk.github.io/triagent/docs/wiki/)**: the team's persistent knowledge base of failure
-  patterns and prior art, queryable by the agent.
-- **[Watches](https://sourcehawk.github.io/triagent/docs/watches/)**: polling rules that turn Slack messages,
-  GitHub issues, or alerts into proposed investigations.
+- **[Investigations](https://sourcehawk.github.io/triagent/docs/investigations/)**: the live triage view. Hand the assistant a symptom and some context (cluster, Slack thread, incident.io link, notes), watch it work through the diagnosis step by step, and ship the summary as markdown.
+- **[Playbooks](https://sourcehawk.github.io/triagent/docs/playbooks/)**: the step-by-step troubleshooting procedures the assistant follows, defined as YAML. Write and edit them right in the browser, with an AI assistant helping.
+- **[Wiki](https://sourcehawk.github.io/triagent/docs/wiki/)**: the team's lasting knowledge base of failure patterns and prior fixes, which the assistant can search.
+- **[Watches](https://sourcehawk.github.io/triagent/docs/watches/)**: rules that turn Slack messages, GitHub issues, or alerts into proposed investigations on their own.
 
 <table>
 <tr>
@@ -50,14 +37,14 @@ Four surfaces, each documented in depth on the [docs site](https://sourcehawk.gi
 
 ![Tool catalog](docs/images/tool-catalog.png)
 
-**Typed tool catalog, not a shell.** Every action the agent can take is a schema'd MCP call. The same surface the agent reads is the surface you author against.
+**The assistant works from a fixed list of tools, not a shell.** Every action it can take is one specific, pre-defined tool. The same catalog the assistant works from is the one you edit.
 
 </td>
 <td width="50%" valign="top">
 
 ![Playbook editor](docs/images/playbook-editor.png)
 
-**Playbooks as data.** YAML graphs the walker follows, authored in-browser with an AI co-editor and shipped as PRs to the playbooks repo.
+**Playbooks are just data.** Troubleshooting procedures written as YAML, edited in the browser with an AI assistant helping, and shipped as pull requests to your playbooks repo.
 
 </td>
 </tr>
@@ -66,14 +53,14 @@ Four surfaces, each documented in depth on the [docs site](https://sourcehawk.gi
 
 ![Wiki editor](docs/images/wiki-editor.png)
 
-**Wiki that compounds.** Every finished investigation can deposit an entry; tomorrow's recall is a single tool call instead of a Slack archaeology dig.
+**A wiki that compounds.** Every finished investigation can leave behind an entry, so tomorrow's recall is a single lookup instead of an archaeology dig through old Slack threads.
 
 </td>
 <td width="50%" valign="top">
 
 ![Watches](docs/images/watches-screenshot.png)
 
-**Watches close the loop.** Slack channels and GitHub queries become pre-classified signals. Routine ones auto-spawn an investigation before the pager fires.
+**Watches close the loop.** Slack channels and GitHub queries become triaged signals. Routine ones kick off an investigation on their own, before the pager fires.
 
 </td>
 </tr>
@@ -83,12 +70,12 @@ Four surfaces, each documented in depth on the [docs site](https://sourcehawk.gi
 
 ### Requirements
 
-- `claude` CLI on `$PATH`, authenticated. See [Claude Code](https://claude.com/claude-code).
-- A working kubeconfig with read access to the namespace you want to triage. Triagent talks to the cluster via
-  client-go. `kubectl` is not required but most operators have it.
+The only thing triagent needs to launch is the Claude Code CLI. What it can reach during an investigation is set by your [profile](#customising-the-profile); the default profile is wired for Kubernetes, so the rest of these requirements cover that path. Cloud providers, Prometheus, Slack, GitHub, and incident.io attach through the profile too.
+
+- The [Claude Code](https://claude.com/claude-code) CLI (`claude`) on your `$PATH` and signed in. Triagent drives Claude Code to do the reasoning, so what it reads during an investigation (logs, resource state, the surfaces it checks) is sent to Claude. Claude Code is a separate Anthropic product with its own account and pricing; its docs cover sign-in and which model it uses.
+- A working kubeconfig with read access to the namespace you want to triage. Triagent talks to the cluster directly, so `kubectl` doesn't need to be installed.
 - `tsh` if you use [Teleport](https://goteleport.com)-backed cluster discovery (optional).
-- Kubernetes permissions to read pods/logs in the target namespace. Triagent does **not** create RBAC. It refuses
-  to start if your existing permissions are insufficient.
+- Kubernetes permissions to read pods/logs in the namespaces you investigate. Triagent does **not** create RBAC; its cluster tools are read-only and surface a permission error if your access falls short.
 
 ### Install
 
@@ -110,15 +97,9 @@ irm https://sourcehawk.github.io/triagent/install.ps1 | iex
 brew install --cask sourcehawk/tap/triagent
 ```
 
-**Manual download:** grab the archive for your OS/arch from [the latest
-release](https://github.com/sourcehawk/triagent/releases/latest) and put
-`triagent` + `triagent-mcp` somewhere on your `$PATH`.
+**Manual download:** grab the archive for your OS/arch from [the latest release](https://github.com/sourcehawk/triagent/releases/latest) and put `triagent` + `triagent-mcp` somewhere on your `$PATH`.
 
-The install script downloads both `triagent` (the launcher) and `triagent-mcp`
-(the MCP multiplexer) to `~/.local/bin` (or `%LOCALAPPDATA%\Programs\triagent`
-on Windows). The launcher locates `triagent-mcp` adjacent to itself or anywhere
-on `$PATH`. The Next.js frontend is embedded in the launcher, so the runtime
-ships as a single executable per binary.
+The install script downloads both `triagent` (the launcher) and `triagent-mcp` (the MCP multiplexer) to `~/.local/bin` (or `%LOCALAPPDATA%\Programs\triagent` on Windows); make sure that directory is on your `$PATH`. The launcher locates `triagent-mcp` adjacent to itself or anywhere on `$PATH`. The Next.js frontend is embedded in the launcher, so the runtime ships as a single executable per binary.
 
 **Build from source** (requires Node 20+ and Go; see `.tool-versions`):
 
@@ -132,47 +113,29 @@ make build
 triagent start
 ```
 
-This boots a localhost HTTP server, prints its URL with a per-launch token, and opens your browser to it. Press
-`Ctrl-C` to stop. It works out of the box on the embedded `default` profile; see
-[Customising the profile](#customising-the-profile) below to teach the agent your stack and wire upstream repos.
+This boots a localhost HTTP server, prints its URL with a per-launch token, and opens your browser to it. Press `Ctrl-C` to stop. It works out of the box on the embedded `default` profile; see [Customising the profile](#customising-the-profile) below to teach the assistant your stack and wire upstream repos.
 
 In the browser:
 
 1. **Pick a cluster**: directly from kubeconfig, or via Teleport.
 2. **Log in** if prompted (SSO/2FA prompts go to the launcher terminal).
 3. **Enter the namespace** and optional notes, Slack channel, or incident URL.
-4. **Preflight runs**: namespace exists, you can list pods. If anything's missing, the launcher tells you why and
-   stops.
-5. **Investigate**: the agent walks the playbook, calls tools, and writes a summary you can copy or push upstream as
-   a PR (once you've wired an upstream repo; see below).
+4. **Investigate**: the assistant works through the playbook, uses its tools, and writes a summary you can copy or push upstream as a PR (once you've wired an upstream repo; see below).
 
 ### A few useful commands
 
 ```sh
-triagent start                       # boot the launcher
-triagent start --profile my-profile  # use a custom embedded profile by name
-triagent start --profile ./my-prof   # use an on-disk profile (dir or yaml path)
-triagent create-profile my-team      # fork the embedded default into ./my-team/ for editing
-triagent clean                       # reset launcher caches (sessions, clones, etc.)
-triagent clean --dry-run             # show what would be deleted
+triagent help                              # full command and flag reference
+triagent start                             # boot the launcher
+triagent start --profile /path/to/profile  # boot with a custom profile
 ```
-
-`--profile` accepts either an embedded profile name or a filesystem path; `TRIAGENT_PROFILE` is the env-var
-equivalent.
 
 ### Customising the profile
 
-A profile is the deployment-specific config that fits triagent to your platform: which playbooks the agent walks,
-which MCPs attach, what the preflight form asks for, and what the agent already knows about your stack before it
-starts. The embedded `default` runs as-is but is platform-neutral. **Customising the profile is the
-highest-leverage step in a triagent setup.** Two overrides matter most:
+A profile is the deployment-specific config that fits triagent to your platform: which playbooks the assistant follows, which tool integrations attach, what the new-investigation form asks for, and what the assistant already knows about your stack before it starts. The embedded `default` runs as-is but is platform-neutral. **Customising the profile is the highest-leverage step in a triagent setup.** Two overrides matter most:
 
-- **`architecture.md`**: the prompt the agent reads before every triage. Teach it your platform's CRDs, namespace
-  conventions, dependency direction, and recurring failure modes. Every investigation starts informed instead of
-  rediscovering your stack.
-- **Upstream repos** (`defaults.playbooks_repo`, `defaults.wiki_repo`, `defaults.sessions_repo`): the GitHub repos
-  backing the playbook set, team wiki, and committed session transcripts. Wiring these enables sync-from-upstream
-  and push-as-PR; without them, edits stay local-only. Each repo is independent; wire any subset.
+- **`architecture.md`**: the briefing the assistant reads before every triage. Teach it your platform's CRDs, namespace conventions, dependency direction, and recurring failure modes. Every investigation starts informed instead of rediscovering your stack.
+- **Upstream repos** (`defaults.playbooks_repo`, `defaults.wiki_repo`, `defaults.sessions_repo`): the GitHub repos backing the playbook set, team wiki, and committed session transcripts. Wiring these enables sync-from-upstream and push-as-PR; without them, edits stay local-only. Each repo is independent; wire any subset.
 
 The recommended setup is a tiny overlay that inherits from `default` and only spells out what you're overriding:
 
@@ -195,24 +158,23 @@ $EDITOR ~/.config/triagent/profile/architecture.md     # describe your platform
 triagent start --profile ~/.config/triagent/profile
 ```
 
-Everything you leave out (paths, other prompts, investigation inputs, `kinds.json`, extra MCPs, Prometheus, model
-selection, auth) is inherited from `default`. See
-[Profiles](https://sourcehawk.github.io/triagent/profiles/) for the full schema, alternative layouts (full fork
-via `triagent create-profile`, air-gapped mode), and the longer narrative on each block.
+Everything you leave out (paths, other prompts, investigation inputs, `kinds.json`, extra MCPs, Prometheus, model selection, auth) is inherited from `default`. See [Profiles](https://sourcehawk.github.io/triagent/profiles/) for the full schema, alternative layouts (full fork via `triagent create-profile`, air-gapped mode), and the longer narrative on each block.
 
 ## Contributing
 
-PRs welcome. See [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md) for the full contributor setup, [CLAUDE.md](CLAUDE.md) for
-the durable conventions, and [open issues](https://github.com/sourcehawk/triagent/issues) for ideas worth picking up.
+PRs welcome. See [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md) for the full contributor setup, [CLAUDE.md](CLAUDE.md) for the durable conventions, and [open issues](https://github.com/sourcehawk/triagent/issues) for ideas worth picking up.
 
-Quick loop:
+CI gates the tests, the linter, and the frontend typecheck, so run all three before opening a PR:
 
 ```sh
-make test    # Go race tests + frontend vitest (wholesale)
-make lint    # Go lint
-make build   # frontend bundle + both binaries
+make test                          # Go race tests + frontend vitest
+make lint                          # Go lint
+cd frontend && npm run typecheck   # frontend types
+```
 
-# UI dev loop (no Go rebuild for frontend changes):
+`make build` rebuilds the embedded frontend bundle and both binaries. For the UI dev loop (no Go rebuild for frontend changes):
+
+```sh
 go run . start                       # terminal 1
 cd frontend && npm run dev           # terminal 2, proxies /api/* to :8080
 ```
