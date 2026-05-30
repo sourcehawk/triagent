@@ -7,7 +7,7 @@ feature_branch: feature/cloud-context-mcp
 feature_worktree: .claude/worktrees/cloud-context-mcp
 sub_pr_approval: autonomous
 integration_pr:
-status: planning
+status: developing
 ---
 
 # Read-only cloud-context MCP (GCP and AWS) — orchestration state
@@ -21,7 +21,7 @@ status: planning
 
 | Issue | Branch | Worktree path | PR (→ base) | Status |
 | ----- | ------ | ------------- | ----------- | ------ |
-| #45 — scaffold + harness | _tbd_ | _tbd_ | _tbd_ → feature/cloud-context-mcp | not-started |
+| #45 — scaffold + harness | feature/cloud-context-mcp--scaffold | .claude/worktrees/cloud-context-mcp--scaffold | _tbd_ → feature/cloud-context-mcp | dispatched |
 | #43 — GCP provider | _tbd_ | _tbd_ | _tbd_ → feature/cloud-context-mcp | not-started |
 | #46 — AWS provider | _tbd_ | _tbd_ | _tbd_ → feature/cloud-context-mcp | not-started |
 | #47 — launcher integration | _tbd_ | _tbd_ | _tbd_ → feature/cloud-context-mcp | not-started |
