@@ -2,13 +2,16 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
 
+	"github.com/charmbracelet/log"
 	"github.com/sourcehawk/triagent/pkg/mcp/agentoperator"
+	"github.com/sourcehawk/triagent/pkg/mcp/cloud"
 	"github.com/sourcehawk/triagent/pkg/mcp/git"
 	"github.com/sourcehawk/triagent/pkg/mcp/incidentio"
 	"github.com/sourcehawk/triagent/pkg/mcp/k8s"
@@ -21,28 +24,27 @@ import (
 	"github.com/sourcehawk/triagent/pkg/mcp/strategies"
 	"github.com/sourcehawk/triagent/pkg/mcp/teleport"
 	"github.com/sourcehawk/triagent/pkg/mcp/wiki"
-	"github.com/charmbracelet/log"
 	"github.com/spf13/cobra"
 )
 
 // Environment variable names. Flags override env when both are set.
 const (
-	envKubeconfig       = "TRIAGENT_MCP_KUBECONFIG"
-	envCRDsFile         = "TRIAGENT_MCP_CRDS_FILE"
-	envCrossplaneGroups = "TRIAGENT_MCP_CROSSPLANE_GROUPS"
-	envSessionDir                  = "TRIAGENT_MCP_SESSION_DIR"
-	envUserPlaybooksDir             = "TRIAGENT_MCP_USER_PLAYBOOKS_DIR"
-	envPluginPlaybooksDir           = "TRIAGENT_MCP_PLUGIN_PLAYBOOKS_DIR"
-	envSystemPlaybooksDir           = "TRIAGENT_MCP_SYSTEM_PLAYBOOKS_DIR"
-	envStrategiesSubagentModel      = "TRIAGENT_MCP_STRATEGIES_SUBAGENT_MODEL"
-	envMCPConfigPath                = "TRIAGENT_MCP_CONFIG_PATH"
-	envGitRepo               = "TRIAGENT_MCP_GIT_REPO"
-	envGitCacheDir           = "TRIAGENT_MCP_GIT_CACHE_DIR"
-	envGitClaudeBinary       = "TRIAGENT_MCP_GIT_CLAUDE_BINARY"
-	envGitFilterPrereleases  = "TRIAGENT_MCP_GIT_FILTER_PRERELEASES"
-	envWikiServePath         = "TRIAGENT_MCP_WIKI_PATH"
-	envWikiServeProposalsPath = "TRIAGENT_MCP_WIKI_PROPOSALS_PATH"
-	envWikiServeClaudeBinary = "TRIAGENT_MCP_WIKI_CLAUDE_BINARY"
+	envKubeconfig              = "TRIAGENT_MCP_KUBECONFIG"
+	envCRDsFile                = "TRIAGENT_MCP_CRDS_FILE"
+	envCrossplaneGroups        = "TRIAGENT_MCP_CROSSPLANE_GROUPS"
+	envSessionDir              = "TRIAGENT_MCP_SESSION_DIR"
+	envUserPlaybooksDir        = "TRIAGENT_MCP_USER_PLAYBOOKS_DIR"
+	envPluginPlaybooksDir      = "TRIAGENT_MCP_PLUGIN_PLAYBOOKS_DIR"
+	envSystemPlaybooksDir      = "TRIAGENT_MCP_SYSTEM_PLAYBOOKS_DIR"
+	envStrategiesSubagentModel = "TRIAGENT_MCP_STRATEGIES_SUBAGENT_MODEL"
+	envMCPConfigPath           = "TRIAGENT_MCP_CONFIG_PATH"
+	envGitRepo                 = "TRIAGENT_MCP_GIT_REPO"
+	envGitCacheDir             = "TRIAGENT_MCP_GIT_CACHE_DIR"
+	envGitClaudeBinary         = "TRIAGENT_MCP_GIT_CLAUDE_BINARY"
+	envGitFilterPrereleases    = "TRIAGENT_MCP_GIT_FILTER_PRERELEASES"
+	envWikiServePath           = "TRIAGENT_MCP_WIKI_PATH"
+	envWikiServeProposalsPath  = "TRIAGENT_MCP_WIKI_PROPOSALS_PATH"
+	envWikiServeClaudeBinary   = "TRIAGENT_MCP_WIKI_CLAUDE_BINARY"
 
 	envSessionsProposalsPath = "TRIAGENT_MCP_SESSIONS_PROPOSALS_PATH"
 	envSessionsClaudeBinary  = "TRIAGENT_MCP_SESSIONS_CLAUDE_BINARY"
@@ -71,10 +73,10 @@ type serveFlags struct {
 	systemPlaybooksDir string
 
 	// git flags
-	gitRepo               string
-	gitCacheDir           string
-	gitClaudeBinary       string
-	gitFilterPrereleases  bool
+	gitRepo              string
+	gitCacheDir          string
+	gitClaudeBinary      string
+	gitFilterPrereleases bool
 
 	// wiki flags
 	wikiPath          string
@@ -95,6 +97,9 @@ type serveFlags struct {
 	promURL    string
 	promBearer string
 	promBasic  string
+
+	// cloud flags
+	cloudProvider string
 }
 
 func serveCmd() *cobra.Command {
@@ -104,14 +109,14 @@ func serveCmd() *cobra.Command {
 		Short: "Run one of the triagent-mcp MCP servers over stdio",
 		Long: "Run one of the triagent-mcp MCP servers over stdio.\n\n" +
 			"Select the server via --kind. Supported kinds:\n" +
-			"  k8s, teleport, strategies, git, wiki, slack, incidentio, sessions, meta, agent-operator, signal-ingest, parallel, prom",
+			"  k8s, teleport, strategies, git, wiki, slack, incidentio, sessions, meta, agent-operator, signal-ingest, parallel, prom, cloud",
 		Hidden: true,
 		Args:   cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runServe(cmd.Context(), resolveFlags(f))
 		},
 	}
-	cmd.Flags().StringVar(&f.kind, "kind", "", "which MCP server to run: k8s, teleport, strategies, git, wiki, slack, incidentio, sessions, meta, agent-operator, signal-ingest, parallel, or prom (required)")
+	cmd.Flags().StringVar(&f.kind, "kind", "", "which MCP server to run: k8s, teleport, strategies, git, wiki, slack, incidentio, sessions, meta, agent-operator, signal-ingest, parallel, prom, or cloud (required)")
 
 	// k8s flags
 	cmd.Flags().StringVar(&f.kubeconfig, "kubeconfig", "", "path to kubeconfig (defaults to $"+envKubeconfig+", then $KUBECONFIG, then ~/.kube/config) [kind=k8s]")
@@ -149,6 +154,9 @@ func serveCmd() *cobra.Command {
 	cmd.Flags().StringVar(&f.promURL, "prom-url", "", "Prometheus base URL (defaults to $"+envPromURL+") [kind=prom]")
 	cmd.Flags().StringVar(&f.promBearer, "prom-bearer", "", "Authorization: Bearer token for Prometheus (defaults to $"+envPromBearer+") [kind=prom]")
 	cmd.Flags().StringVar(&f.promBasic, "prom-basic", "", "Basic auth credentials user:pass for Prometheus (defaults to $"+envPromBasic+") [kind=prom]")
+
+	// cloud flags
+	cmd.Flags().StringVar(&f.cloudProvider, "provider", "", "cloud provider to serve: gcp or aws; required (defaults to $"+cloud.EnvProvider+") [kind=cloud]")
 
 	return cmd
 }
@@ -215,6 +223,9 @@ func resolveFlags(f *serveFlags) serveFlags {
 	if out.promBasic == "" {
 		out.promBasic = os.Getenv(envPromBasic)
 	}
+	if out.cloudProvider == "" {
+		out.cloudProvider = os.Getenv(cloud.EnvProvider)
+	}
 	// Bool env override: only consider when the operator hasn't passed
 	// the flag explicitly. Cobra preserves the flag default (true) when
 	// unset, so we can't distinguish "operator passed --filter-prereleases=true"
@@ -263,10 +274,12 @@ func runServe(ctx context.Context, f serveFlags) error {
 		return runParallel(ctx, f)
 	case "prom":
 		return runProm(ctx, f)
+	case "cloud":
+		return runCloud(ctx, f)
 	case "":
-		return fmt.Errorf("--kind is required (one of: k8s, teleport, strategies, git, wiki, slack, incidentio, sessions, meta, agent-operator, signal-ingest, parallel, prom)")
+		return fmt.Errorf("--kind is required (one of: k8s, teleport, strategies, git, wiki, slack, incidentio, sessions, meta, agent-operator, signal-ingest, parallel, prom, cloud)")
 	default:
-		return fmt.Errorf("unknown --kind %q (want one of: k8s, teleport, strategies, git, wiki, slack, incidentio, sessions, meta, agent-operator, signal-ingest, parallel, prom)", f.kind)
+		return fmt.Errorf("unknown --kind %q (want one of: k8s, teleport, strategies, git, wiki, slack, incidentio, sessions, meta, agent-operator, signal-ingest, parallel, prom, cloud)", f.kind)
 	}
 }
 
@@ -421,6 +434,59 @@ func runProm(ctx context.Context, f serveFlags) error {
 		"resolver", resolverURL,
 	)
 	return srv.Run(ctx)
+}
+
+// runCloud wires the read-only cloud-context MCP. --provider selects the
+// concrete backend; New plugs it in behind cloud.Provider. The launcher passes
+// the allowlist override path and target scope through the subprocess env
+// (cloud.EnvAllowlistPath, cloud.EnvScope), never argv.
+func runCloud(ctx context.Context, f serveFlags) error {
+	if f.cloudProvider == "" {
+		return fmt.Errorf("--provider is required (gcp or aws) (set --provider or $%s)", cloud.EnvProvider)
+	}
+	provider, err := newCloudProvider(f.cloudProvider)
+	if err != nil {
+		return err
+	}
+	srv, err := cloud.New(cloud.Options{
+		Provider:      provider,
+		AllowlistPath: os.Getenv(cloud.EnvAllowlistPath),
+		Scope:         parseCloudScope(os.Getenv(cloud.EnvScope)),
+	})
+	if err != nil {
+		return fmt.Errorf("build cloud mcp server: %w", err)
+	}
+	log.Info("mcp serve --kind=cloud starting", "provider", f.cloudProvider)
+	return srv.Run(ctx)
+}
+
+// newCloudProvider constructs the cloud.Provider for the named provider. The
+// gcp and aws implementations land in pkg/mcp/cloud/providers/<name> in their
+// own PRs; until then a known provider reports that it is not yet built and an
+// unknown one is named in the error.
+func newCloudProvider(name string) (cloud.Provider, error) {
+	switch name {
+	case "gcp", "aws":
+		return nil, fmt.Errorf("cloud provider %q is not built yet", name)
+	default:
+		return nil, fmt.Errorf("unknown cloud --provider %q (want gcp or aws)", name)
+	}
+}
+
+// parseCloudScope decodes the JSON-encoded target scope the launcher froze into
+// a cloud.ScopeAllowlist. An empty value yields an empty scope, which leaves the
+// target axes unconstrained; a malformed value is logged and treated the same,
+// so a bad profile entry never silently widens scope.
+func parseCloudScope(raw string) cloud.ScopeAllowlist {
+	var scope cloud.ScopeAllowlist
+	if raw == "" {
+		return scope
+	}
+	if err := json.Unmarshal([]byte(raw), &scope); err != nil {
+		log.Warn("mcp serve --kind=cloud: ignoring malformed scope", "error", err)
+		return cloud.ScopeAllowlist{}
+	}
+	return scope
 }
 
 func runGit(ctx context.Context, f serveFlags) error {
