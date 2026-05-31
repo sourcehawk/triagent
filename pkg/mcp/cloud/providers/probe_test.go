@@ -101,6 +101,29 @@ func TestProbeSourceConstructionFailureKeepsPinnedIdentity(t *testing.T) {
 	assert.NotEmpty(t, st.Hint)
 }
 
+// TestCredentialEnvAWSMultiAccountTargetsDefaultProfile proves the launcher-side
+// probe for a multi-account aws source pins AWS_PROFILE to the default (first)
+// account's generated profile name, not the operator's raw profile. Per-account
+// validity is out of scope for v1; the panel shows the default target's validity.
+func TestCredentialEnvAWSMultiAccountTargetsDefaultProfile(t *testing.T) {
+	env := credentialEnv(Source{
+		Provider:      "aws",
+		Alias:         "prod-aws",
+		SourceProfile: "sso-admin",
+		Accounts: []aws.Account{
+			{ID: "111111111111", RoleARN: "arn:aws:iam::111111111111:role/r"},
+			{ID: "222222222222", RoleARN: "arn:aws:iam::222222222222:role/r"},
+		},
+	})
+	assert.Equal(t, "triagent-cloud-prod-aws-111111111111", env[aws.EnvProfile],
+		"the multi-account probe must target the default account's generated profile")
+}
+
+func TestCredentialEnvAWSSingleAccountUsesProfile(t *testing.T) {
+	env := credentialEnv(Source{Provider: "aws", Profile: "triage-ro"})
+	assert.Equal(t, "triage-ro", env[aws.EnvProfile])
+}
+
 // fakePassthroughProvider exposes a fixed EnvPassthrough so sourceEnv's
 // carry-and-overlay behaviour can be asserted without a real cloud CLI.
 type fakePassthroughProvider struct{ passthrough []string }

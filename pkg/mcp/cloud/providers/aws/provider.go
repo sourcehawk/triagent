@@ -44,11 +44,35 @@ var _ cloud.Provider = (*Provider)(nil)
 // ScopeAllowlist.Regions. If a future deployment needs sub-account argv scoping,
 // it belongs in the shared validateArgv, not in this provider.
 
+// Account is one configured aws account the agent may make active: the account
+// id it selects by, and the read-only role_arn triagent generates an assume-role
+// profile for, layered over the source's SSO base.
+type Account struct {
+	ID      string
+	RoleARN string
+}
+
+// Options carries the multi-account config the launcher threads through from the
+// profile's cloud source: the source alias (the generated profiles' namespace),
+// the operator's SSO source_profile, and the account set. The zero value is the
+// single-account legacy form — no generated profiles, the selectable set comes
+// from inventory.
+type Options struct {
+	Alias         string
+	SourceProfile string
+	Accounts      []Account
+}
+
 // Provider is the AWS realization of cloud.Provider. binary is resolved once at
 // construction (overridable in tests); allowlist is the parsed embedded default.
+// alias and accounts carry the multi-account config: ConfiguredTargets surfaces
+// the accounts as the selectable set, and ActiveTargetEnv names each account's
+// generated profile.
 type Provider struct {
 	binary    string
 	allowlist *cloud.CommandAllowlist
+	alias     string
+	accounts  []Account
 }
 
 // New constructs the AWS provider, resolving aws to an absolute path once via
@@ -56,7 +80,13 @@ type Provider struct {
 // PATH with relative entries makes LookPath return a relative path (flagged with
 // exec.ErrDot); the path is made absolute so a later subprocess env/PATH change
 // cannot reinterpret it against a different working directory.
-func New() (*Provider, error) {
+//
+// When opts carries accounts, New generates the per-account assume-role profiles
+// into ~/.aws/config (or $AWS_CONFIG_FILE) before returning, so the profiles
+// exist for both the serve subprocess and any launcher-side probe that runs the
+// CLI under AWS_PROFILE. Generation is idempotent: repeated construction (serve
+// and launcher both build the provider) replaces the alias's managed block.
+func New(opts ...Options) (*Provider, error) {
 	bin, err := exec.LookPath("aws")
 	if err != nil && !errors.Is(err, exec.ErrDot) {
 		return nil, fmt.Errorf("aws: resolve aws binary: %w", err)
@@ -65,17 +95,31 @@ func New() (*Provider, error) {
 	if err != nil {
 		return nil, fmt.Errorf("aws: resolve aws binary to absolute path: %w", err)
 	}
-	return newWithBinary(abs)
+	return newWithBinary(abs, opts...)
 }
 
 // newWithBinary builds the provider against an already-resolved binary path. It
-// is the seam tests inject a fixed path through, bypassing exec.LookPath.
-func newWithBinary(binary string) (*Provider, error) {
+// is the seam tests inject a fixed path through, bypassing exec.LookPath. At most
+// one Options is honored; the zero value is the single-account legacy form.
+func newWithBinary(binary string, opts ...Options) (*Provider, error) {
 	var list cloud.CommandAllowlist
 	if err := json.Unmarshal(defaultCommandsJSON, &list); err != nil {
 		return nil, fmt.Errorf("aws: parse default allowlist: %w", err)
 	}
-	return &Provider{binary: binary, allowlist: &list}, nil
+	var o Options
+	if len(opts) > 0 {
+		o = opts[0]
+	}
+	if len(o.Accounts) > 0 {
+		cfg := awsConfigPath()
+		if cfg == "" {
+			return nil, fmt.Errorf("aws: cannot resolve ~/.aws/config (no HOME and no AWS_CONFIG_FILE) to generate account profiles")
+		}
+		if err := writeManagedProfiles(cfg, o.Alias, o.SourceProfile, o.Accounts); err != nil {
+			return nil, fmt.Errorf("aws: generate account profiles: %w", err)
+		}
+	}
+	return &Provider{binary: binary, allowlist: &list, alias: o.Alias, accounts: o.Accounts}, nil
 }
 
 // Name reports the provider identifier.
@@ -119,17 +163,33 @@ func (p *Provider) DenyFloorAdditions() cloud.DenyFloor {
 	}
 }
 
-// ConfiguredTargets is the deployment-configured account set. The single-account
-// deployment carries no accounts list, so the selectable set comes from the
-// server's inventory; the multi-account accounts list arrives with the AWS
-// accounts config.
-func (p *Provider) ConfiguredTargets() []cloud.Target { return nil }
+// ConfiguredTargets is the deployment-configured account set surfaced as the
+// agent's selectable targets. A configured account's id is both the Target ID
+// (what set_active_target receives) and its Name. The single-account deployment
+// carries no accounts list and returns nil, so the selectable set comes from the
+// server's inventory instead.
+func (p *Provider) ConfiguredTargets() []cloud.Target {
+	if len(p.accounts) == 0 {
+		return nil
+	}
+	out := make([]cloud.Target, 0, len(p.accounts))
+	for _, a := range p.accounts {
+		out = append(out, cloud.Target{ID: a.ID, Name: a.ID})
+	}
+	return out
+}
 
-// ActiveTargetEnv pins the aws CLI to the active account via AWS_PROFILE, the
-// generated assume-role profile for that account. The value is a profile name,
-// not a credential: the CLI performs the assume-role from the operator's base.
+// ActiveTargetEnv pins the aws CLI to the active account via AWS_PROFILE. For a
+// configured account it names the generated assume-role profile
+// (triagent-cloud-<alias>-<account_id>); the single-account legacy form passes
+// the id through as the profile name directly. Either way the value is a profile
+// name, not a credential: the CLI performs the assume-role from the operator's
+// base.
 func (p *Provider) ActiveTargetEnv(id string) []string {
-	return []string{EnvProfile + "=" + id}
+	if len(p.accounts) == 0 {
+		return []string{EnvProfile + "=" + id}
+	}
+	return []string{EnvProfile + "=" + profileName(p.alias, id)}
 }
 
 // EnvPassthrough lists the env var NAMES the aws subprocess needs forwarded:

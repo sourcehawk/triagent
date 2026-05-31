@@ -12,7 +12,7 @@ The MCP is read-only by construction, not by convention. The agent supplies argu
 
 ## The pinned identity
 
-The cloud identity is a deployment-chosen, read-only principal pinned in the profile. The agent can read which identity is active (it has a `session_status` whoami tool) but has no tool to choose, change, or authenticate one. The deployment grants that identity read-only IAM, and that grant is the outermost floor: even a misconfigured-too-broad command allowlist cannot read secrets or exfiltrate, because the identity itself lacks the permission.
+The cloud identity is a deployment-chosen, read-only principal pinned in the profile. The agent can read which identity is active (it has a `session_status` whoami tool) and, when the deployment configures more than one target, switch among that pinned set with `set_active_target` (see [Active target](#active-target-moving-across-projects-and-accounts)) — but it has no tool to name an arbitrary identity, escalate one, or authenticate one. The deployment grants each pinned identity read-only IAM, and that grant is the outermost floor: even a misconfigured-too-broad command allowlist cannot read secrets or exfiltrate, because the identity itself lacks the permission.
 
 The operator authenticates as themselves through their own normal cloud tooling. The harness then pins impersonation (GCP) or assume-role (AWS) of the configured read-only identity through environment it controls, never through anything the agent can supply. Triagent stores no cloud credential. Re-authentication is the operator's own corporate flow, outside Triagent.
 
@@ -117,6 +117,39 @@ Scope the trust `Principal` to the specific operator users or SSO role rather th
 
 The whoami probe resolves the active caller with `aws sts get-caller-identity`. It reports valid when the caller is an assumed-role ARN whose underlying role matches the pinned `assumed_identity`. A plain user or root ARN means the assume-role pin did not take effect and base credentials leaked through, so the source degrades.
 
+### Spanning several AWS accounts
+
+An IAM role lives in exactly one account, so the single-profile setup above reaches exactly one account. When an investigation crosses accounts, configure the source's `accounts` list instead of `profile`: one entry per account, each a read-only `role_arn` plus the account id the agent selects by. The source also names a `source_profile`, the operator's own SSO base the generated profiles assume from.
+
+```yaml
+cloud:
+  - alias: prod-aws
+    provider: aws
+    assumed_identity: arn:aws:iam::111111111111:role/triage-readonly
+    source_profile: sso-admin            # the operator's SSO base profile
+    accounts:
+      - {account_id: "111111111111", role_arn: "arn:aws:iam::111111111111:role/triage-readonly"}
+      - {account_id: "222222222222", role_arn: "arn:aws:iam::222222222222:role/triage-readonly"}
+      - {account_id: "333333333333", role_arn: "arn:aws:iam::333333333333:role/triage-readonly"}
+```
+
+You do not pre-create an `~/.aws/config` profile per account. Triagent generates one read-only assume-role profile per `accounts` entry at session start, into a managed block in your `~/.aws/config` (or `$AWS_CONFIG_FILE`) delimited by `# BEGIN triagent-cloud-<alias>` / `# END triagent-cloud-<alias>` markers. The block is rewritten idempotently and never touches profiles you authored yourself or another alias's block. Each generated profile layers its account's `role_arn` over `source_profile`, exactly as the single-account profile does by hand — triagent still stores no credential; the AWS CLI performs the assume-role from your SSO base.
+
+Give each account's role the same read-only permission and trust policies as the single-account role above. `assumed_identity` is the role ARN the agent's default account validates against; the connections panel shows that default account's validity (per-account validity is not surfaced in the panel).
+
+`accounts` and `profile` are mutually exclusive: a single-account source sets `profile`, a multi-account source sets `accounts` + `source_profile`.
+
+## Active target: moving across projects and accounts
+
+A source can span more than one target — several projects under one GCP identity, or several accounts under an AWS `accounts` list. The agent chooses which one subsequent `run_cli` commands run against with the `set_active_target` tool, naming a target id from `list_inventory` (a project id for GCP, an account id for AWS). The agent can select only among the deployment-configured targets; a target outside that set is rejected, and `session_status` reports the active target alongside the pinned identity.
+
+The two clouds reach their target set by different mechanisms, which is why AWS needs the `accounts` list and GCP does not:
+
+- **GCP — one identity, many projects.** A single impersonated read-only service account can be granted viewer on every in-scope project, so one identity already spans them. Switching target changes only `CLOUDSDK_CORE_PROJECT`; the identity is unchanged, and `session_status` reports the same service account throughout. The selectable set is the source's `scope.projects` (or, when that axis is empty, the projects `list_inventory` surfaces).
+- **AWS — one account per role.** A role lives in one account, so each account is its own read-only role. The selectable set is the source's `accounts` list, and switching target sets `AWS_PROFILE` to that account's generated profile — a different identity per account, so `session_status` re-probes on switch.
+
+When a source has exactly one target, it is active from session start and the agent need not choose. When it has several and the agent has not yet chosen, `run_cli` returns an actionable error naming `set_active_target` rather than running against an unintended default. This is also why omitting a target flag is safe under multiple targets: the active target is an in-scope pin, never the CLI's ambient default.
+
 ## The `cloud:` profile block
 
 Cloud sources live under a top-level `cloud:` list in the profile. Each entry is one provider connection the launcher wires as a `triagent-cloud-<alias>` MCP.
@@ -146,13 +179,18 @@ cloud:
     # For aws, the role ARN the assumed-role caller must resolve to. Validity
     # checks the resolved caller against this exact ARN.
     assumed_identity: arn:aws:iam::123456789012:role/triage-readonly
-    # aws-only: the AWS_PROFILE the harness selects for credentials. Its
-    # role_arn is the read-only role, with the operator's base as
-    # source_profile. gcp ignores this field.
+    # aws single-account: the AWS_PROFILE the harness selects for credentials.
+    # Its role_arn is the read-only role, with the operator's base as
+    # source_profile. Mutually exclusive with accounts; gcp ignores it.
     profile: triage-readonly
+    # aws multi-account: set source_profile + accounts instead of profile to span
+    # several accounts the agent selects among via set_active_target.
+    # source_profile: sso-admin
+    # accounts:
+    #   - {account_id: "111111111111", role_arn: "arn:aws:iam::111111111111:role/triage-readonly"}
     scope:
       regions:  [eu-west-1]                 # enforced on run_cli argv.
-      accounts: ["123456789012"]            # informational; account reach is bounded by the pinned role.
+      accounts: ["123456789012"]            # informational scope note; distinct from the source-level accounts list.
 ```
 
 The fields:
@@ -160,7 +198,9 @@ The fields:
 - `alias` — stable name for the source; the MCP is aliased `triagent-cloud-<alias>` and the connections panel keys off it.
 - `provider` — `gcp` or `aws`. Selects the concrete provider behind the shared MCP.
 - `assumed_identity` — the canonical pinned identity shown in the connections panel: a service-account email for GCP, a role ARN for AWS. GCP impersonates it directly. AWS checks it as the expected role ARN for strict validity.
-- `profile` — AWS only. The `AWS_PROFILE` selector for the assume-role profile that produces credentials. GCP ignores it.
+- `profile` — AWS single-account only. The `AWS_PROFILE` selector for the assume-role profile that produces credentials. Mutually exclusive with `accounts`; GCP ignores it.
+- `source_profile` — AWS multi-account only. The operator's SSO base profile the generated per-account assume-role profiles layer their role over. Required when `accounts` is set.
+- `accounts` — AWS multi-account only. The deployment-pinned account set the agent selects among via `set_active_target`; each entry is `{account_id, role_arn}`. See [Spanning several AWS accounts](#spanning-several-aws-accounts). This is the source-level selectable set, distinct from the informational `scope.accounts` note.
 - `scope` — the target allowlist (see below).
 - `command_allowlist_path` — an optional `run_cli` allowlist override (see below). Empty uses the provider's embedded default.
 
@@ -177,7 +217,7 @@ scope:
 
 An empty (or omitted) `projects` or `regions` axis is unconstrained on that axis. A non-empty one is a closed set: a `--project`, `--region`, or `--zone` value outside it fails validation before the command runs.
 
-Scope constrains the value of an explicit flag; it does not force one to be present. If the agent omits `--project`, the CLI falls back to its own default target (the impersonated identity's default project, `CLOUDSDK_CORE_PROJECT`, or for AWS the configured `AWS_REGION`), which scope does not police. Hard project confinement therefore comes from the pinned identity's IAM, not from scope: grant the read-only roles only on the in-scope projects, as the setup above does, so an out-of-scope project is unreachable whatever the argv. Region has no equivalent IAM boundary, so treat region scope as a guardrail against explicit pivots rather than a hard limit.
+Scope constrains the value of an explicit flag; it does not force one to be present. When a target is active, an omitted `--project` runs against that active target — an in-scope pin (`CLOUDSDK_CORE_PROJECT` for GCP, the active account's profile for AWS), not the CLI's ambient default — so a target-omitting command stays in-scope. Region still has no active-target equivalent: an omitted `--region` falls back to the configured `AWS_REGION` / gcloud default, which scope does not police. Hard project confinement therefore comes from the pinned identity's IAM, not from scope: grant the read-only roles only on the in-scope projects, as the setup above does, so an out-of-scope project is unreachable whatever the argv. Treat region scope as a guardrail against explicit pivots rather than a hard limit.
 
 `accounts` is informational and reserved: it documents which AWS accounts the source is expected to reach, but `run_cli` does not validate account ids on argv. What actually bounds account reach is the pinned assume-role profile, whose role can only see the accounts its trust policy and permissions allow. Treat `accounts` as a note to operators, not an enforced allowlist.
 

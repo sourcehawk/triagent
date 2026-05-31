@@ -20,4 +20,17 @@ const (
 	// threads it into the identity probe; the provider validates the resolved
 	// identity against it.
 	EnvExpectedIdentity = "TRIAGENT_CLOUD_EXPECTED_IDENTITY"
+	// EnvAWSAccounts carries the aws multi-account set as a JSON array of
+	// {account_id, role_arn} objects. The serve subprocess decodes it and builds
+	// the aws provider's configured targets and generated assume-role profiles.
+	// Empty for gcp and for the single-account aws form.
+	EnvAWSAccounts = "TRIAGENT_CLOUD_AWS_ACCOUNTS"
+	// EnvAWSSourceProfile carries the operator's SSO base profile the generated
+	// multi-account assume-role profiles layer their role over. aws-only.
+	EnvAWSSourceProfile = "TRIAGENT_CLOUD_AWS_SOURCE_PROFILE"
+	// EnvAWSAlias carries the cloud source's alias, the namespace for the
+	// generated assume-role profile names (triagent-cloud-<alias>-<account_id>).
+	// The launcher-side probe and the serve subprocess both build the provider
+	// with it, so they name and generate the same profiles. aws-only.
+	EnvAWSAlias = "TRIAGENT_CLOUD_AWS_ALIAS"
 )

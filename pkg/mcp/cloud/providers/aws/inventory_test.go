@@ -17,6 +17,25 @@ const listAccountsOutput = `{
   ]
 }`
 
+// TestInventoryUsesConfiguredAccounts proves a provider built with a configured
+// accounts list reports exactly those accounts as the reachable set, without
+// calling organizations list-accounts — the run func must never be invoked.
+func TestInventoryUsesConfiguredAccounts(t *testing.T) {
+	p := providerWithAccounts(t, "prod-aws", []Account{
+		{ID: "111111111111", RoleARN: "arn:aws:iam::111111111111:role/r"},
+		{ID: "222222222222", RoleARN: "arn:aws:iam::222222222222:role/r"},
+	})
+	failRun := func(_ context.Context, argv []string) (cloud.CLIResult, error) {
+		t.Fatalf("Inventory must not shell the CLI when accounts are configured; got %v", argv)
+		return cloud.CLIResult{}, nil
+	}
+	inv, err := p.Inventory(context.Background(), failRun)
+	require.NoError(t, err)
+	require.Len(t, inv.Scopes, 2)
+	assert.Equal(t, cloud.Scope{ID: "111111111111", Name: "111111111111"}, inv.Scopes[0])
+	assert.Equal(t, cloud.Scope{ID: "222222222222", Name: "222222222222"}, inv.Scopes[1])
+}
+
 func TestInventoryProjectsActiveAccounts(t *testing.T) {
 	f := &fakeRun{results: map[string]cloud.CLIResult{
 		"organizations list-accounts": {Stdout: listAccountsOutput},

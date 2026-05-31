@@ -13,6 +13,7 @@ import (
 	"github.com/sourcehawk/triagent/pkg/mcp/agentoperator"
 	"github.com/sourcehawk/triagent/pkg/mcp/cloud"
 	"github.com/sourcehawk/triagent/pkg/mcp/cloud/providers"
+	"github.com/sourcehawk/triagent/pkg/mcp/cloud/providers/aws"
 	"github.com/sourcehawk/triagent/pkg/mcp/git"
 	"github.com/sourcehawk/triagent/pkg/mcp/incidentio"
 	"github.com/sourcehawk/triagent/pkg/mcp/k8s"
@@ -441,7 +442,10 @@ func runProm(ctx context.Context, f serveFlags) error {
 // concrete backend; New plugs it in behind cloud.Provider. The launcher passes
 // the allowlist override path, target scope, and pinned identity through the
 // subprocess env (cloud.EnvAllowlistPath, cloud.EnvScope,
-// cloud.EnvExpectedIdentity), never argv.
+// cloud.EnvExpectedIdentity), never argv. A multi-account aws source additionally
+// carries its accounts, source_profile, and alias (cloud.EnvAWSAccounts,
+// _SOURCE_PROFILE, _ALIAS); New generates the per-account assume-role profiles
+// and surfaces the accounts as the agent's selectable targets.
 func runCloud(ctx context.Context, f serveFlags) error {
 	if f.cloudProvider == "" {
 		return fmt.Errorf("--provider is required (gcp or aws) (set --provider or $%s)", cloud.EnvProvider)
@@ -450,7 +454,15 @@ func runCloud(ctx context.Context, f serveFlags) error {
 	if err != nil {
 		return fmt.Errorf("build cloud mcp server: %w", err)
 	}
-	provider, err := providers.New(f.cloudProvider)
+	accounts, err := parseAWSAccounts(os.Getenv(cloud.EnvAWSAccounts))
+	if err != nil {
+		return fmt.Errorf("build cloud mcp server: %w", err)
+	}
+	provider, err := providers.New(f.cloudProvider, providers.Options{
+		AWSAlias:         os.Getenv(cloud.EnvAWSAlias),
+		AWSSourceProfile: os.Getenv(cloud.EnvAWSSourceProfile),
+		AWSAccounts:      accounts,
+	})
 	if err != nil {
 		return err
 	}
@@ -481,6 +493,29 @@ func parseCloudScope(raw string) (cloud.ScopeAllowlist, error) {
 		return cloud.ScopeAllowlist{}, fmt.Errorf("malformed cloud scope in $%s: %w", cloud.EnvScope, err)
 	}
 	return scope, nil
+}
+
+// parseAWSAccounts decodes the JSON-encoded aws multi-account set the launcher
+// froze into the aws provider's account list. An empty value yields nil, the
+// single-account / single-identity form. A malformed value is an error that
+// aborts startup: failing closed, since a misconfigured accounts list must never
+// silently drop accounts the agent should be able to select.
+func parseAWSAccounts(raw string) ([]aws.Account, error) {
+	if raw == "" {
+		return nil, nil
+	}
+	var wire []struct {
+		AccountID string `json:"account_id"`
+		RoleARN   string `json:"role_arn"`
+	}
+	if err := json.Unmarshal([]byte(raw), &wire); err != nil {
+		return nil, fmt.Errorf("malformed cloud aws accounts in $%s: %w", cloud.EnvAWSAccounts, err)
+	}
+	accounts := make([]aws.Account, 0, len(wire))
+	for _, w := range wire {
+		accounts = append(accounts, aws.Account{ID: w.AccountID, RoleARN: w.RoleARN})
+	}
+	return accounts, nil
 }
 
 func runGit(ctx context.Context, f serveFlags) error {

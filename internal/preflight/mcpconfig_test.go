@@ -466,4 +466,47 @@ func TestWriteMCPConfig_AWSCloudSource_RegistersServerWithProfileAndExpectedRole
 	assert.Equal(t, "triage-ro", env[aws.EnvProfile])
 	// gcp impersonation env must not leak onto an aws source.
 	assert.NotContains(t, env, gcp.EnvImpersonate)
+	// The single-account form carries no accounts/source_profile env.
+	assert.NotContains(t, env, cloud.EnvAWSAccounts)
+	assert.NotContains(t, env, cloud.EnvAWSSourceProfile)
+}
+
+func TestCloudSourceEnv_AWSAccounts_EmitsAccountsAndSourceProfile(t *testing.T) {
+	t.Parallel()
+	env, err := cloudSourceEnv(profile.CloudSource{
+		Alias:           "prod-aws",
+		Provider:        "aws",
+		AssumedIdentity: "arn:aws:iam::111111111111:role/triage-ro",
+		SourceProfile:   "sso-admin",
+		Accounts: []profile.CloudAccount{
+			{AccountID: "111111111111", RoleARN: "arn:aws:iam::111111111111:role/triage-ro"},
+			{AccountID: "222222222222", RoleARN: "arn:aws:iam::222222222222:role/triage-ro"},
+		},
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, "sso-admin", env[cloud.EnvAWSSourceProfile])
+	require.NotEmpty(t, env[cloud.EnvAWSAccounts], "accounts must be emitted as JSON")
+
+	var decoded []profile.CloudAccount
+	require.NoError(t, json.Unmarshal([]byte(env[cloud.EnvAWSAccounts]), &decoded))
+	require.Len(t, decoded, 2)
+	assert.Equal(t, "111111111111", decoded[0].AccountID)
+	assert.Equal(t, "arn:aws:iam::222222222222:role/triage-ro", decoded[1].RoleARN)
+
+	// The multi-account form pins AWS_PROFILE per-exec from the active target, so
+	// the subprocess credential env carries no static profile selector.
+	assert.NotContains(t, env, aws.EnvProfile)
+}
+
+func TestCloudSourceEnv_GCP_CarriesNoAWSAccountsEnv(t *testing.T) {
+	t.Parallel()
+	env, err := cloudSourceEnv(profile.CloudSource{
+		Alias:           "prod-gcp",
+		Provider:        "gcp",
+		AssumedIdentity: "ro@proj.iam.gserviceaccount.com",
+	})
+	require.NoError(t, err)
+	assert.NotContains(t, env, cloud.EnvAWSAccounts)
+	assert.NotContains(t, env, cloud.EnvAWSSourceProfile)
 }

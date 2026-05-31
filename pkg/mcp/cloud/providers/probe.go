@@ -26,14 +26,24 @@ var probeTimeout = 15 * time.Second
 // per-source credential vars are overlaid on top.
 var baseEnvPassthrough = []string{"PATH", "HOME"}
 
-// Source is a neutral description of one cloud connection to probe: the
-// provider name, the pinned identity, and (aws only) the assume-role profile.
-// It carries exactly what ProbeSource needs without coupling this package to
-// the launcher's profile type.
+// Source is a neutral description of one cloud connection to probe: the provider
+// name, the pinned identity, and the aws credential config. It carries exactly
+// what ProbeSource needs without coupling this package to the launcher's profile
+// type.
+//
+// AWS has two forms. The single-account form sets Profile (the operator's
+// AWS_PROFILE selector). The multi-account form sets Alias, SourceProfile, and
+// Accounts; ProbeSource generates the per-account profiles and probes the default
+// (first) account's generated profile — per-account validity is out of scope for
+// v1, so the panel reflects the source's default-target validity. gcp ignores
+// all four.
 type Source struct {
 	Provider        string
 	AssumedIdentity string
-	Profile         string // aws AWS_PROFILE selector; ignored by gcp
+	Profile         string // aws single-account AWS_PROFILE selector; ignored by gcp
+	Alias           string // aws multi-account: the generated profiles' namespace
+	SourceProfile   string // aws multi-account: the operator's SSO base profile
+	Accounts        []aws.Account
 }
 
 // ProbeSource constructs the source's provider and runs the read-only identity
@@ -43,7 +53,11 @@ type Source struct {
 // binary) returns an invalid status with the error as the hint, exactly like a
 // failed probe.
 func ProbeSource(ctx context.Context, src Source) cloud.IdentityStatus {
-	p, err := New(src.Provider)
+	p, err := New(src.Provider, Options{
+		AWSAlias:         src.Alias,
+		AWSSourceProfile: src.SourceProfile,
+		AWSAccounts:      src.Accounts,
+	})
 	if err != nil {
 		return cloud.IdentityStatus{
 			Provider:        src.Provider,
@@ -108,15 +122,28 @@ func sourceEnvFor(p passthroughLister, src Source) []string {
 
 // credentialEnv is the per-provider credential the CLI authenticates with for
 // the source: gcp impersonates the assumed identity directly; aws selects the
-// assume-role profile. The env-name constants come from the provider packages,
-// never raw literals.
+// assume-role profile. For a multi-account aws source the profile is the default
+// (first) account's generated profile name — the same name aws.New wrote into
+// ~/.aws/config — so the launcher-side probe reflects the source's default
+// target. The env-name constants come from the provider packages, never raw
+// literals.
 func credentialEnv(src Source) map[string]string {
 	switch src.Provider {
 	case "gcp":
 		return map[string]string{gcp.EnvImpersonate: src.AssumedIdentity}
 	case "aws":
-		return map[string]string{aws.EnvProfile: src.Profile}
+		return map[string]string{aws.EnvProfile: awsProbeProfile(src)}
 	default:
 		return nil
 	}
+}
+
+// awsProbeProfile is the AWS_PROFILE the launcher-side probe authenticates with:
+// the default (first) account's generated profile for a multi-account source,
+// else the operator's single-account profile selector.
+func awsProbeProfile(src Source) string {
+	if len(src.Accounts) > 0 {
+		return aws.ProfileName(src.Alias, src.Accounts[0].ID)
+	}
+	return src.Profile
 }
