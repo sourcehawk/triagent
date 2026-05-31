@@ -28,11 +28,10 @@ This spec defines a single read-only cloud-context MCP that gives the agent that
 
 One package, `pkg/mcp/cloud/`, exposing `New(Options)` + `Run(ctx)` + a sibling `specs.go::ToolSpecs()`, registered with one `case "cloud"` in `cmd/triagent-mcp/serve.go` (ADR-0001) and selected at launch by `--provider=gcp|aws`. This mirrors the git MCP, which is one package bound per-repo via `--repo` and aliased `triagent-git-<alias>` at the `mcpconfig.go` wiring layer (`internal/preflight/mcpconfig.go`, ADR-0003); here the bound target is a cloud provider, aliased `triagent-cloud-<alias>`. Deployment config (provider, pinned identity, scope allowlist, command-allowlist override path) loads from the runtime profile (ADR-0008).
 
-The tool surface is provider-agnostic and lives once in `specs.go`. It is deliberately thin: three typed tools where shaped output clearly pays its context cost, plus a gated CLI escape hatch for the long tail.
+The tool surface is provider-agnostic and lives once in `specs.go`. It is deliberately thin: two typed tools where shaped output clearly pays its context cost, plus a gated CLI escape hatch for the long tail.
 
 - `list_inventory` — projects / accounts and the accessible resources within an allowlisted scope, so the agent can orient.
 - `session_status` — the read-only whoami: which pinned identity is active and whether it is valid.
-- `set_active_target` — choose which project (GCP) or account (AWS) subsequent `run_cli` commands run against, from the configured set; an id outside that set is rejected, so the agent can never name a target the deployment did not configure.
 - `run_cli` — a gated, read-only `gcloud` / `aws` invocation for everything else, with argument tokens supplied as an array.
 - `list_allowed_commands` — the discovery tool that reads the same gating config `run_cli` enforces, so what is advertised is exactly what is permitted.
 
@@ -40,7 +39,7 @@ Each typed tool calls through a `Provider` interface; selecting `--provider` cho
 
 ```mermaid
 flowchart TD
-    operator[operator agent] --> typed["typed tools<br/>list_inventory · session_status · set_active_target"]
+    operator[operator agent] --> typed["typed tools<br/>list_inventory · session_status"]
     operator --> disc["list_allowed_commands"]
     operator --> cli["run_cli<br/>(argv tokens only)"]
     typed --> iface{{Provider interface}}
