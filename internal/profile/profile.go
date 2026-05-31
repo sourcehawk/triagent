@@ -158,20 +158,40 @@ type ExtraMCP struct {
 // AssumedIdentity is the canonical pinned identity shown in the connections
 // panel — a service-account email for gcp, a role ARN for aws. The two clouds
 // realize it through different env: gcp impersonates AssumedIdentity directly,
-// while aws selects an assume-role profile (Profile) for credentials and checks
-// AssumedIdentity (the role ARN) for strict validity. Profile is therefore
-// aws-only; gcp ignores it.
+// while aws selects an assume-role profile for credentials and checks
+// AssumedIdentity (the role ARN) for strict validity.
+//
+// AWS has two shapes. The single-account form sets Profile (the operator's
+// pre-existing AWS_PROFILE selector). The multi-account form sets SourceProfile
+// (the operator's SSO base) plus Accounts (one read-only role per account);
+// triagent generates a per-account assume-role profile layering each role over
+// SourceProfile, and the agent selects among them via set_active_target. GCP
+// spans its projects with one impersonated identity, so it ignores all three.
 type CloudSource struct {
 	Alias           string               `yaml:"alias"`
 	Provider        string               `yaml:"provider"` // "gcp" | "aws"
 	AssumedIdentity string               `yaml:"assumed_identity"`
-	Profile         string               `yaml:"profile,omitempty"` // aws AWS_PROFILE selector; ignored by gcp
-	Scope           cloud.ScopeAllowlist `yaml:"scope,omitempty"`
+	Profile         string               `yaml:"profile,omitempty"` // aws single-account AWS_PROFILE selector; ignored by gcp
+	// SourceProfile is the operator's SSO base profile the generated multi-account
+	// assume-role profiles layer their role_arn over. Required when Accounts is set.
+	SourceProfile string `yaml:"source_profile,omitempty"`
+	// Accounts is the deployment-pinned multi-account set; each entry becomes a
+	// generated assume-role profile the agent may make active. aws-only.
+	Accounts []CloudAccount       `yaml:"accounts,omitempty"`
+	Scope    cloud.ScopeAllowlist `yaml:"scope,omitempty"`
 	// CommandAllowlistPath points the cloud MCP at a run_cli allowlist override
 	// file; empty uses the provider's embedded default. A relative path resolves
 	// against the profile.yaml's directory at load time (absolutized so the MCP
 	// subprocess can read it from any cwd).
 	CommandAllowlistPath string `yaml:"command_allowlist_path,omitempty"`
+}
+
+// CloudAccount is one aws account in a multi-account cloud source: the account
+// id the agent selects by, and the read-only role_arn triagent assumes into it
+// from the source's SourceProfile.
+type CloudAccount struct {
+	AccountID string `yaml:"account_id"`
+	RoleARN   string `yaml:"role_arn"`
 }
 
 type InvestigationInput struct {

@@ -307,6 +307,97 @@ func TestValidateCloudAWSMissingProfile(t *testing.T) {
 	assert.Contains(t, err.Error(), "profile")
 }
 
+const awsAccountsYAML = `
+name: example
+description: test profile
+auth:
+  kind: kubeconfig
+playbooks:
+  entrypoint: a
+  closing: b
+cloud:
+  - alias: prod-aws
+    provider: aws
+    assumed_identity: arn:aws:iam::111111111111:role/triage-readonly
+    source_profile: sso-admin
+    accounts:
+      - {account_id: "111111111111", role_arn: "arn:aws:iam::111111111111:role/triage-readonly"}
+      - {account_id: "222222222222", role_arn: "arn:aws:iam::222222222222:role/triage-readonly"}
+`
+
+func TestCloudSourceAWSAccounts(t *testing.T) {
+	p, err := profile.Parse(strings.NewReader(awsAccountsYAML))
+	require.NoError(t, err)
+	require.NoError(t, p.Validate())
+	require.Len(t, p.Cloud[0].Accounts, 2)
+	assert.Equal(t, "sso-admin", p.Cloud[0].SourceProfile)
+	assert.Equal(t, "111111111111", p.Cloud[0].Accounts[0].AccountID)
+	assert.Equal(t, "arn:aws:iam::222222222222:role/triage-readonly", p.Cloud[0].Accounts[1].RoleARN)
+}
+
+// awsAccountsBase is a valid multi-account aws source the negative-case tests
+// each break in exactly one way.
+func awsAccountsBase() profile.CloudSource {
+	return profile.CloudSource{
+		Alias:           "prod-aws",
+		Provider:        "aws",
+		AssumedIdentity: "arn:aws:iam::111111111111:role/triage-readonly",
+		SourceProfile:   "sso-admin",
+		Accounts: []profile.CloudAccount{
+			{AccountID: "111111111111", RoleARN: "arn:aws:iam::111111111111:role/triage-readonly"},
+			{AccountID: "222222222222", RoleARN: "arn:aws:iam::222222222222:role/triage-readonly"},
+		},
+	}
+}
+
+func TestValidateCloudAWSAccountsOK(t *testing.T) {
+	p := validCloudBase()
+	p.Cloud = []profile.CloudSource{awsAccountsBase()}
+	assert.NoError(t, p.Validate(), "an aws source with source_profile + unique accounts must validate clean")
+}
+
+func TestValidateCloudAWSAccountsRequireSourceProfile(t *testing.T) {
+	p := validCloudBase()
+	src := awsAccountsBase()
+	src.SourceProfile = ""
+	p.Cloud = []profile.CloudSource{src}
+	err := p.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "source_profile")
+}
+
+func TestValidateCloudAWSAccountsDuplicateID(t *testing.T) {
+	p := validCloudBase()
+	src := awsAccountsBase()
+	src.Accounts[1].AccountID = src.Accounts[0].AccountID
+	p.Cloud = []profile.CloudSource{src}
+	err := p.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "account_id")
+	assert.Contains(t, err.Error(), "duplicate")
+}
+
+func TestValidateCloudAWSAccountsDuplicateRoleARN(t *testing.T) {
+	p := validCloudBase()
+	src := awsAccountsBase()
+	src.Accounts[1].RoleARN = src.Accounts[0].RoleARN
+	p.Cloud = []profile.CloudSource{src}
+	err := p.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "role_arn")
+	assert.Contains(t, err.Error(), "duplicate")
+}
+
+func TestValidateCloudAWSAccountsEmptyFields(t *testing.T) {
+	p := validCloudBase()
+	src := awsAccountsBase()
+	src.Accounts[0].AccountID = ""
+	p.Cloud = []profile.CloudSource{src}
+	err := p.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "account_id")
+}
+
 func TestDefaultProfilePromptsPopulated(t *testing.T) {
 	p, err := profile.LoadEmbedded("default")
 	if err != nil {
