@@ -19,11 +19,10 @@ var defaultCommandsJSON []byte
 // Command is one entry in the command allowlist. Path is the normalized
 // subcommand path the allowlist matches against (for example "projects list" or
 // "compute firewall-rules list"). Description carries the investigative axis the
-// command serves (prose only). Redact marks output that needs secret-scrubbing.
+// command serves (prose only).
 type Command struct {
 	Path        string `json:"path"`
 	Description string `json:"description,omitempty"`
-	Redact      bool   `json:"redact,omitempty"`
 }
 
 // CommandAllowlist is the decoded allowlist document: the positive set of
