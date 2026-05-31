@@ -4,11 +4,21 @@ import (
 	"context"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/sourcehawk/triagent/pkg/mcp/cloud"
 	"github.com/sourcehawk/triagent/pkg/mcp/cloud/providers/aws"
 	"github.com/sourcehawk/triagent/pkg/mcp/cloud/providers/gcp"
 )
+
+// probeTimeout bounds a single identity probe so a hung CLI (a stale SSO flow,
+// a slow network, a wedged gcloud/aws) cannot block /api/connections or session
+// preflight indefinitely — the "degrade, never block" contract. A normal whoami
+// returns in 1-3s; 15s sits comfortably above that yet well below anything that
+// would stall a request. On deadline the CLI exec is killed, the provider
+// surfaces the context error, and the probe degrades to Valid:false with a hint
+// rather than hanging. A package var, not a const, so tests can shorten it.
+var probeTimeout = 15 * time.Second
 
 // baseEnvPassthrough is the minimal env every provider CLI needs regardless of
 // cloud: PATH so the resolved binary can find its own dependencies, HOME so it
@@ -37,8 +47,18 @@ func ProbeSource(ctx context.Context, src Source) cloud.IdentityStatus {
 	if err != nil {
 		return cloud.IdentityStatus{Provider: src.Provider, Valid: false, Hint: err.Error()}
 	}
+	return probeProvider(ctx, p, src.AssumedIdentity, sourceEnvFor(p, src))
+}
 
-	st, _ := cloud.Probe(ctx, p, src.AssumedIdentity, sourceEnvFor(p, src))
+// probeProvider runs the identity probe for an already-constructed provider
+// under a bounded timeout, so a hung CLI degrades to an invalid status instead
+// of blocking the caller. The deadline cancels the CLI exec; cloud.Probe
+// surfaces the resulting context error as a Valid:false status with a hint.
+func probeProvider(ctx context.Context, p cloud.Provider, expected string, env []string) cloud.IdentityStatus {
+	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
+	defer cancel()
+
+	st, _ := cloud.Probe(ctx, p, expected, env)
 	return st
 }
 
