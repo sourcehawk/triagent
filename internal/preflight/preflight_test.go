@@ -16,6 +16,8 @@ import (
 	"github.com/sourcehawk/triagent/internal/profile"
 	"github.com/sourcehawk/triagent/pkg/auth"
 	"github.com/sourcehawk/triagent/pkg/mcp/cloud"
+	"github.com/sourcehawk/triagent/pkg/mcp/cloud/providers"
+	"github.com/sourcehawk/triagent/pkg/mcp/cloud/providers/aws"
 )
 
 // fakeProvider lets the preflight gate be tested without a real tsh session.
@@ -305,4 +307,35 @@ func TestRun_CloudProviderConstructionErrorDegrades(t *testing.T) {
 	require.NoError(t, err, "a provider construction error must not fail the session")
 	require.Len(t, res.CloudSources, 1)
 	assert.Equal(t, "no-cli", res.CloudSources[0].Alias)
+}
+
+// TestCloudProbeSource_ThreadsAWSMultiAccountFields pins that the source mapping
+// shared by the preflight gate and the connections panel carries the aws
+// multi-account fields. Dropping them probes a multi-account source with an
+// empty AWS_PROFILE, which would show a valid source as unavailable.
+func TestCloudProbeSource_ThreadsAWSMultiAccountFields(t *testing.T) {
+	t.Parallel()
+	src := profile.CloudSource{
+		Alias:           "prod-aws",
+		Provider:        "aws",
+		AssumedIdentity: "arn:aws:iam::111111111111:role/triage-ro",
+		SourceProfile:   "sso-base",
+		Accounts: []profile.CloudAccount{
+			{AccountID: "111111111111", RoleARN: "arn:aws:iam::111111111111:role/triage-ro"},
+			{AccountID: "222222222222", RoleARN: "arn:aws:iam::222222222222:role/triage-ro"},
+		},
+	}
+
+	got := cloudProbeSource(src)
+
+	assert.Equal(t, providers.Source{
+		Provider:        "aws",
+		AssumedIdentity: "arn:aws:iam::111111111111:role/triage-ro",
+		Alias:           "prod-aws",
+		SourceProfile:   "sso-base",
+		Accounts: []aws.Account{
+			{ID: "111111111111", RoleARN: "arn:aws:iam::111111111111:role/triage-ro"},
+			{ID: "222222222222", RoleARN: "arn:aws:iam::222222222222:role/triage-ro"},
+		},
+	}, got)
 }

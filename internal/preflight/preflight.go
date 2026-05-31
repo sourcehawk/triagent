@@ -244,7 +244,7 @@ func probeCloudSources(ctx context.Context, sources []profile.CloudSource, probe
 		return nil
 	}
 	if probe == nil {
-		probe = defaultCloudProbe
+		probe = DefaultCloudProbe
 	}
 	out := make([]CloudSourceStatus, 0, len(sources))
 	for _, src := range sources {
@@ -256,23 +256,33 @@ func probeCloudSources(ctx context.Context, sources []profile.CloudSource, probe
 	return out
 }
 
-// defaultCloudProbe is the real prober: it maps a profile cloud source to the
+// DefaultCloudProbe is the real prober: it maps a profile cloud source to the
 // providers package's neutral Source and runs ProbeSource, which constructs the
 // provider and shells its whoami CLI. A construction error degrades to an
-// invalid status, never a session-fatal error.
-func defaultCloudProbe(ctx context.Context, src profile.CloudSource) cloud.IdentityStatus {
+// invalid status, never a session-fatal error. The session preflight gate and
+// the connections panel both probe through it, so the two surfaces resolve the
+// same identity and can never disagree.
+func DefaultCloudProbe(ctx context.Context, src profile.CloudSource) cloud.IdentityStatus {
+	return providers.ProbeSource(ctx, cloudProbeSource(src))
+}
+
+// cloudProbeSource maps a profile cloud source to the providers package's
+// neutral probe Source, threading the aws multi-account fields (alias, source
+// profile, accounts) so a multi-account source probes its default account's
+// generated profile rather than an empty AWS_PROFILE.
+func cloudProbeSource(src profile.CloudSource) providers.Source {
 	accounts := make([]aws.Account, 0, len(src.Accounts))
 	for _, a := range src.Accounts {
 		accounts = append(accounts, aws.Account{ID: a.AccountID, RoleARN: a.RoleARN})
 	}
-	return providers.ProbeSource(ctx, providers.Source{
+	return providers.Source{
 		Provider:        src.Provider,
 		AssumedIdentity: src.AssumedIdentity,
 		Profile:         src.Profile,
 		Alias:           src.Alias,
 		SourceProfile:   src.SourceProfile,
 		Accounts:        accounts,
-	})
+	}
 }
 
 // cloudSources returns the profile's read-only cloud connections, or nil when

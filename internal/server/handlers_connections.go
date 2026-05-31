@@ -12,9 +12,7 @@ import (
 	"time"
 
 	"github.com/sourcehawk/triagent/internal/connections"
-	"github.com/sourcehawk/triagent/internal/profile"
-	"github.com/sourcehawk/triagent/pkg/mcp/cloud"
-	"github.com/sourcehawk/triagent/pkg/mcp/cloud/providers"
+	"github.com/sourcehawk/triagent/internal/preflight"
 )
 
 // Connection-management endpoints. The panel reads /api/connections to
@@ -62,17 +60,17 @@ func (a *apiHandlers) connectionsResp(ctx context.Context) connectionsResponse {
 }
 
 // cloudConnections probes each profile cloud source at request time and projects
-// the result into the read-only panel view. Returns nil when no profile or no
-// cloud sources are configured. The probe degrades, never blocks: an invalid
-// source still appears, with its hint, so the operator can fix a stale
-// credential before starting a session.
+// the result into the read-only panel view. Returns an empty slice when no
+// profile or no cloud sources are configured, so the JSON field is always an
+// array. The probe degrades, never blocks: an invalid source still appears, with
+// its hint, so the operator can fix a stale credential before starting a session.
 func (a *apiHandlers) cloudConnections(ctx context.Context) []cloudConnection {
 	if a.prof == nil || len(a.prof.Cloud) == 0 {
-		return nil
+		return []cloudConnection{}
 	}
 	probe := a.cloudProbe
 	if probe == nil {
-		probe = defaultCloudProbe
+		probe = preflight.DefaultCloudProbe
 	}
 	out := make([]cloudConnection, 0, len(a.prof.Cloud))
 	for _, src := range a.prof.Cloud {
@@ -98,18 +96,6 @@ func (a *apiHandlers) cloudConnections(ctx context.Context) []cloudConnection {
 		})
 	}
 	return out
-}
-
-// defaultCloudProbe is the real request-time prober: it maps a profile cloud
-// source to the providers package's neutral Source and runs ProbeSource, which
-// constructs the provider and shells its whoami CLI, degrading a construction
-// error to an invalid status.
-func defaultCloudProbe(ctx context.Context, src profile.CloudSource) cloud.IdentityStatus {
-	return providers.ProbeSource(ctx, providers.Source{
-		Provider:        src.Provider,
-		AssumedIdentity: src.AssumedIdentity,
-		Profile:         src.Profile,
-	})
 }
 
 // handleGetConnections returns which integrations have a usable token, plus

@@ -388,9 +388,13 @@ func TestGetConnections_NoCloudSources_OmitsOrEmptyCloud(t *testing.T) {
 	a.handleGetConnections(rr, req)
 	require.Equal(t, http.StatusOK, rr.Code, "body: %s", rr.Body)
 
+	body := rr.Body.String()
+	assert.Contains(t, body, `"cloud":[]`,
+		"cloud must serialize as an empty array, never null, so clients can always treat it as an array")
+
 	var resp struct {
 		Cloud []json.RawMessage `json:"cloud"`
 	}
-	require.NoError(t, json.NewDecoder(rr.Body).Decode(&resp))
+	require.NoError(t, json.Unmarshal([]byte(body), &resp))
 	assert.Empty(t, resp.Cloud, "no cloud sources means an empty cloud array")
 }
