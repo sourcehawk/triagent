@@ -8,8 +8,10 @@ package gcp
 import (
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 
 	"github.com/sourcehawk/triagent/pkg/mcp/cloud"
 )
@@ -36,13 +38,20 @@ type Provider struct {
 }
 
 // New constructs the gcp provider, resolving gcloud to an absolute path once via
-// exec.LookPath so a poisoned PATH cannot redirect the binary at run time.
+// exec.LookPath so a poisoned PATH cannot redirect the binary at run time. A
+// PATH with relative entries makes LookPath return a relative path (flagged with
+// exec.ErrDot); the path is made absolute so a later subprocess env/PATH change
+// cannot reinterpret it against a different working directory.
 func New() (*Provider, error) {
 	bin, err := exec.LookPath("gcloud")
-	if err != nil {
+	if err != nil && !errors.Is(err, exec.ErrDot) {
 		return nil, fmt.Errorf("gcp: resolve gcloud binary: %w", err)
 	}
-	return newWithBinary(bin)
+	abs, err := filepath.Abs(bin)
+	if err != nil {
+		return nil, fmt.Errorf("gcp: resolve gcloud binary to absolute path: %w", err)
+	}
+	return newWithBinary(abs)
 }
 
 // newWithBinary builds the provider against an already-resolved binary path. It

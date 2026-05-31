@@ -20,6 +20,31 @@ func TestNewResolvesBinaryAndName(t *testing.T) {
 	assert.Equal(t, "/usr/bin/gcloud", p.Binary())
 }
 
+// TestNewResolvesBinaryToAbsolutePath proves New stores an absolute binary path
+// even when PATH resolution would yield a relative one, so a later subprocess
+// env/PATH change cannot redirect what executes. The provider's CLI is dropped
+// into a temp dir reachable through a relative PATH entry; the resolved binary
+// must come back absolute.
+func TestNewResolvesBinaryToAbsolutePath(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "gcloud")
+	require.NoError(t, os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o755))
+
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.Chdir(cwd) })
+	require.NoError(t, os.Chdir(dir))
+
+	// "." is a relative PATH entry; exec.LookPath("gcloud") resolves to "gcloud"
+	// (relative) under it.
+	t.Setenv("PATH", ".")
+
+	p, err := New()
+	require.NoError(t, err)
+	assert.True(t, filepath.IsAbs(p.Binary()),
+		"New must store an absolute binary path, got %q", p.Binary())
+}
+
 func TestDefaultAllowlistLoadsEmbeddedJSON(t *testing.T) {
 	t.Parallel()
 	p, err := newWithBinary("/usr/bin/gcloud")
