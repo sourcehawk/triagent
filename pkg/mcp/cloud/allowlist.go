@@ -44,14 +44,15 @@ type DenyFloor struct {
 // denyFloor is the base floor. Config can never re-enable these; they are
 // filtered out of any loaded allowlist and rejected in argv validation. The
 // floor covers credential-reading and identity/endpoint-redirecting subcommands
-// and flags, plus argument prefixes that read local files or reach the network
-// (local-file read and SSRF vectors).
+// and flags, the wire-tracing flags that echo signed request metadata and auth
+// headers to stderr (gcloud --log-http, aws --debug), plus argument prefixes
+// that read local files or reach the network (local-file read and SSRF vectors).
 var denyFloor = DenyFloor{
 	Subcommands: []string{"secrets", "ssh", "scp", "cp", "sync", "auth", "config"},
 	Flags: []string{
 		"--impersonate-service-account", "--account", "--profile",
 		"--endpoint-url", "--cli-input-json", "--cli-input-yaml", "--configuration",
-		"--flags-file", "--access-token-file",
+		"--flags-file", "--access-token-file", "--log-http", "--debug",
 	},
 	ArgPrefixes: []string{"file://", "fileb://", "@", "http://", "https://"},
 }

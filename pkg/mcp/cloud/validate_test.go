@@ -25,6 +25,8 @@ func TestValidateArgvRejectsDenyFloorAndScope(t *testing.T) {
 		{"endpoint-flag", []string{"compute", "instances", "list", "--endpoint-url", "http://evil"}, false},
 		{"flags-file", []string{"compute", "instances", "list", "--flags-file", "/tmp/evil.yaml"}, false},
 		{"access-token-file", []string{"compute", "instances", "list", "--access-token-file", "/tmp/tok"}, false},
+		{"log-http", []string{"compute", "instances", "list", "--log-http"}, false},
+		{"debug", []string{"compute", "instances", "list", "--debug"}, false},
 		{"file-prefix", []string{"compute", "instances", "list", "--filter", "@/etc/passwd"}, false},
 		{"fileurl-prefix", []string{"compute", "instances", "list", "--filter", "file:///etc/passwd"}, false},
 		{"httpurl-prefix", []string{"compute", "instances", "list", "--filter", "https://evil"}, false},
