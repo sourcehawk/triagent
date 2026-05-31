@@ -206,22 +206,22 @@ The fields:
 
 ## Scope allowlist
 
-`scope` constrains which cloud targets a `run_cli` argument may reference, so the agent cannot pivot to an un-allowlisted project or region. The argv-enforced axes are project and region/zone; account reach is governed by the pinned role or profile, not by argv.
+`scope` constrains which cloud targets the agent may reach, so it cannot pivot to an un-allowlisted project or region. Region/zone is enforced against `run_cli` argv. Project is not an argv axis: `--project` is deny-floored and the project is chosen with `set_active_target`, validated against `scope.projects`. Account reach is governed by the pinned role or profile, not by argv.
 
 ```yaml
 scope:
-  projects: [prod-platform]    # gcp --project values the agent may use (argv-enforced)
+  projects: [prod-platform]    # gcp projects the agent may set_active_target to
   regions:  [us-central1]      # --region / --zone values the agent may use (argv-enforced)
   accounts: ["123456789012"]   # aws accounts reachable via the pinned role (informational)
 ```
 
-An empty (or omitted) `projects` or `regions` axis is unconstrained on that axis. A non-empty one is a closed set: a `--project`, `--region`, or `--zone` value outside it fails validation before the command runs.
+An empty (or omitted) `projects` or `regions` axis is unconstrained on that axis. A non-empty `regions` is a closed set: a `--region` or `--zone` value outside it fails validation before the command runs. A non-empty `projects` is the closed set `set_active_target` will accept.
 
-Scope constrains the value of an explicit flag; it does not force one to be present. When a target is active, an omitted `--project` runs against that active target — an in-scope pin (`CLOUDSDK_CORE_PROJECT` for GCP, the active account's profile for AWS), not the CLI's ambient default — so a target-omitting command stays in-scope. Region still has no active-target equivalent: an omitted `--region` falls back to the configured `AWS_REGION` / gcloud default, which scope does not police. Hard project confinement therefore comes from the pinned identity's IAM, not from scope: grant the read-only roles only on the in-scope projects, as the setup above does, so an out-of-scope project is unreachable whatever the argv. Treat region scope as a guardrail against explicit pivots rather than a hard limit.
+The active target is the effective default, so a command that omits the target flag runs against an in-scope target rather than an ambient one (`CLOUDSDK_CORE_PROJECT` for GCP, the active account's profile for AWS). Region has no active-target equivalent: an omitted `--region` falls back to the configured `AWS_REGION` / gcloud default, which scope does not police. Hard project confinement therefore comes from the pinned identity's IAM, not from scope: grant the read-only roles only on the in-scope projects, as the setup above does, so an out-of-scope project is unreachable whatever the argv. Treat region scope as a guardrail against explicit pivots rather than a hard limit.
 
 `accounts` is informational and reserved: it documents which AWS accounts the source is expected to reach, but `run_cli` does not validate account ids on argv. What actually bounds account reach is the pinned assume-role profile, whose role can only see the accounts its trust policy and permissions allow. Treat `accounts` as a note to operators, not an enforced allowlist.
 
-Identity-selecting flags (`--account`, `--profile`) never reach scope validation at all, because the deny floor rejects them first.
+Identity- and target-selecting flags (`--account`, `--profile`, `--project`) never reach scope validation at all, because the deny floor rejects them first.
 
 ## Command allowlist
 

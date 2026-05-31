@@ -45,14 +45,17 @@ type DenyFloor struct {
 // filtered out of any loaded allowlist and rejected in argv validation. The
 // floor covers credential-reading and identity/endpoint-redirecting subcommands
 // and flags, the wire-tracing flags that echo signed request metadata and auth
-// headers to stderr (gcloud --log-http, aws --debug), plus argument prefixes
-// that read local files or reach the network (local-file read and SSRF vectors).
+// headers to stderr (gcloud --log-http, aws --debug), the project override
+// --project (the active target is chosen only via set_active_target, so an argv
+// --project can never steer a command away from session_status.active_target),
+// plus argument prefixes that read local files or reach the network (local-file
+// read and SSRF vectors).
 var denyFloor = DenyFloor{
 	Subcommands: []string{"secrets", "ssh", "scp", "cp", "sync", "auth", "config"},
 	Flags: []string{
 		"--impersonate-service-account", "--account", "--profile",
 		"--endpoint-url", "--cli-input-json", "--cli-input-yaml", "--configuration",
-		"--flags-file", "--access-token-file", "--log-http", "--debug",
+		"--flags-file", "--access-token-file", "--log-http", "--debug", "--project",
 	},
 	ArgPrefixes: []string{"file://", "fileb://", "@", "http://", "https://"},
 }

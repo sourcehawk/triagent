@@ -148,13 +148,13 @@ func TestRunCLIRejectsOutOfScopeTarget(t *testing.T) {
 	t.Parallel()
 	p := &fakeProvider{
 		binary:    "/bin/echo",
-		allowlist: &CommandAllowlist{Commands: []Command{{Path: "projects list"}}},
+		allowlist: &CommandAllowlist{Commands: []Command{{Path: "compute instances list"}}},
 	}
 	srv := newTestServer(t, p, func(o *Options) {
-		o.Scope = ScopeAllowlist{Projects: []string{"prod"}}
+		o.Scope = ScopeAllowlist{Regions: []string{"us-central1"}}
 	})
 	res, _, err := srv.runCLI(context.Background(), nil, RunCLIInput{
-		Argv: []string{"projects", "list", "--project", "other"},
+		Argv: []string{"compute", "instances", "list", "--region", "eu-west1"},
 	})
 	require.NoError(t, err)
 	require.True(t, res.IsError, "out-of-scope target must be rejected")

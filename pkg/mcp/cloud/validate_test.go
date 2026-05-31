@@ -15,10 +15,10 @@ func TestValidateArgvRejectsDenyFloorAndScope(t *testing.T) {
 		argv []string
 		ok   bool
 	}{
-		{"allowed", []string{"compute", "instances", "list", "--project", "prod"}, true},
-		{"allowed-region", []string{"compute", "instances", "list", "--project", "prod", "--region", "us-central1"}, true},
-		{"bad-scope", []string{"compute", "instances", "list", "--project", "other"}, false},
-		{"bad-region", []string{"compute", "instances", "list", "--project", "prod", "--region", "eu-west1"}, false},
+		{"allowed", []string{"compute", "instances", "list"}, true},
+		{"allowed-region", []string{"compute", "instances", "list", "--region", "us-central1"}, true},
+		{"project-flag-floored", []string{"compute", "instances", "list", "--project", "prod"}, false},
+		{"bad-region", []string{"compute", "instances", "list", "--region", "eu-west1"}, false},
 		{"impersonate", []string{"compute", "instances", "list", "--impersonate-service-account", "x"}, false},
 		{"account-flag", []string{"compute", "instances", "list", "--account", "evil"}, false},
 		{"profile-flag", []string{"compute", "instances", "list", "--profile", "evil"}, false},
@@ -55,15 +55,17 @@ func TestValidateArgvRejectsDenyFloorAndScope(t *testing.T) {
 func TestValidateArgvEqualsFormFlag(t *testing.T) {
 	t.Parallel()
 	al := &CommandAllowlist{Commands: []Command{{Path: "compute instances list"}}}
-	scope := ScopeAllowlist{Projects: []string{"prod"}}
-	// --project=other in equals form must be caught by the scope check, and a
-	// deny-floored flag in equals form must be caught by the floor.
-	assert.Error(t, validateArgv([]string{"compute", "instances", "list", "--project=other"}, al, scope),
-		"expected --project=other (equals form) to fail the scope check")
+	scope := ScopeAllowlist{Regions: []string{"us-central1"}}
+	// An out-of-scope value in equals form must be caught by the scope check, and
+	// a deny-floored flag in equals form must be caught by the floor.
+	assert.Error(t, validateArgv([]string{"compute", "instances", "list", "--region=eu-west1"}, al, scope),
+		"expected --region=eu-west1 (equals form) to fail the scope check")
 	assert.Error(t, validateArgv([]string{"compute", "instances", "list", "--impersonate-service-account=x"}, al, scope),
 		"expected --impersonate-service-account=x (equals form) to be denied")
-	assert.NoError(t, validateArgv([]string{"compute", "instances", "list", "--project=prod"}, al, scope),
-		"expected --project=prod (equals form, in scope) to validate")
+	assert.Error(t, validateArgv([]string{"compute", "instances", "list", "--project=prod"}, al, scope),
+		"expected --project=prod (equals form) to be denied by the floor")
+	assert.NoError(t, validateArgv([]string{"compute", "instances", "list", "--region=us-central1"}, al, scope),
+		"expected --region=us-central1 (equals form, in scope) to validate")
 }
 
 func TestValidateArgvAllowsResourceOperand(t *testing.T) {
@@ -73,7 +75,7 @@ func TestValidateArgvAllowsResourceOperand(t *testing.T) {
 	// describe/get verbs take a resource operand; the allowlisted verb chain
 	// matches as a prefix, and the operand is an inert positional argument.
 	assert.NoError(t, validateArgv(
-		[]string{"compute", "instances", "describe", "my-vm", "--project", "prod"}, al, scope),
+		[]string{"compute", "instances", "describe", "my-vm"}, al, scope),
 		"an allowlisted verb chain plus a resource operand must validate")
 }
 
@@ -99,9 +101,9 @@ func TestValidateArgvRejectsMetacharInAnyPosition(t *testing.T) {
 
 func TestValidateArgvEmptyScopeAllowsAnyTarget(t *testing.T) {
 	t.Parallel()
-	al := &CommandAllowlist{Commands: []Command{{Path: "projects list"}}}
-	// An empty scope means the deployment did not constrain targets; the scope
-	// check must not reject a --project then.
-	assert.NoError(t, validateArgv([]string{"projects", "list", "--project", "anything"}, al, ScopeAllowlist{}),
+	al := &CommandAllowlist{Commands: []Command{{Path: "compute instances list"}}}
+	// An empty scope means the deployment did not constrain the region axis; the
+	// scope check must not reject a --region then.
+	assert.NoError(t, validateArgv([]string{"compute", "instances", "list", "--region", "anything"}, al, ScopeAllowlist{}),
 		"empty scope should not reject a target")
 }

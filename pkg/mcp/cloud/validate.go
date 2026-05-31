@@ -6,11 +6,13 @@ import (
 )
 
 // ScopeAllowlist is the deployment's set of cloud targets any run_cli argv may
-// reference. An empty field means that target axis is unconstrained. Project and
-// region/zone are enforced here against argv (allowedFor maps --project and
-// --region/--zone). Account reach is not validated at the argv layer: it is
-// constrained by the pinned identity or role the session assumes, and the
-// identity-selecting flags (--account, --profile) sit on the deny floor.
+// reference. An empty field means that target axis is unconstrained. Region/zone
+// is enforced here against argv (allowedFor maps --region/--zone). Project is not
+// an argv axis: --project sits on the deny floor and the project is chosen only
+// via set_active_target, validated against Projects there. Account reach is also
+// not validated at the argv layer: it is constrained by the pinned identity or
+// role the session assumes, and the identity-selecting flags (--account,
+// --profile) sit on the deny floor.
 type ScopeAllowlist struct {
 	Projects []string `json:"projects,omitempty"`
 	Accounts []string `json:"accounts,omitempty"`
@@ -18,13 +20,12 @@ type ScopeAllowlist struct {
 }
 
 // allowedFor maps a target-selecting flag to the ScopeAllowlist field whose
-// membership a value of that flag must satisfy. The deny floor rejects identity
-// flags (--account, --profile) before scope ever sees them, so scope governs
-// only the location axes the agent is allowed to choose among.
+// membership a value of that flag must satisfy. Only the region/zone axis is
+// scoped at the argv layer; the identity flags (--account, --profile) and the
+// project override (--project) sit on the deny floor, rejected before scope ever
+// sees them, so scope governs only the location axes the agent may choose among.
 func (s ScopeAllowlist) allowedFor(flag string) ([]string, bool) {
 	switch flag {
-	case "--project":
-		return s.Projects, true
 	case "--region", "--zone":
 		return s.Regions, true
 	default:
