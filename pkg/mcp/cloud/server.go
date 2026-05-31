@@ -97,7 +97,7 @@ func (s *Server) selectableTargets(ctx context.Context) []Target {
 		}
 		return out
 	}
-	inv, err := s.provider.Inventory(ctx, s.run)
+	inv, err := s.provider.Inventory(ctx, s.runValidated)
 	if err != nil {
 		return nil
 	}
@@ -140,12 +140,22 @@ func (s *Server) Run(ctx context.Context) error {
 }
 
 // run is the harness exec core bound to this server's provider binary, scope,
-// and allowlist. Providers and tools exec only through this RunFunc, never
-// directly: it validates argv before handing it to the no-shell exec core.
+// and allowlist. Tools exec only through this RunFunc, never directly: it gates
+// on an active target being chosen when several are selectable, then validates
+// argv before handing it to the no-shell exec core.
 func (s *Server) run(ctx context.Context, argv []string) (CLIResult, error) {
 	if s.activeTarget == "" && len(s.selectableTargets(ctx)) > 1 {
 		return CLIResult{}, errNoActiveTarget
 	}
+	return s.runValidated(ctx, argv)
+}
+
+// runValidated is the exec core without the active-target gate: it validates
+// argv against the allowlist and scope, then execs under the subprocess env.
+// selectableTargets derives the target set through this path so deriving the
+// set never re-enters the active-target check (which itself consults
+// selectableTargets) — inventory shelled during derivation cannot recurse.
+func (s *Server) runValidated(ctx context.Context, argv []string) (CLIResult, error) {
 	if err := validateArgv(argv, s.allowlist, s.scope); err != nil {
 		return CLIResult{}, err
 	}

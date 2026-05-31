@@ -48,6 +48,42 @@ func TestSelectableTargetsFallsBackToInventory(t *testing.T) {
 	assert.Equal(t, []Target{{ID: "p1", Name: "Project One"}}, got)
 }
 
+// liveInventoryProvider mirrors the real gcp/aws providers: its Inventory shells
+// through the injected RunFunc rather than returning a canned set. The
+// in-package fakeProvider ignores run, so only this double exercises the path
+// where deriving the selectable set executes the CLI — the path that recursed
+// before selectableTargets was given a run core without the active-target gate.
+type liveInventoryProvider struct {
+	fakeProvider
+	scopes []Scope
+}
+
+func (p *liveInventoryProvider) Inventory(ctx context.Context, run RunFunc) (Inventory, error) {
+	if _, err := run(ctx, []string{"echo", "inventory"}); err != nil {
+		return Inventory{}, err
+	}
+	return Inventory{Scopes: p.scopes}, nil
+}
+
+// TestSelectableTargetsInventoryDoesNotRecurse pins that deriving the selectable
+// set from live inventory does not re-enter the active-target gate. With no
+// configured targets and no scope, selectableTargets shells inventory; that
+// inventory run must not consult selectableTargets again, or New stack-overflows
+// for unconstrained GCP and single-account AWS sources.
+func TestSelectableTargetsInventoryDoesNotRecurse(t *testing.T) {
+	t.Parallel()
+	p := &liveInventoryProvider{
+		fakeProvider: fakeProvider{
+			binary:    "/bin/echo",
+			allowlist: &CommandAllowlist{Commands: []Command{{Path: "echo"}}},
+		},
+		scopes: []Scope{{ID: "p1", Name: "one"}, {ID: "p2", Name: "two"}},
+	}
+	s := newTestServer(t, p)
+	got := s.selectableTargets(context.Background())
+	assert.Equal(t, []Target{{ID: "p1", Name: "one"}, {ID: "p2", Name: "two"}}, got)
+}
+
 func TestSetActiveTargetRejectsOutOfSet(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t, &fakeProvider{targets: []Target{{ID: "acct-1"}}})
