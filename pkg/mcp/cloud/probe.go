@@ -30,9 +30,10 @@ func Probe(ctx context.Context, p Provider, expected string, env []string) (Iden
 	st, err := p.Identity(ctx, run, expected)
 	if err != nil {
 		return IdentityStatus{
-			Provider: p.Name(),
-			Valid:    false,
-			Hint:     err.Error(),
+			Provider:        p.Name(),
+			AssumedIdentity: expected,
+			Valid:           false,
+			Hint:            err.Error(),
 		}, nil
 	}
 	if st.Provider == "" {
@@ -40,8 +41,11 @@ func Probe(ctx context.Context, p Provider, expected string, env []string) (Iden
 	}
 	if st.AssumedIdentity == "" {
 		// A whoami that resolved no identity is not a valid session, whatever
-		// the provider reported.
+		// the provider reported. Report the pinned identity so the degraded
+		// session names which credential the operator must fix instead of an
+		// empty one.
 		st.Valid = false
+		st.AssumedIdentity = expected
 	}
 	return st, nil
 }
