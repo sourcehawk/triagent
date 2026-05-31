@@ -30,7 +30,7 @@ describe("ConnectionsPanel cloud pills", () => {
     vi.restoreAllMocks();
   });
 
-  it("shows the assumed identity for gcp and the account set for aws", async () => {
+  it("renders the principal + reach shape per provider", async () => {
     vi.spyOn(api, "getConnections").mockResolvedValue({
       ...baseStatus,
       cloud: [
@@ -38,6 +38,7 @@ describe("ConnectionsPanel cloud pills", () => {
           alias: "prod-gcp",
           provider: "gcp",
           assumed_identity: "triage-ro@prod.iam.gserviceaccount.com",
+          projects: ["prod-platform", "prod-data"],
           valid: true,
         },
         {
@@ -55,26 +56,33 @@ describe("ConnectionsPanel cloud pills", () => {
 
     expect(await screen.findByText("prod-gcp")).toBeInTheDocument();
     expect(screen.getByText("prod-aws")).toBeInTheDocument();
-    // gcp: the one impersonated service account.
+    // gcp: the impersonated service account over its allowlisted project count.
     expect(
       screen.getByText("triage-ro@prod.iam.gserviceaccount.com"),
     ).toBeInTheDocument();
-    // aws: the account-set summary, never a single assumed identity. The full
-    // account ids live in the hover title.
-    const awsBody = screen.getByText("2 accounts · base: sso-admin");
-    expect(awsBody).toBeInTheDocument();
-    expect(awsBody).toHaveAttribute("title", "111111111111, 222222222222");
+    const gcpReach = screen.getByText("2 projects");
+    expect(gcpReach).toHaveAttribute("title", "prod-platform, prod-data");
+    // aws: the SSO base profile over its account count, never a single identity.
+    expect(screen.getByText("base: sso-admin")).toBeInTheDocument();
+    const awsReach = screen.getByText("2 accounts");
+    expect(awsReach).toHaveAttribute("title", "111111111111, 222222222222");
   });
 
-  it("singularizes a one-account aws source", async () => {
+  it("renders a one-entry reach as singular, and an empty gcp scope as all projects", async () => {
     vi.spyOn(api, "getConnections").mockResolvedValue({
       ...baseStatus,
       cloud: [
         {
-          alias: "prod-aws",
+          alias: "single-aws",
           provider: "aws",
           accounts: ["123456789012"],
           source_profile: "sso-admin",
+          valid: true,
+        },
+        {
+          alias: "open-gcp",
+          provider: "gcp",
+          assumed_identity: "ro@p.iam.gserviceaccount.com",
           valid: true,
         },
       ],
@@ -82,9 +90,8 @@ describe("ConnectionsPanel cloud pills", () => {
 
     await renderPanelAndOpenModal();
 
-    expect(
-      await screen.findByText("1 account · base: sso-admin"),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("1 account")).toBeInTheDocument();
+    expect(screen.getByText("all projects")).toBeInTheDocument();
   });
 
   it("shows the reauth hint only for an invalid source", async () => {

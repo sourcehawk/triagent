@@ -292,7 +292,7 @@ func TestGetConnections_IncludesCloudArrayProbedAtRequestTime(t *testing.T) {
 	t.Parallel()
 	prof := &profile.Profile{
 		Cloud: []profile.CloudSource{
-			{Alias: "prod-gcp", Provider: "gcp", AssumedIdentity: "ro@p.iam.gserviceaccount.com"},
+			{Alias: "prod-gcp", Provider: "gcp", AssumedIdentity: "ro@p.iam.gserviceaccount.com", Scope: cloud.ScopeAllowlist{Projects: []string{"prod-platform", "prod-data"}}},
 			{Alias: "prod-aws", Provider: "aws", SourceProfile: "sso-admin", Accounts: []profile.CloudAccount{
 				{AccountID: "111111111111", RoleARN: "arn:aws:iam::111111111111:role/ro"},
 				{AccountID: "222222222222", RoleARN: "arn:aws:iam::222222222222:role/ro"},
@@ -320,6 +320,7 @@ func TestGetConnections_IncludesCloudArrayProbedAtRequestTime(t *testing.T) {
 			Alias           string   `json:"alias"`
 			Provider        string   `json:"provider"`
 			AssumedIdentity string   `json:"assumed_identity"`
+			Projects        []string `json:"projects"`
 			Accounts        []string `json:"accounts"`
 			SourceProfile   string   `json:"source_profile"`
 			Valid           bool     `json:"valid"`
@@ -329,17 +330,19 @@ func TestGetConnections_IncludesCloudArrayProbedAtRequestTime(t *testing.T) {
 	require.NoError(t, json.NewDecoder(rr.Body).Decode(&resp))
 	require.Len(t, resp.Cloud, 2)
 
-	// gcp shows the one impersonated identity.
+	// gcp: the impersonated identity over its allowlisted projects.
 	assert.Equal(t, "prod-gcp", resp.Cloud[0].Alias)
 	assert.Equal(t, "gcp", resp.Cloud[0].Provider)
 	assert.Equal(t, "ro@p.iam.gserviceaccount.com", resp.Cloud[0].AssumedIdentity)
+	assert.Equal(t, []string{"prod-platform", "prod-data"}, resp.Cloud[0].Projects)
 	assert.Empty(t, resp.Cloud[0].Accounts)
 	assert.True(t, resp.Cloud[0].Valid)
 
-	// aws shows its account set + SSO base, never a single assumed identity.
+	// aws: the SSO base profile over its account set, never a single identity.
 	assert.Equal(t, "prod-aws", resp.Cloud[1].Alias)
 	assert.Equal(t, "aws", resp.Cloud[1].Provider)
 	assert.Empty(t, resp.Cloud[1].AssumedIdentity, "aws has no single assumed identity")
+	assert.Empty(t, resp.Cloud[1].Projects)
 	assert.Equal(t, []string{"111111111111", "222222222222"}, resp.Cloud[1].Accounts)
 	assert.Equal(t, "sso-admin", resp.Cloud[1].SourceProfile)
 	assert.False(t, resp.Cloud[1].Valid)

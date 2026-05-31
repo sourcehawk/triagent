@@ -99,15 +99,17 @@ export type ConnectionStatus = {
 // triagent-cloud-<alias> MCP and the request-time identity-probe result. valid
 // drives the checkmark; hint is the reauth advice shown when the probe failed.
 //
-// The identity shape is provider-specific. gcp carries one assumed_identity (the
-// impersonated service account). aws has no single assumed identity: it carries
-// the accounts it spans and the operator's source_profile (the SSO base).
+// Each pill renders the same principal + reach shape, with provider-specific
+// content. gcp carries assumed_identity (the impersonated service account) and
+// projects (its scope allowlist). aws carries source_profile (the operator's SSO
+// base) and accounts (the account ids it spans).
 export type CloudConnection = {
   alias: string;
   provider: string;
   assumed_identity?: string;
-  accounts?: string[];
+  projects?: string[];
   source_profile?: string;
+  accounts?: string[];
   valid: boolean;
   hint?: string;
 };

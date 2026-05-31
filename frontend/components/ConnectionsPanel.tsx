@@ -270,30 +270,43 @@ function CloudPill({ conn }: { conn: CloudConnection }) {
   );
 }
 
-// CloudPillBody renders the identity line, which differs by provider. GCP shows
-// its one impersonated service account. AWS has no single assumed identity, so
-// it shows the account set it spans and the operator's SSO base profile, with
-// the full account ids in the hover title.
+// CloudPillBody renders the same two-line shape for both providers — the
+// principal over the reach it grants — with provider-specific content. GCP: the
+// impersonated service account over its allowlisted project count. AWS: the SSO
+// base profile over its account count. The reach line's full members are in its
+// hover title.
 function CloudPillBody({ conn }: { conn: CloudConnection }) {
-  if (conn.provider === "aws") {
-    const accounts = conn.accounts ?? [];
-    const n = accounts.length;
-    const base = conn.source_profile ? ` · base: ${conn.source_profile}` : "";
-    return (
-      <div
-        className="mt-1 truncate font-mono text-xs text-zinc-400"
-        title={accounts.join(", ")}
-      >
-        {n} account{n === 1 ? "" : "s"}
-        {base}
-      </div>
-    );
-  }
+  const { principal, reach, reachTitle } =
+    conn.provider === "aws"
+      ? {
+          principal: conn.source_profile ? `base: ${conn.source_profile}` : "",
+          reach: countLabel(conn.accounts?.length ?? 0, "account"),
+          reachTitle: (conn.accounts ?? []).join(", "),
+        }
+      : {
+          principal: conn.assumed_identity ?? "",
+          // An empty projects allowlist means the identity reaches any project
+          // its IAM grants, not zero.
+          reach:
+            (conn.projects?.length ?? 0) === 0
+              ? "all projects"
+              : countLabel(conn.projects!.length, "project"),
+          reachTitle: (conn.projects ?? []).join(", "),
+        };
   return (
-    <div className="mt-1 truncate font-mono text-xs text-zinc-400">
-      {conn.assumed_identity}
-    </div>
+    <>
+      <div className="mt-1 truncate font-mono text-xs text-zinc-400">
+        {principal}
+      </div>
+      <div className="truncate text-[10px] text-zinc-500" title={reachTitle}>
+        {reach}
+      </div>
+    </>
   );
+}
+
+function countLabel(n: number, noun: string): string {
+  return `${n} ${noun}${n === 1 ? "" : "s"}`;
 }
 
 type ConnectionCardProps = {

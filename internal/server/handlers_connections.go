@@ -39,16 +39,17 @@ type connectionsResponse struct {
 type cloudConnection struct {
 	Alias    string `json:"alias"`
 	Provider string `json:"provider"`
-	// AssumedIdentity is the gcp impersonated service account; empty for aws,
-	// which has no single assumed identity.
-	AssumedIdentity string `json:"assumed_identity,omitempty"`
-	// Accounts and SourceProfile describe an aws source's reach: the account ids
-	// the agent may select among and the operator's SSO base profile that backs
-	// them. Empty for gcp.
-	Accounts      []string `json:"accounts,omitempty"`
-	SourceProfile string   `json:"source_profile,omitempty"`
-	Valid         bool     `json:"valid"`
-	Hint          string   `json:"hint,omitempty"`
+	// Each pill renders the same two-line shape — a principal and the reach it
+	// grants — with provider-specific content. gcp: AssumedIdentity (the
+	// impersonated service account) over Projects (the scope.projects allowlist;
+	// empty means unconstrained). aws: SourceProfile (the operator's SSO base)
+	// over Accounts (the account ids the agent may select among).
+	AssumedIdentity string   `json:"assumed_identity,omitempty"`
+	Projects        []string `json:"projects,omitempty"`
+	SourceProfile   string   `json:"source_profile,omitempty"`
+	Accounts        []string `json:"accounts,omitempty"`
+	Valid           bool     `json:"valid"`
+	Hint            string   `json:"hint,omitempty"`
 }
 
 // connectionsResp builds the full response body for all /api/connections
@@ -95,22 +96,24 @@ func (a *apiHandlers) cloudConnections(ctx context.Context) []cloudConnection {
 			Valid:    st.Valid,
 			Hint:     st.Hint,
 		}
-		// The identity shape is provider-specific. gcp shows the one impersonated
-		// service account (the probe's resolved value, or the configured one when
-		// the probe degraded before resolving it). aws has no single identity: it
-		// shows the account set it spans and the operator's SSO base profile.
+		// Each provider fills the same principal + reach shape differently. gcp:
+		// the one impersonated service account (the probe's resolved value, or the
+		// configured one when the probe degraded before resolving it) over its
+		// allowlisted projects. aws: the operator's SSO base profile over the
+		// account set it spans.
 		switch src.Provider {
 		case "aws":
+			conn.SourceProfile = src.SourceProfile
 			conn.Accounts = make([]string, 0, len(src.Accounts))
 			for _, acct := range src.Accounts {
 				conn.Accounts = append(conn.Accounts, acct.AccountID)
 			}
-			conn.SourceProfile = src.SourceProfile
 		default:
 			conn.AssumedIdentity = st.AssumedIdentity
 			if conn.AssumedIdentity == "" {
 				conn.AssumedIdentity = src.AssumedIdentity
 			}
+			conn.Projects = src.Scope.Projects
 		}
 		out = append(out, conn)
 	}
