@@ -21,7 +21,15 @@ type organizationsAccount struct {
 	Status string `json:"Status"`
 }
 
-// Inventory projects the AWS accounts the pinned identity can read. The primary
+// Inventory projects the AWS accounts the pinned identity can read.
+//
+// When the source is configured with an accounts list, the reachable set is
+// exactly those accounts: each is its own read-only role, so the configured set
+// already describes what run_cli can reach. Inventory returns them directly and
+// shells nothing — an org-wide list-accounts would over-advertise accounts the
+// role cannot enter.
+//
+// Without a configured accounts list (the single-account form), the primary
 // source is `aws organizations list-accounts`; only when that fails with an
 // Organizations-unavailable condition (AccessDenied or the account not being a
 // member of an organization) does it fall back to the single account the caller
@@ -30,6 +38,14 @@ type organizationsAccount struct {
 // behind the single-account fallback. Both commands are allowlisted so the
 // projection works under the validated run core.
 func (p *Provider) Inventory(ctx context.Context, run cloud.RunFunc) (cloud.Inventory, error) {
+	if len(p.accounts) > 0 {
+		scopes := make([]cloud.Scope, 0, len(p.accounts))
+		for _, a := range p.accounts {
+			scopes = append(scopes, cloud.Scope{ID: a.ID, Name: a.ID})
+		}
+		return cloud.Inventory{Scopes: scopes}, nil
+	}
+
 	res, err := run(ctx, []string{"organizations", "list-accounts", "--output", "json"})
 	if err != nil {
 		return cloud.Inventory{}, fmt.Errorf("aws organizations list-accounts: %w", err)
