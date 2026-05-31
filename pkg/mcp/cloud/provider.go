@@ -69,8 +69,10 @@ type IdentityStatus struct {
 	Hint            string `json:"hint,omitempty"`
 }
 
-// CLIResult is the shaped result of one run_cli invocation. Raw provider JSON
-// is never surfaced; the harness caps output and reports truncation.
+// CLIResult is the result of one run_cli invocation. It carries the provider
+// CLI's raw stdout (and stderr), each capped at the output limit with Truncated
+// set when the output exceeded it. The bytes are not otherwise shaped or
+// redacted; callers must not assume any projection beyond truncation.
 type CLIResult struct {
 	Stdout    string `json:"stdout"`
 	Stderr    string `json:"stderr,omitempty"`
