@@ -185,12 +185,46 @@ func (s *Server) expectedIdentityForActive() string {
 // invocation: only the base names plus the provider's declared passthrough
 // names, read from the launcher-controlled process env. Everything else is
 // dropped, so the launcher's ambient secrets never reach the CLI.
+//
+// The active-target env (gcp CLOUDSDK_CORE_PROJECT, aws AWS_PROFILE) overrides
+// any ambient value for the same name carried through passthrough: the ambient
+// entry is dropped before the MCP-controlled value is appended, so a duplicate
+// can never let the CLI resolve to the ambient target instead of the
+// set_active_target choice.
 func (s *Server) subprocessEnv() []string {
 	env := minimalEnv(s.provider.EnvPassthrough())
 	if s.activeTarget != "" {
-		env = append(env, s.provider.ActiveTargetEnv(s.activeTarget)...)
+		active := s.provider.ActiveTargetEnv(s.activeTarget)
+		env = append(dropEnvNames(env, envNames(active)), active...)
 	}
 	return env
+}
+
+// envNames returns the variable names ("NAME" from "NAME=value") of env entries.
+func envNames(env []string) []string {
+	names := make([]string, 0, len(env))
+	for _, kv := range env {
+		if name, _, ok := strings.Cut(kv, "="); ok {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
+// dropEnvNames returns env without any entry whose variable name is in names.
+func dropEnvNames(env, names []string) []string {
+	drop := make(map[string]bool, len(names))
+	for _, n := range names {
+		drop[n] = true
+	}
+	out := env[:0]
+	for _, kv := range env {
+		if name, _, ok := strings.Cut(kv, "="); ok && drop[name] {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return out
 }
 
 // minimalEnv returns the subprocess environment built from os.Environ() filtered

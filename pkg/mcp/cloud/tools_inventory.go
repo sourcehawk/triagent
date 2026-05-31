@@ -17,10 +17,12 @@ type ListInventoryInput struct{}
 // accessible scopes.
 type ListInventoryOutput = Inventory
 
-// listInventory projects the provider's accessible scopes. The provider execs
-// only through the server's validated run core.
+// listInventory projects the provider's accessible scopes. It execs through the
+// validated-but-ungated run core: inventory is how the agent discovers which
+// targets it may select, so it must not require an active target first (the same
+// path selectableTargets uses).
 func (s *Server) listInventory(ctx context.Context, _ *mcp.CallToolRequest, _ ListInventoryInput) (*mcp.CallToolResult, ListInventoryOutput, error) {
-	inv, err := s.provider.Inventory(ctx, s.run)
+	inv, err := s.provider.Inventory(ctx, s.runValidated)
 	if err != nil {
 		return errorResult(fmt.Sprintf("list inventory: %v", err)), ListInventoryOutput{}, nil
 	}

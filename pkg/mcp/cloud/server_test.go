@@ -2,6 +2,7 @@ package cloud
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -82,6 +83,53 @@ func TestSelectableTargetsInventoryDoesNotRecurse(t *testing.T) {
 	s := newTestServer(t, p)
 	got := s.selectableTargets(context.Background())
 	assert.Equal(t, []Target{{ID: "p1", Name: "one"}, {ID: "p2", Name: "two"}}, got)
+}
+
+// TestListInventoryDoesNotGateOnActiveTarget pins that list_inventory works
+// before a target is chosen: the agent needs inventory to know which target it
+// can select, so inventory must use the ungated exec path, not s.run (whose
+// active-target gate would fail with "call set_active_target" for a multi-target
+// GCP source with nothing active yet).
+func TestListInventoryDoesNotGateOnActiveTarget(t *testing.T) {
+	t.Parallel()
+	p := &liveInventoryProvider{
+		fakeProvider: fakeProvider{
+			binary:    "/bin/echo",
+			allowlist: &CommandAllowlist{Commands: []Command{{Path: "echo"}}},
+		},
+		scopes: []Scope{{ID: "p1", Name: "one"}, {ID: "p2", Name: "two"}},
+	}
+	s := newTestServer(t, p)
+	res, out, err := s.listInventory(context.Background(), nil, ListInventoryInput{})
+	require.NoError(t, err)
+	if res != nil {
+		t.Fatalf("list_inventory must not error before an active target is chosen: %s", errText(res))
+	}
+	assert.Len(t, out.Scopes, 2)
+}
+
+// TestSubprocessEnvActiveTargetWinsOverAmbient pins that the active-target env
+// the MCP controls overrides an ambient value for the same variable carried
+// through passthrough — no duplicate entry an exec reader could resolve to the
+// ambient target instead of the set_active_target choice.
+func TestSubprocessEnvActiveTargetWinsOverAmbient(t *testing.T) {
+	t.Setenv("FAKE_TARGET", "ambient-leak")
+	p := &fakeProvider{targets: []Target{{ID: "chosen"}}, envPassthrough: []string{"FAKE_TARGET"}}
+	s := newTestServer(t, p)
+	require.NoError(t, s.setActive("chosen"))
+
+	env := s.subprocessEnv()
+
+	assert.Contains(t, env, "FAKE_TARGET=chosen", "the active-target value must be present")
+	assert.NotContains(t, env, "FAKE_TARGET=ambient-leak",
+		"the ambient value must not survive alongside the active-target value")
+	var n int
+	for _, kv := range env {
+		if name, _, _ := strings.Cut(kv, "="); name == "FAKE_TARGET" {
+			n++
+		}
+	}
+	assert.Equal(t, 1, n, "FAKE_TARGET must appear exactly once")
 }
 
 func TestSetActiveTargetRejectsOutOfSet(t *testing.T) {
