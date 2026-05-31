@@ -95,27 +95,17 @@ func (p *Profile) Validate() error {
 	return errors.New("profile " + p.Name + " invalid:\n  - " + strings.Join(errs, "\n  - "))
 }
 
-// validateAWSCredentials checks the two valid aws credential shapes. The
-// multi-account form (accounts set) requires source_profile, at least one
-// account, and non-empty account ids and role_arns that are each unique across
-// the source. The single-account form (no accounts) requires the operator's
-// pre-existing profile selector. The two are mutually exclusive: an accounts
-// list pins its own profile per account, so a top-level profile alongside it is
-// a misconfiguration.
+// validateAWSCredentials checks the aws credential shape: an accounts list (a
+// single-account source is a one-entry list) plus the operator's source_profile
+// the generated per-account assume-role profiles layer over. Account ids and
+// role_arns are each required and unique across the source.
 func validateAWSCredentials(i int, c CloudSource) []string {
-	if len(c.Accounts) == 0 {
-		if c.Profile == "" {
-			return []string{fmt.Sprintf("cloud[%d].profile: required when provider=aws (or set accounts + source_profile)", i)}
-		}
-		return nil
-	}
-
 	var errs []string
-	if c.Profile != "" {
-		errs = append(errs, fmt.Sprintf("cloud[%d].profile: must be empty when accounts is set (each account pins its own generated profile)", i))
+	if len(c.Accounts) == 0 {
+		errs = append(errs, fmt.Sprintf("cloud[%d].accounts: required when provider=aws (a single-account source is a one-entry list)", i))
 	}
 	if c.SourceProfile == "" {
-		errs = append(errs, fmt.Sprintf("cloud[%d].source_profile: required when accounts is set", i))
+		errs = append(errs, fmt.Sprintf("cloud[%d].source_profile: required when provider=aws", i))
 	}
 	seenIDs := map[string]bool{}
 	seenARNs := map[string]bool{}

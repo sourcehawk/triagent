@@ -167,6 +167,20 @@ func (s *Server) runValidated(ctx context.Context, argv []string) (CLIResult, er
 // surfaced to the agent as an actionable run_cli tool error.
 var errNoActiveTarget = errors.New("no active target; call set_active_target to choose one")
 
+// expectedIdentityForActive is the identity the probe validates the session
+// against: the active target's own identity when the provider pins it per-target
+// (aws: the account's role ARN), else the session's pinned identity (gcp, where
+// one impersonated service account spans every project). This is what lets
+// session_status report Valid for any selected account, not just the default.
+func (s *Server) expectedIdentityForActive() string {
+	if s.activeTarget != "" {
+		if exp, ok := s.provider.ExpectedIdentity(s.activeTarget); ok {
+			return exp
+		}
+	}
+	return s.expectedIdentity
+}
+
 // subprocessEnv builds the explicit, minimal environment for a provider CLI
 // invocation: only the base names plus the provider's declared passthrough
 // names, read from the launcher-controlled process env. Everything else is

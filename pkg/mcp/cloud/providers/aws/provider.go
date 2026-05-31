@@ -100,7 +100,7 @@ func New(opts ...Options) (*Provider, error) {
 
 // newWithBinary builds the provider against an already-resolved binary path. It
 // is the seam tests inject a fixed path through, bypassing exec.LookPath. At most
-// one Options is honored; the zero value is the single-account legacy form.
+// one Options is honored.
 func newWithBinary(binary string, opts ...Options) (*Provider, error) {
 	var list cloud.CommandAllowlist
 	if err := json.Unmarshal(defaultCommandsJSON, &list); err != nil {
@@ -163,15 +163,11 @@ func (p *Provider) DenyFloorAdditions() cloud.DenyFloor {
 	}
 }
 
-// ConfiguredTargets is the deployment-configured account set surfaced as the
-// agent's selectable targets. A configured account's id is both the Target ID
-// (what set_active_target receives) and its Name. The single-account deployment
-// carries no accounts list and returns nil, so the selectable set comes from the
-// server's inventory instead.
+// ConfiguredTargets is the configured account set surfaced as the agent's
+// selectable targets. A configured account's id is both the Target ID (what
+// set_active_target receives) and its Name. A single-account source is a
+// one-entry list, so the set is never derived from a live inventory query.
 func (p *Provider) ConfiguredTargets() []cloud.Target {
-	if len(p.accounts) == 0 {
-		return nil
-	}
 	out := make([]cloud.Target, 0, len(p.accounts))
 	for _, a := range p.accounts {
 		out = append(out, cloud.Target{ID: a.ID, Name: a.ID})
@@ -179,17 +175,25 @@ func (p *Provider) ConfiguredTargets() []cloud.Target {
 	return out
 }
 
-// ActiveTargetEnv pins the aws CLI to the active account via AWS_PROFILE. For a
-// configured account it names the generated assume-role profile
-// (triagent-cloud-<alias>-<account_id>); the single-account legacy form passes
-// the id through as the profile name directly. Either way the value is a profile
-// name, not a credential: the CLI performs the assume-role from the operator's
-// base.
+// ActiveTargetEnv pins the aws CLI to the active account via AWS_PROFILE, naming
+// the generated assume-role profile (triagent-cloud-<alias>-<account_id>). The
+// value is a profile name, not a credential: the CLI performs the assume-role
+// from the operator's base.
 func (p *Provider) ActiveTargetEnv(id string) []string {
-	if len(p.accounts) == 0 {
-		return []string{EnvProfile + "=" + id}
-	}
 	return []string{EnvProfile + "=" + profileName(p.alias, id)}
+}
+
+// ExpectedIdentity returns the read-only role ARN configured for the account
+// id, so session_status validates the active account against its own role on
+// switch rather than a single source-level identity. ok is false for an id not
+// in the configured set, leaving the server to fall back to its pinned identity.
+func (p *Provider) ExpectedIdentity(id string) (string, bool) {
+	for _, a := range p.accounts {
+		if a.ID == id {
+			return a.RoleARN, true
+		}
+	}
+	return "", false
 }
 
 // EnvPassthrough lists the env var NAMES the aws subprocess needs forwarded:

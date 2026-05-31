@@ -436,15 +436,18 @@ func TestWriteMCPConfig_GCPCloudSource_RegistersServerWithImpersonationEnv(t *te
 	assert.Equal(t, []string{"prod-a"}, scope.Projects)
 }
 
-func TestWriteMCPConfig_AWSCloudSource_RegistersServerWithProfileAndExpectedRole(t *testing.T) {
+func TestWriteMCPConfig_AWSCloudSource_RegistersServerWithAccountsAndExpectedRole(t *testing.T) {
 	t.Parallel()
 	in := baseInputs(t)
 	in.CloudSources = []profile.CloudSource{{
 		Alias:           "prod-aws",
 		Provider:        "aws",
 		AssumedIdentity: "arn:aws:iam::123456789012:role/triage-ro",
-		Profile:         "triage-ro",
-		Scope:           cloud.ScopeAllowlist{Regions: []string{"us-east-1"}},
+		SourceProfile:   "sso-admin",
+		Accounts: []profile.CloudAccount{
+			{AccountID: "123456789012", RoleARN: "arn:aws:iam::123456789012:role/triage-ro"},
+		},
+		Scope: cloud.ScopeAllowlist{Regions: []string{"us-east-1"}},
 	}}
 	path, err := writeMCPConfig(in)
 	require.NoError(t, err)
@@ -462,13 +465,13 @@ func TestWriteMCPConfig_AWSCloudSource_RegistersServerWithProfileAndExpectedRole
 	assert.Equal(t, "aws", env[cloud.EnvProvider])
 	// The pinned identity is uniform across providers.
 	assert.Equal(t, "arn:aws:iam::123456789012:role/triage-ro", env[cloud.EnvExpectedIdentity])
-	// aws selects an assume-role profile as its credential env.
-	assert.Equal(t, "triage-ro", env[aws.EnvProfile])
+	// aws carries its accounts and source_profile; AWS_PROFILE is pinned per-exec
+	// from the active target, never as a static selector here.
+	assert.Equal(t, "sso-admin", env[cloud.EnvAWSSourceProfile])
+	assert.NotEmpty(t, env[cloud.EnvAWSAccounts])
+	assert.NotContains(t, env, aws.EnvProfile)
 	// gcp impersonation env must not leak onto an aws source.
 	assert.NotContains(t, env, gcp.EnvImpersonate)
-	// The single-account form carries no accounts/source_profile env.
-	assert.NotContains(t, env, cloud.EnvAWSAccounts)
-	assert.NotContains(t, env, cloud.EnvAWSSourceProfile)
 }
 
 func TestCloudSourceEnv_AWSAccounts_EmitsAccountsAndSourceProfile(t *testing.T) {

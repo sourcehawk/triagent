@@ -3,6 +3,7 @@ package providers
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -26,8 +27,9 @@ func (blockingProvider) EnvPassthrough() []string                  { return nil 
 func (blockingProvider) Inventory(context.Context, cloud.RunFunc) (cloud.Inventory, error) {
 	return cloud.Inventory{}, nil
 }
-func (blockingProvider) ConfiguredTargets() []cloud.Target { return nil }
-func (blockingProvider) ActiveTargetEnv(string) []string   { return nil }
+func (blockingProvider) ConfiguredTargets() []cloud.Target   { return nil }
+func (blockingProvider) ActiveTargetEnv(string) []string     { return nil }
+func (blockingProvider) ExpectedIdentity(string) (string, bool) { return "", false }
 
 func (blockingProvider) Identity(ctx context.Context, _ cloud.RunFunc, _ string) (cloud.IdentityStatus, error) {
 	<-ctx.Done()
@@ -60,13 +62,14 @@ func TestProbeProviderBoundsHungCLI(t *testing.T) {
 func TestProbeSourceDoesNotMutateProcessEnv(t *testing.T) {
 	t.Setenv("TRIAGENT_PROBE_SENTINEL", "untouched")
 	t.Setenv(aws.EnvProfile, "operator-base")
+	t.Setenv("AWS_CONFIG_FILE", filepath.Join(t.TempDir(), "config"))
 	if err := os.Unsetenv(gcp.EnvImpersonate); err != nil {
 		require.NoError(t, err)
 	}
 
 	for _, src := range []Source{
 		{Provider: "gcp", AssumedIdentity: "ro-sa@proj.iam.gserviceaccount.com"},
-		{Provider: "aws", AssumedIdentity: "arn:aws:iam::111122223333:role/triage-ro", Profile: "triage-ro"},
+		{Provider: "aws", AssumedIdentity: "arn:aws:iam::111122223333:role/triage-ro", Alias: "probe-aws", SourceProfile: "triage-ro", Accounts: []aws.Account{{ID: "111122223333", RoleARN: "arn:aws:iam::111122223333:role/triage-ro"}}},
 	} {
 		_ = ProbeSource(context.Background(), src)
 	}
@@ -101,11 +104,11 @@ func TestProbeSourceConstructionFailureKeepsPinnedIdentity(t *testing.T) {
 	assert.NotEmpty(t, st.Hint)
 }
 
-// TestCredentialEnvAWSMultiAccountTargetsDefaultProfile proves the launcher-side
-// probe for a multi-account aws source pins AWS_PROFILE to the default (first)
-// account's generated profile name, not the operator's raw profile. Per-account
-// validity is out of scope for v1; the panel shows the default target's validity.
-func TestCredentialEnvAWSMultiAccountTargetsDefaultProfile(t *testing.T) {
+// TestCredentialEnvAWSTargetsDefaultProfile proves the launcher-side probe for
+// an aws source pins AWS_PROFILE to the default (first) account's generated
+// profile name. The panel shows that default target's validity; per-account live
+// validity is enforced by session_status on switch.
+func TestCredentialEnvAWSTargetsDefaultProfile(t *testing.T) {
 	env := credentialEnv(Source{
 		Provider:      "aws",
 		Alias:         "prod-aws",
@@ -116,12 +119,7 @@ func TestCredentialEnvAWSMultiAccountTargetsDefaultProfile(t *testing.T) {
 		},
 	})
 	assert.Equal(t, "triagent-cloud-prod-aws-111111111111", env[aws.EnvProfile],
-		"the multi-account probe must target the default account's generated profile")
-}
-
-func TestCredentialEnvAWSSingleAccountUsesProfile(t *testing.T) {
-	env := credentialEnv(Source{Provider: "aws", Profile: "triage-ro"})
-	assert.Equal(t, "triage-ro", env[aws.EnvProfile])
+		"the probe must target the default account's generated profile")
 }
 
 // fakePassthroughProvider exposes a fixed EnvPassthrough so sourceEnv's

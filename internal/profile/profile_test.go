@@ -249,7 +249,7 @@ func TestValidateCloudSourcesOK(t *testing.T) {
 	p := validCloudBase()
 	p.Cloud = []profile.CloudSource{
 		{Alias: "prod-gcp", Provider: "gcp", AssumedIdentity: "ro@proj.iam.gserviceaccount.com"},
-		{Alias: "prod-aws", Provider: "aws", AssumedIdentity: "arn:aws:iam::1:role/ro", Profile: "ro"},
+		awsAccountsBase(),
 	}
 	assert.NoError(t, p.Validate(), "a valid multi-source cloud profile must validate clean")
 }
@@ -258,7 +258,7 @@ func TestValidateCloudDuplicateAlias(t *testing.T) {
 	p := validCloudBase()
 	p.Cloud = []profile.CloudSource{
 		{Alias: "dup", Provider: "gcp", AssumedIdentity: "ro@proj.iam.gserviceaccount.com"},
-		{Alias: "dup", Provider: "aws", AssumedIdentity: "arn:aws:iam::1:role/ro", Profile: "ro"},
+		{Alias: "dup", Provider: "aws", AssumedIdentity: "arn:aws:iam::1:role/ro", SourceProfile: "sso", Accounts: []profile.CloudAccount{{AccountID: "1", RoleARN: "arn:aws:iam::1:role/ro"}}},
 	}
 	err := p.Validate()
 	require.Error(t, err)
@@ -297,14 +297,14 @@ func TestValidateCloudMissingIdentity(t *testing.T) {
 	assert.Contains(t, err.Error(), "assumed_identity")
 }
 
-func TestValidateCloudAWSMissingProfile(t *testing.T) {
+func TestValidateCloudAWSMissingAccounts(t *testing.T) {
 	p := validCloudBase()
 	p.Cloud = []profile.CloudSource{
 		{Alias: "x", Provider: "aws", AssumedIdentity: "arn:aws:iam::1:role/ro"},
 	}
 	err := p.Validate()
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "profile")
+	assert.Contains(t, err.Error(), "accounts")
 }
 
 const awsAccountsYAML = `
@@ -704,7 +704,9 @@ cloud:
   - alias: prod-aws
     provider: aws
     assumed_identity: arn:aws:iam::111122223333:role/ro
-    profile: ro
+    source_profile: sso-admin
+    accounts:
+      - {account_id: "111122223333", role_arn: "arn:aws:iam::111122223333:role/ro"}
     command_allowlist_path: /etc/triagent/aws-allow.json
 `
 	require.NoError(t, os.WriteFile(filepath.Join(profDir, "profile.yaml"), []byte(yaml), 0o600))
@@ -883,7 +885,9 @@ cloud:
   - alias: prod-aws
     provider: aws
     assumed_identity: arn:aws:iam::123456789012:role/triage-ro
-    profile: triage-ro
+    source_profile: sso-admin
+    accounts:
+      - {account_id: "123456789012", role_arn: "arn:aws:iam::123456789012:role/triage-ro"}
     scope:
       regions:
         - us-east-1
@@ -903,6 +907,8 @@ cloud:
 	assert.Equal(t, "prod-aws", aws.Alias)
 	assert.Equal(t, "aws", aws.Provider)
 	assert.Equal(t, "arn:aws:iam::123456789012:role/triage-ro", aws.AssumedIdentity)
-	assert.Equal(t, "triage-ro", aws.Profile)
+	assert.Equal(t, "sso-admin", aws.SourceProfile)
+	require.Len(t, aws.Accounts, 1)
+	assert.Equal(t, "123456789012", aws.Accounts[0].AccountID)
 	assert.Equal(t, []string{"us-east-1"}, aws.Scope.Regions)
 }

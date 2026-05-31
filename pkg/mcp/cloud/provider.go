@@ -49,6 +49,13 @@ type Provider interface {
 	// next invocation: gcp CLOUDSDK_CORE_PROJECT, aws AWS_PROFILE. The agent never
 	// supplies these; the server sets them per-exec.
 	ActiveTargetEnv(targetID string) []string
+	// ExpectedIdentity returns the identity the active target must resolve to when
+	// the provider pins it per-target (aws: the account's read-only role ARN), so
+	// session_status validates the active target against the right identity on
+	// switch. ok is false when the provider's identity is uniform across targets
+	// (gcp: one impersonated service account spans its projects), leaving the
+	// server to validate against the session's pinned identity instead.
+	ExpectedIdentity(targetID string) (string, bool)
 }
 
 // Target is one selectable project (gcp) or account (aws) the agent may make

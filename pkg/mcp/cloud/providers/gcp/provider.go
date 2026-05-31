@@ -109,6 +109,11 @@ func (p *Provider) ActiveTargetEnv(id string) []string {
 	return []string{"CLOUDSDK_CORE_PROJECT=" + id}
 }
 
+// ExpectedIdentity reports no per-target identity: one impersonated service
+// account spans every allowlisted project, so switching projects never changes
+// the identity. The server validates against the session's pinned identity.
+func (p *Provider) ExpectedIdentity(string) (string, bool) { return "", false }
+
 // EnvPassthrough names the gcloud env vars the subprocess needs: the pinned
 // impersonation target plus the config and active-project locations. PATH and
 // HOME are forwarded by the harness base set, so they are absent here.

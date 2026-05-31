@@ -239,7 +239,7 @@ func TestRun_CloudProbeFailureDegradesNotBlocks(t *testing.T) {
 	prof := &profile.Profile{
 		Cloud: []profile.CloudSource{
 			{Alias: "prod-gcp", Provider: "gcp", AssumedIdentity: "ro@p.iam.gserviceaccount.com"},
-			{Alias: "prod-aws", Provider: "aws", AssumedIdentity: "arn:aws:iam::1:role/ro", Profile: "ro"},
+			{Alias: "prod-aws", Provider: "aws", AssumedIdentity: "arn:aws:iam::1:role/ro", SourceProfile: "sso", Accounts: []profile.CloudAccount{{AccountID: "1", RoleARN: "arn:aws:iam::1:role/ro"}}},
 		},
 	}
 	res, err := Run(Options{

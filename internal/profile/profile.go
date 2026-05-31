@@ -156,27 +156,25 @@ type ExtraMCP struct {
 // can read the pinned identity but cannot select or escalate it.
 //
 // AssumedIdentity is the canonical pinned identity shown in the connections
-// panel — a service-account email for gcp, a role ARN for aws. The two clouds
-// realize it through different env: gcp impersonates AssumedIdentity directly,
-// while aws selects an assume-role profile for credentials and checks
-// AssumedIdentity (the role ARN) for strict validity.
+// panel — a service-account email for gcp, a role ARN for aws (the source's
+// default account's role, which the panel probe validates against).
 //
-// AWS has two shapes. The single-account form sets Profile (the operator's
-// pre-existing AWS_PROFILE selector). The multi-account form sets SourceProfile
-// (the operator's SSO base) plus Accounts (one read-only role per account);
-// triagent generates a per-account assume-role profile layering each role over
-// SourceProfile, and the agent selects among them via set_active_target. GCP
-// spans its projects with one impersonated identity, so it ignores all three.
+// GCP spans its projects with one impersonated identity (AssumedIdentity),
+// selecting among them by Scope.Projects. AWS pins a list of accounts, each
+// {account_id, role_arn}; triagent generates a per-account assume-role profile
+// layering each role over SourceProfile, and the agent selects among them via
+// set_active_target. A single-account AWS source is simply a one-entry Accounts
+// list — there is no separate single-account shape.
 type CloudSource struct {
-	Alias           string               `yaml:"alias"`
-	Provider        string               `yaml:"provider"` // "gcp" | "aws"
-	AssumedIdentity string               `yaml:"assumed_identity"`
-	Profile         string               `yaml:"profile,omitempty"` // aws single-account AWS_PROFILE selector; ignored by gcp
-	// SourceProfile is the operator's SSO base profile the generated multi-account
-	// assume-role profiles layer their role_arn over. Required when Accounts is set.
+	Alias           string `yaml:"alias"`
+	Provider        string `yaml:"provider"` // "gcp" | "aws"
+	AssumedIdentity string `yaml:"assumed_identity"`
+	// SourceProfile is the operator's SSO base profile the generated per-account
+	// assume-role profiles layer their role_arn over. Required for aws.
 	SourceProfile string `yaml:"source_profile,omitempty"`
-	// Accounts is the deployment-pinned multi-account set; each entry becomes a
-	// generated assume-role profile the agent may make active. aws-only.
+	// Accounts is the aws account set, each entry a {account_id, role_arn} that
+	// becomes a generated assume-role profile the agent may make active. Required
+	// for aws (a single-account source is a one-entry list); unused by gcp.
 	Accounts []CloudAccount       `yaml:"accounts,omitempty"`
 	Scope    cloud.ScopeAllowlist `yaml:"scope,omitempty"`
 	// CommandAllowlistPath points the cloud MCP at a run_cli allowlist override

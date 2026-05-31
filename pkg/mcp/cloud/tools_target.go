@@ -25,7 +25,7 @@ func (s *Server) setActiveTarget(ctx context.Context, _ *mcp.CallToolRequest, in
 	if err := s.setActive(in.Target); err != nil {
 		return errorResult(fmt.Sprintf("set_active_target rejected: %v", err)), SetActiveTargetOutput{}, nil
 	}
-	st, _ := Probe(ctx, s.provider, s.expectedIdentity, s.subprocessEnv())
+	st, _ := Probe(ctx, s.provider, s.expectedIdentityForActive(), s.subprocessEnv())
 	st.ActiveTarget = s.activeTarget
 	return nil, st, nil
 }

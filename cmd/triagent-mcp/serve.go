@@ -442,10 +442,10 @@ func runProm(ctx context.Context, f serveFlags) error {
 // concrete backend; New plugs it in behind cloud.Provider. The launcher passes
 // the allowlist override path, target scope, and pinned identity through the
 // subprocess env (cloud.EnvAllowlistPath, cloud.EnvScope,
-// cloud.EnvExpectedIdentity), never argv. A multi-account aws source additionally
-// carries its accounts, source_profile, and alias (cloud.EnvAWSAccounts,
-// _SOURCE_PROFILE, _ALIAS); New generates the per-account assume-role profiles
-// and surfaces the accounts as the agent's selectable targets.
+// cloud.EnvExpectedIdentity), never argv. An aws source carries its accounts,
+// source_profile, and alias (cloud.EnvAWSAccounts, _SOURCE_PROFILE, _ALIAS); New
+// generates the per-account assume-role profiles and surfaces the accounts as the
+// agent's selectable targets (a single-account source is a one-entry list).
 func runCloud(ctx context.Context, f serveFlags) error {
 	if f.cloudProvider == "" {
 		return fmt.Errorf("--provider is required (gcp or aws) (set --provider or $%s)", cloud.EnvProvider)

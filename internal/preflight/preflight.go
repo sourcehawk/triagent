@@ -278,7 +278,6 @@ func cloudProbeSource(src profile.CloudSource) providers.Source {
 	return providers.Source{
 		Provider:        src.Provider,
 		AssumedIdentity: src.AssumedIdentity,
-		Profile:         src.Profile,
 		Alias:           src.Alias,
 		SourceProfile:   src.SourceProfile,
 		Accounts:        accounts,

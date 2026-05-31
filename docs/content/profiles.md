@@ -406,8 +406,10 @@ cloud:
       regions:  [us-central1]
   - alias: prod-aws
     provider: aws
-    assumed_identity: arn:aws:iam::123456789012:role/triage-readonly # expected role ARN
-    profile: triage-readonly                                         # AWS_PROFILE assume-role selector
+    assumed_identity: arn:aws:iam::123456789012:role/triage-readonly # default account's role ARN
+    source_profile: sso-admin                                        # operator's SSO base profile
+    accounts:                                                        # one entry per account; single-account is a one-entry list
+      - {account_id: "123456789012", role_arn: "arn:aws:iam::123456789012:role/triage-readonly"}
     scope:
       accounts: ["123456789012"]
       regions:  [eu-west-1]

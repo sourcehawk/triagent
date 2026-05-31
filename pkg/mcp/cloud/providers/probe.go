@@ -31,18 +31,16 @@ var baseEnvPassthrough = []string{"PATH", "HOME"}
 // what ProbeSource needs without coupling this package to the launcher's profile
 // type.
 //
-// AWS has two forms. The single-account form sets Profile (the operator's
-// AWS_PROFILE selector). The multi-account form sets Alias, SourceProfile, and
-// Accounts; ProbeSource generates the per-account profiles and probes the default
-// (first) account's generated profile — per-account validity is out of scope for
-// v1, so the panel reflects the source's default-target validity. gcp ignores
-// all four.
+// For AWS, Alias, SourceProfile, and Accounts describe the account set;
+// ProbeSource generates the per-account profiles and probes the default (first)
+// account's generated profile — the panel reflects the source's default-target
+// validity, and per-account live validity is enforced by session_status on
+// switch. gcp ignores all three.
 type Source struct {
 	Provider        string
 	AssumedIdentity string
-	Profile         string // aws single-account AWS_PROFILE selector; ignored by gcp
-	Alias           string // aws multi-account: the generated profiles' namespace
-	SourceProfile   string // aws multi-account: the operator's SSO base profile
+	Alias           string // aws: the generated profiles' namespace
+	SourceProfile   string // aws: the operator's SSO base profile
 	Accounts        []aws.Account
 }
 
@@ -139,11 +137,11 @@ func credentialEnv(src Source) map[string]string {
 }
 
 // awsProbeProfile is the AWS_PROFILE the launcher-side probe authenticates with:
-// the default (first) account's generated profile for a multi-account source,
-// else the operator's single-account profile selector.
+// the default (first) account's generated profile. An AWS source always carries
+// at least one account, so the panel reflects that default target's validity.
 func awsProbeProfile(src Source) string {
-	if len(src.Accounts) > 0 {
-		return aws.ProfileName(src.Alias, src.Accounts[0].ID)
+	if len(src.Accounts) == 0 {
+		return ""
 	}
-	return src.Profile
+	return aws.ProfileName(src.Alias, src.Accounts[0].ID)
 }

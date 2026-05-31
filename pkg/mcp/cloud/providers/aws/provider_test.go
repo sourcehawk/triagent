@@ -3,7 +3,6 @@ package aws
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -59,9 +58,9 @@ func TestDefaultAllowlistCoversReadOnlyAxes(t *testing.T) {
 	// The two commands Identity and Inventory shell through the validated run
 	// core must be present, or those tools cannot work under the allowlist.
 	assert.True(t, allow.Allows([]string{"sts", "get-caller-identity"}),
-		"sts get-caller-identity must be allowlisted (identity + inventory fallback)")
+		"sts get-caller-identity must be allowlisted (the identity probe runs it)")
 	assert.True(t, allow.Allows([]string{"organizations", "list-accounts"}),
-		"organizations list-accounts must be allowlisted (inventory primary)")
+		"organizations list-accounts must be allowlisted (a read-only command the agent may run)")
 
 	// Spot-check coverage across the investigative axes.
 	for _, argv := range [][]string{
@@ -205,12 +204,10 @@ func keyOf(argv []string) string {
 	return out
 }
 
-var errAccessDenied = errors.New("access denied (AccessDeniedException) when calling the ListAccounts operation")
-
-func TestConfiguredTargetsEmptyForSingleAccount(t *testing.T) {
+func TestConfiguredTargetsEmptyWithoutAccounts(t *testing.T) {
 	p, err := newWithBinary("/usr/bin/aws")
 	require.NoError(t, err)
-	assert.Nil(t, p.ConfiguredTargets())
+	assert.Empty(t, p.ConfiguredTargets())
 }
 
 func TestConfiguredTargetsFromAccounts(t *testing.T) {
@@ -232,13 +229,17 @@ func TestActiveTargetEnvUsesGeneratedProfileName(t *testing.T) {
 	assert.Equal(t, []string{"AWS_PROFILE=triagent-cloud-prod-aws-111111111111"}, p.ActiveTargetEnv("111111111111"))
 }
 
-// TestActiveTargetEnvSingleAccountPassthrough proves the legacy single-account
-// provider (no alias, no accounts) treats the active id as the profile name
-// directly, reproducing today's AWS_PROFILE=<id> behavior.
-func TestActiveTargetEnvSingleAccountPassthrough(t *testing.T) {
-	p, err := newWithBinary("/usr/bin/aws")
-	require.NoError(t, err)
-	assert.Equal(t, []string{"AWS_PROFILE=ro"}, p.ActiveTargetEnv("ro"))
+func TestExpectedIdentityReturnsAccountRoleARN(t *testing.T) {
+	p := providerWithAccounts(t, "prod-aws", []Account{
+		{ID: "111111111111", RoleARN: "arn:aws:iam::111111111111:role/r1"},
+		{ID: "222222222222", RoleARN: "arn:aws:iam::222222222222:role/r2"},
+	})
+	exp, ok := p.ExpectedIdentity("222222222222")
+	require.True(t, ok, "a configured account must yield its expected role ARN")
+	assert.Equal(t, "arn:aws:iam::222222222222:role/r2", exp)
+
+	_, ok = p.ExpectedIdentity("999999999999")
+	assert.False(t, ok, "an account outside the set yields no expected identity")
 }
 
 // providerWithAccounts builds an aws provider with a generated-profile config

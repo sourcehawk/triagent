@@ -92,6 +92,37 @@ func TestSetActiveTargetRejectsOutOfSet(t *testing.T) {
 	assert.Equal(t, "acct-1", s.activeTarget)
 }
 
+// TestExpectedIdentityForActiveUsesPerTargetIdentity pins that the probe
+// validates against the active target's own identity when the provider pins one
+// per target (aws: the account's role ARN), so session_status reports Valid for
+// any selected account — not only the source default. With no active target, or
+// a provider that pins no per-target identity, it falls back to the session's
+// pinned identity.
+func TestExpectedIdentityForActiveUsesPerTargetIdentity(t *testing.T) {
+	t.Parallel()
+	p := &fakeProvider{
+		targets:     []Target{{ID: "a"}, {ID: "b"}},
+		expectedFor: map[string]string{"a": "role-a", "b": "role-b"},
+	}
+	s := newTestServer(t, p, func(o *Options) { o.ExpectedIdentity = "source-pin" })
+
+	assert.Equal(t, "source-pin", s.expectedIdentityForActive(),
+		"with no active target, the session's pinned identity is used")
+
+	require.NoError(t, s.setActive("b"))
+	assert.Equal(t, "role-b", s.expectedIdentityForActive(),
+		"the active account's own identity is validated, not the source default")
+}
+
+func TestExpectedIdentityForActiveFallsBackWhenProviderHasNone(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t, &fakeProvider{targets: []Target{{ID: "only"}}},
+		func(o *Options) { o.ExpectedIdentity = "source-pin" })
+	// fakeProvider has no expectedFor entry; the provider pins no per-target
+	// identity (the gcp case), so the session's pinned identity is used.
+	assert.Equal(t, "source-pin", s.expectedIdentityForActive())
+}
+
 func TestSubprocessEnvIncludesActiveTarget(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t, &fakeProvider{targets: []Target{{ID: "acct-1"}}})

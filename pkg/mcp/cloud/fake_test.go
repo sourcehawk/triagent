@@ -16,6 +16,7 @@ type fakeProvider struct {
 	identityErr    error
 	envPassthrough []string
 	targets        []Target
+	expectedFor    map[string]string
 }
 
 func (f *fakeProvider) Name() string {
@@ -54,3 +55,8 @@ func (f *fakeProvider) Identity(context.Context, RunFunc, string) (IdentityStatu
 func (f *fakeProvider) ConfiguredTargets() []Target { return f.targets }
 
 func (f *fakeProvider) ActiveTargetEnv(id string) []string { return []string{"FAKE_TARGET=" + id} }
+
+func (f *fakeProvider) ExpectedIdentity(id string) (string, bool) {
+	exp, ok := f.expectedFor[id]
+	return exp, ok
+}

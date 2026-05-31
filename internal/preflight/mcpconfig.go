@@ -13,7 +13,6 @@ import (
 	"github.com/sourcehawk/triagent/internal/promforward"
 	"github.com/sourcehawk/triagent/internal/repos"
 	"github.com/sourcehawk/triagent/pkg/mcp/cloud"
-	"github.com/sourcehawk/triagent/pkg/mcp/cloud/providers/aws"
 	"github.com/sourcehawk/triagent/pkg/mcp/cloud/providers/gcp"
 )
 
@@ -188,13 +187,12 @@ func kubeEnv(in mcpConfigInputs) map[string]string {
 // The pinned identity is uniform: TRIAGENT_CLOUD_EXPECTED_IDENTITY carries it
 // for both clouds, and the probe validates the resolved identity against it. The
 // credential env differs by mechanism: GCP impersonates the assumed identity
-// directly (CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT); single-account AWS selects
-// the operator's assume-role profile (AWS_PROFILE) whose role_arn is the
-// deployment's read-only role. A multi-account AWS source instead carries its
-// accounts and source_profile (TRIAGENT_CLOUD_AWS_ACCOUNTS, _SOURCE_PROFILE): the
-// subprocess generates a profile per account and pins AWS_PROFILE per run_cli
-// from the active target, so no static profile selector belongs in this env. The
-// env-name constants come from the provider packages, never raw literals.
+// directly (CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT). AWS carries its accounts
+// and source_profile (TRIAGENT_CLOUD_AWS_ACCOUNTS, _SOURCE_PROFILE): the
+// subprocess generates an assume-role profile per account and pins AWS_PROFILE
+// per run_cli from the active target, so no static profile selector belongs in
+// this env. The env-name constants come from the provider packages, never raw
+// literals.
 func cloudSourceEnv(src profile.CloudSource) (map[string]string, error) {
 	env := map[string]string{
 		cloud.EnvProvider:         src.Provider,
@@ -213,17 +211,13 @@ func cloudSourceEnv(src profile.CloudSource) (map[string]string, error) {
 	case "gcp":
 		env[gcp.EnvImpersonate] = src.AssumedIdentity
 	case "aws":
-		if len(src.Accounts) > 0 {
-			accountsRaw, err := json.Marshal(src.Accounts)
-			if err != nil {
-				return nil, fmt.Errorf("cloud source %q: encode accounts: %w", src.Alias, err)
-			}
-			env[cloud.EnvAWSAccounts] = string(accountsRaw)
-			env[cloud.EnvAWSSourceProfile] = src.SourceProfile
-			env[cloud.EnvAWSAlias] = src.Alias
-		} else {
-			env[aws.EnvProfile] = src.Profile
+		accountsRaw, err := json.Marshal(src.Accounts)
+		if err != nil {
+			return nil, fmt.Errorf("cloud source %q: encode accounts: %w", src.Alias, err)
 		}
+		env[cloud.EnvAWSAccounts] = string(accountsRaw)
+		env[cloud.EnvAWSSourceProfile] = src.SourceProfile
+		env[cloud.EnvAWSAlias] = src.Alias
 	}
 	return env, nil
 }
