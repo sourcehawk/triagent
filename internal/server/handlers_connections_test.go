@@ -293,7 +293,10 @@ func TestGetConnections_IncludesCloudArrayProbedAtRequestTime(t *testing.T) {
 	prof := &profile.Profile{
 		Cloud: []profile.CloudSource{
 			{Alias: "prod-gcp", Provider: "gcp", AssumedIdentity: "ro@p.iam.gserviceaccount.com"},
-			{Alias: "prod-aws", Provider: "aws", AssumedIdentity: "arn:aws:iam::1:role/ro", SourceProfile: "sso", Accounts: []profile.CloudAccount{{AccountID: "1", RoleARN: "arn:aws:iam::1:role/ro"}}},
+			{Alias: "prod-aws", Provider: "aws", SourceProfile: "sso-admin", Accounts: []profile.CloudAccount{
+				{AccountID: "111111111111", RoleARN: "arn:aws:iam::111111111111:role/ro"},
+				{AccountID: "222222222222", RoleARN: "arn:aws:iam::222222222222:role/ro"},
+			}},
 		},
 	}
 	a := &apiHandlers{
@@ -303,7 +306,7 @@ func TestGetConnections_IncludesCloudArrayProbedAtRequestTime(t *testing.T) {
 			if src.Provider == "gcp" {
 				return cloud.IdentityStatus{Provider: "gcp", AssumedIdentity: src.AssumedIdentity, Valid: true}
 			}
-			return cloud.IdentityStatus{Provider: "aws", AssumedIdentity: src.AssumedIdentity, Valid: false, Hint: "run: aws sso login"}
+			return cloud.IdentityStatus{Provider: "aws", Valid: false, Hint: "run: aws sso login"}
 		},
 	}
 
@@ -314,46 +317,55 @@ func TestGetConnections_IncludesCloudArrayProbedAtRequestTime(t *testing.T) {
 
 	var resp struct {
 		Cloud []struct {
-			Alias           string `json:"alias"`
-			Provider        string `json:"provider"`
-			AssumedIdentity string `json:"assumed_identity"`
-			Valid           bool   `json:"valid"`
-			Hint            string `json:"hint"`
+			Alias           string   `json:"alias"`
+			Provider        string   `json:"provider"`
+			AssumedIdentity string   `json:"assumed_identity"`
+			Accounts        []string `json:"accounts"`
+			SourceProfile   string   `json:"source_profile"`
+			Valid           bool     `json:"valid"`
+			Hint            string   `json:"hint"`
 		} `json:"cloud"`
 	}
 	require.NoError(t, json.NewDecoder(rr.Body).Decode(&resp))
 	require.Len(t, resp.Cloud, 2)
 
+	// gcp shows the one impersonated identity.
 	assert.Equal(t, "prod-gcp", resp.Cloud[0].Alias)
 	assert.Equal(t, "gcp", resp.Cloud[0].Provider)
 	assert.Equal(t, "ro@p.iam.gserviceaccount.com", resp.Cloud[0].AssumedIdentity)
+	assert.Empty(t, resp.Cloud[0].Accounts)
 	assert.True(t, resp.Cloud[0].Valid)
 
+	// aws shows its account set + SSO base, never a single assumed identity.
 	assert.Equal(t, "prod-aws", resp.Cloud[1].Alias)
 	assert.Equal(t, "aws", resp.Cloud[1].Provider)
+	assert.Empty(t, resp.Cloud[1].AssumedIdentity, "aws has no single assumed identity")
+	assert.Equal(t, []string{"111111111111", "222222222222"}, resp.Cloud[1].Accounts)
+	assert.Equal(t, "sso-admin", resp.Cloud[1].SourceProfile)
 	assert.False(t, resp.Cloud[1].Valid)
 	assert.Equal(t, "run: aws sso login", resp.Cloud[1].Hint)
 }
 
-// TestGetConnections_DegradedSource_KeepsConfiguredIdentity asserts that when the
-// probe fails before resolving an identity (empty Provider/AssumedIdentity), the
-// cloud entry falls back to the profile source's configured provider, assumed
-// identity, and alias, so the operator still sees WHICH identity was configured
-// alongside valid:false and the failure hint.
-func TestGetConnections_DegradedSource_KeepsConfiguredIdentity(t *testing.T) {
+// TestGetConnections_DegradedSource_KeepsConfiguredDetail asserts that when the
+// probe fails before resolving anything, each source still renders its
+// configured detail so the operator sees what was pinned alongside valid:false
+// and the hint: gcp falls back to its configured assumed_identity, and aws shows
+// its account set + SSO base (which always come from the profile, not the probe).
+func TestGetConnections_DegradedSource_KeepsConfiguredDetail(t *testing.T) {
 	t.Parallel()
 	prof := &profile.Profile{
 		Cloud: []profile.CloudSource{
-			{Alias: "prod-aws", Provider: "aws", AssumedIdentity: "arn:aws:iam::1:role/ro", SourceProfile: "sso", Accounts: []profile.CloudAccount{{AccountID: "1", RoleARN: "arn:aws:iam::1:role/ro"}}},
+			{Alias: "prod-gcp", Provider: "gcp", AssumedIdentity: "ro@p.iam.gserviceaccount.com"},
+			{Alias: "prod-aws", Provider: "aws", SourceProfile: "sso-admin", Accounts: []profile.CloudAccount{{AccountID: "123456789012", RoleARN: "arn:aws:iam::123456789012:role/ro"}}},
 		},
 	}
 	a := &apiHandlers{
 		connections: connections.NewWithDir(t.TempDir()),
 		prof:        prof,
-		// Provider construction failed before resolving an identity: the status
-		// carries only the failure signal, no provider or identity.
+		// Probe failed before resolving anything: the status carries only the
+		// failure signal, no provider or identity.
 		cloudProbe: func(_ context.Context, _ profile.CloudSource) cloud.IdentityStatus {
-			return cloud.IdentityStatus{Valid: false, Hint: "run: aws sso login"}
+			return cloud.IdentityStatus{Valid: false, Hint: "re-authenticate"}
 		},
 	}
 
@@ -364,20 +376,28 @@ func TestGetConnections_DegradedSource_KeepsConfiguredIdentity(t *testing.T) {
 
 	var resp struct {
 		Cloud []struct {
-			Alias           string `json:"alias"`
-			Provider        string `json:"provider"`
-			AssumedIdentity string `json:"assumed_identity"`
-			Valid           bool   `json:"valid"`
-			Hint            string `json:"hint"`
+			Alias           string   `json:"alias"`
+			Provider        string   `json:"provider"`
+			AssumedIdentity string   `json:"assumed_identity"`
+			Accounts        []string `json:"accounts"`
+			SourceProfile   string   `json:"source_profile"`
+			Valid           bool     `json:"valid"`
+			Hint            string   `json:"hint"`
 		} `json:"cloud"`
 	}
 	require.NoError(t, json.NewDecoder(rr.Body).Decode(&resp))
-	require.Len(t, resp.Cloud, 1)
-	assert.Equal(t, "prod-aws", resp.Cloud[0].Alias)
-	assert.Equal(t, "aws", resp.Cloud[0].Provider, "degraded source must fall back to configured provider")
-	assert.Equal(t, "arn:aws:iam::1:role/ro", resp.Cloud[0].AssumedIdentity, "degraded source must fall back to configured identity")
+	require.Len(t, resp.Cloud, 2)
+
+	assert.Equal(t, "gcp", resp.Cloud[0].Provider, "degraded gcp source falls back to configured provider")
+	assert.Equal(t, "ro@p.iam.gserviceaccount.com", resp.Cloud[0].AssumedIdentity, "degraded gcp source falls back to configured identity")
 	assert.False(t, resp.Cloud[0].Valid)
-	assert.Equal(t, "run: aws sso login", resp.Cloud[0].Hint)
+
+	assert.Equal(t, "aws", resp.Cloud[1].Provider, "degraded aws source falls back to configured provider")
+	assert.Empty(t, resp.Cloud[1].AssumedIdentity)
+	assert.Equal(t, []string{"123456789012"}, resp.Cloud[1].Accounts, "degraded aws source still shows its accounts")
+	assert.Equal(t, "sso-admin", resp.Cloud[1].SourceProfile)
+	assert.False(t, resp.Cloud[1].Valid)
+	assert.Equal(t, "re-authenticate", resp.Cloud[1].Hint)
 }
 
 func TestGetConnections_NoCloudSources_OmitsOrEmptyCloud(t *testing.T) {

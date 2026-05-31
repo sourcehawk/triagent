@@ -440,10 +440,9 @@ func TestWriteMCPConfig_AWSCloudSource_RegistersServerWithAccountsAndExpectedRol
 	t.Parallel()
 	in := baseInputs(t)
 	in.CloudSources = []profile.CloudSource{{
-		Alias:           "prod-aws",
-		Provider:        "aws",
-		AssumedIdentity: "arn:aws:iam::123456789012:role/triage-ro",
-		SourceProfile:   "sso-admin",
+		Alias:         "prod-aws",
+		Provider:      "aws",
+		SourceProfile: "sso-admin",
 		Accounts: []profile.CloudAccount{
 			{AccountID: "123456789012", RoleARN: "arn:aws:iam::123456789012:role/triage-ro"},
 		},
@@ -463,7 +462,8 @@ func TestWriteMCPConfig_AWSCloudSource_RegistersServerWithAccountsAndExpectedRol
 	env, _ := srv["env"].(map[string]any)
 	require.NotNil(t, env)
 	assert.Equal(t, "aws", env[cloud.EnvProvider])
-	// The pinned identity is uniform across providers.
+	// aws's expected identity is the default (first) account's role_arn, not a
+	// source-level assumed identity.
 	assert.Equal(t, "arn:aws:iam::123456789012:role/triage-ro", env[cloud.EnvExpectedIdentity])
 	// aws carries its accounts and source_profile; AWS_PROFILE is pinned per-exec
 	// from the active target, never as a static selector here.
@@ -477,10 +477,9 @@ func TestWriteMCPConfig_AWSCloudSource_RegistersServerWithAccountsAndExpectedRol
 func TestCloudSourceEnv_AWSAccounts_EmitsAccountsAndSourceProfile(t *testing.T) {
 	t.Parallel()
 	env, err := cloudSourceEnv(profile.CloudSource{
-		Alias:           "prod-aws",
-		Provider:        "aws",
-		AssumedIdentity: "arn:aws:iam::111111111111:role/triage-ro",
-		SourceProfile:   "sso-admin",
+		Alias:         "prod-aws",
+		Provider:      "aws",
+		SourceProfile: "sso-admin",
 		Accounts: []profile.CloudAccount{
 			{AccountID: "111111111111", RoleARN: "arn:aws:iam::111111111111:role/triage-ro"},
 			{AccountID: "222222222222", RoleARN: "arn:aws:iam::222222222222:role/triage-ro"},

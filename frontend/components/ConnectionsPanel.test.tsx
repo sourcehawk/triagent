@@ -30,7 +30,7 @@ describe("ConnectionsPanel cloud pills", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders a read-only cloud pill per entry with the alias and assumed identity", async () => {
+  it("shows the assumed identity for gcp and the account set for aws", async () => {
     vi.spyOn(api, "getConnections").mockResolvedValue({
       ...baseStatus,
       cloud: [
@@ -43,7 +43,8 @@ describe("ConnectionsPanel cloud pills", () => {
         {
           alias: "prod-aws",
           provider: "aws",
-          assumed_identity: "arn:aws:iam::1:role/triage-ro",
+          accounts: ["111111111111", "222222222222"],
+          source_profile: "sso-admin",
           valid: false,
           hint: "run: aws sso login",
         },
@@ -54,11 +55,35 @@ describe("ConnectionsPanel cloud pills", () => {
 
     expect(await screen.findByText("prod-gcp")).toBeInTheDocument();
     expect(screen.getByText("prod-aws")).toBeInTheDocument();
+    // gcp: the one impersonated service account.
     expect(
       screen.getByText("triage-ro@prod.iam.gserviceaccount.com"),
     ).toBeInTheDocument();
+    // aws: the account-set summary, never a single assumed identity. The full
+    // account ids live in the hover title.
+    const awsBody = screen.getByText("2 accounts · base: sso-admin");
+    expect(awsBody).toBeInTheDocument();
+    expect(awsBody).toHaveAttribute("title", "111111111111, 222222222222");
+  });
+
+  it("singularizes a one-account aws source", async () => {
+    vi.spyOn(api, "getConnections").mockResolvedValue({
+      ...baseStatus,
+      cloud: [
+        {
+          alias: "prod-aws",
+          provider: "aws",
+          accounts: ["123456789012"],
+          source_profile: "sso-admin",
+          valid: true,
+        },
+      ],
+    });
+
+    await renderPanelAndOpenModal();
+
     expect(
-      screen.getByText("arn:aws:iam::1:role/triage-ro"),
+      await screen.findByText("1 account · base: sso-admin"),
     ).toBeInTheDocument();
   });
 
@@ -69,7 +94,8 @@ describe("ConnectionsPanel cloud pills", () => {
         {
           alias: "prod-aws",
           provider: "aws",
-          assumed_identity: "arn:aws:iam::1:role/triage-ro",
+          accounts: ["111111111111"],
+          source_profile: "sso-admin",
           valid: false,
           hint: "run: aws sso login",
         },

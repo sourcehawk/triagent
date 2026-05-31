@@ -96,13 +96,18 @@ export type ConnectionStatus = {
 };
 
 // CloudConnection is one read-only cloud source: the alias keying its
-// triagent-cloud-<alias> MCP, the pinned identity, and the request-time
-// identity-probe result. valid drives the checkmark; hint is the reauth advice
-// shown when the probe failed.
+// triagent-cloud-<alias> MCP and the request-time identity-probe result. valid
+// drives the checkmark; hint is the reauth advice shown when the probe failed.
+//
+// The identity shape is provider-specific. gcp carries one assumed_identity (the
+// impersonated service account). aws has no single assumed identity: it carries
+// the accounts it spans and the operator's source_profile (the SSO base).
 export type CloudConnection = {
   alias: string;
   provider: string;
-  assumed_identity: string;
+  assumed_identity?: string;
+  accounts?: string[];
+  source_profile?: string;
   valid: boolean;
   hint?: string;
 };

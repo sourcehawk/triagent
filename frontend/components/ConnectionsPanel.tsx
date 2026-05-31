@@ -262,12 +262,36 @@ function CloudPill({ conn }: { conn: CloudConnection }) {
           </span>
         )}
       </div>
-      <div className="mt-1 truncate font-mono text-xs text-zinc-400">
-        {conn.assumed_identity}
-      </div>
+      <CloudPillBody conn={conn} />
       {!conn.valid && conn.hint && (
         <div className="mt-1 text-xs text-amber-200/70">{conn.hint}</div>
       )}
+    </div>
+  );
+}
+
+// CloudPillBody renders the identity line, which differs by provider. GCP shows
+// its one impersonated service account. AWS has no single assumed identity, so
+// it shows the account set it spans and the operator's SSO base profile, with
+// the full account ids in the hover title.
+function CloudPillBody({ conn }: { conn: CloudConnection }) {
+  if (conn.provider === "aws") {
+    const accounts = conn.accounts ?? [];
+    const n = accounts.length;
+    const base = conn.source_profile ? ` · base: ${conn.source_profile}` : "";
+    return (
+      <div
+        className="mt-1 truncate font-mono text-xs text-zinc-400"
+        title={accounts.join(", ")}
+      >
+        {n} account{n === 1 ? "" : "s"}
+        {base}
+      </div>
+    );
+  }
+  return (
+    <div className="mt-1 truncate font-mono text-xs text-zinc-400">
+      {conn.assumed_identity}
     </div>
   );
 }

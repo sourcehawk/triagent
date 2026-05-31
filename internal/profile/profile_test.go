@@ -258,7 +258,7 @@ func TestValidateCloudDuplicateAlias(t *testing.T) {
 	p := validCloudBase()
 	p.Cloud = []profile.CloudSource{
 		{Alias: "dup", Provider: "gcp", AssumedIdentity: "ro@proj.iam.gserviceaccount.com"},
-		{Alias: "dup", Provider: "aws", AssumedIdentity: "arn:aws:iam::1:role/ro", SourceProfile: "sso", Accounts: []profile.CloudAccount{{AccountID: "1", RoleARN: "arn:aws:iam::1:role/ro"}}},
+		{Alias: "dup", Provider: "aws", SourceProfile: "sso", Accounts: []profile.CloudAccount{{AccountID: "1", RoleARN: "arn:aws:iam::1:role/ro"}}},
 	}
 	err := p.Validate()
 	require.Error(t, err)
@@ -300,11 +300,22 @@ func TestValidateCloudMissingIdentity(t *testing.T) {
 func TestValidateCloudAWSMissingAccounts(t *testing.T) {
 	p := validCloudBase()
 	p.Cloud = []profile.CloudSource{
-		{Alias: "x", Provider: "aws", AssumedIdentity: "arn:aws:iam::1:role/ro"},
+		{Alias: "x", Provider: "aws", SourceProfile: "sso"},
 	}
 	err := p.Validate()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "accounts")
+}
+
+func TestValidateCloudAWSRejectsAssumedIdentity(t *testing.T) {
+	p := validCloudBase()
+	src := awsAccountsBase()
+	src.AssumedIdentity = "arn:aws:iam::111111111111:role/triage-readonly"
+	p.Cloud = []profile.CloudSource{src}
+	err := p.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "assumed_identity")
+	assert.Contains(t, err.Error(), "aws")
 }
 
 const awsAccountsYAML = `
@@ -318,7 +329,6 @@ playbooks:
 cloud:
   - alias: prod-aws
     provider: aws
-    assumed_identity: arn:aws:iam::111111111111:role/triage-readonly
     source_profile: sso-admin
     accounts:
       - {account_id: "111111111111", role_arn: "arn:aws:iam::111111111111:role/triage-readonly"}
@@ -339,10 +349,9 @@ func TestCloudSourceAWSAccounts(t *testing.T) {
 // each break in exactly one way.
 func awsAccountsBase() profile.CloudSource {
 	return profile.CloudSource{
-		Alias:           "prod-aws",
-		Provider:        "aws",
-		AssumedIdentity: "arn:aws:iam::111111111111:role/triage-readonly",
-		SourceProfile:   "sso-admin",
+		Alias:         "prod-aws",
+		Provider:      "aws",
+		SourceProfile: "sso-admin",
 		Accounts: []profile.CloudAccount{
 			{AccountID: "111111111111", RoleARN: "arn:aws:iam::111111111111:role/triage-readonly"},
 			{AccountID: "222222222222", RoleARN: "arn:aws:iam::222222222222:role/triage-readonly"},
@@ -703,7 +712,6 @@ cloud:
     command_allowlist_path: allow/gcp.json
   - alias: prod-aws
     provider: aws
-    assumed_identity: arn:aws:iam::111122223333:role/ro
     source_profile: sso-admin
     accounts:
       - {account_id: "111122223333", role_arn: "arn:aws:iam::111122223333:role/ro"}
@@ -884,7 +892,6 @@ cloud:
     command_allowlist_path: /etc/triagent/gcp-allow.json
   - alias: prod-aws
     provider: aws
-    assumed_identity: arn:aws:iam::123456789012:role/triage-ro
     source_profile: sso-admin
     accounts:
       - {account_id: "123456789012", role_arn: "arn:aws:iam::123456789012:role/triage-ro"}
@@ -906,7 +913,7 @@ cloud:
 	aws := p.Cloud[1]
 	assert.Equal(t, "prod-aws", aws.Alias)
 	assert.Equal(t, "aws", aws.Provider)
-	assert.Equal(t, "arn:aws:iam::123456789012:role/triage-ro", aws.AssumedIdentity)
+	assert.Empty(t, aws.AssumedIdentity, "aws has no source-level assumed identity")
 	assert.Equal(t, "sso-admin", aws.SourceProfile)
 	require.Len(t, aws.Accounts, 1)
 	assert.Equal(t, "123456789012", aws.Accounts[0].AccountID)

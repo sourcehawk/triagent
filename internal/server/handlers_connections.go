@@ -37,11 +37,18 @@ type connectionsResponse struct {
 // provider and identity but differ in scope. It carries no edit affordance —
 // cloud is configured in the profile, never entered in the panel.
 type cloudConnection struct {
-	Alias           string `json:"alias"`
-	Provider        string `json:"provider"`
-	AssumedIdentity string `json:"assumed_identity"`
-	Valid           bool   `json:"valid"`
-	Hint            string `json:"hint,omitempty"`
+	Alias    string `json:"alias"`
+	Provider string `json:"provider"`
+	// AssumedIdentity is the gcp impersonated service account; empty for aws,
+	// which has no single assumed identity.
+	AssumedIdentity string `json:"assumed_identity,omitempty"`
+	// Accounts and SourceProfile describe an aws source's reach: the account ids
+	// the agent may select among and the operator's SSO base profile that backs
+	// them. Empty for gcp.
+	Accounts      []string `json:"accounts,omitempty"`
+	SourceProfile string   `json:"source_profile,omitempty"`
+	Valid         bool     `json:"valid"`
+	Hint          string   `json:"hint,omitempty"`
 }
 
 // connectionsResp builds the full response body for all /api/connections
@@ -75,25 +82,37 @@ func (a *apiHandlers) cloudConnections(ctx context.Context) []cloudConnection {
 	out := make([]cloudConnection, 0, len(a.prof.Cloud))
 	for _, src := range a.prof.Cloud {
 		st := probe(ctx, src)
-		// A probe that fails before resolving an identity leaves Provider and
-		// AssumedIdentity blank. Fall back to the configured source values so a
-		// degraded source still shows WHICH identity was pinned alongside its
-		// failure hint; the alias is always the source's.
+		// A probe that fails before resolving the provider leaves it blank; fall
+		// back to the configured value so a degraded source still renders. The
+		// alias is always the source's.
 		provider := st.Provider
 		if provider == "" {
 			provider = src.Provider
 		}
-		identity := st.AssumedIdentity
-		if identity == "" {
-			identity = src.AssumedIdentity
+		conn := cloudConnection{
+			Alias:    src.Alias,
+			Provider: provider,
+			Valid:    st.Valid,
+			Hint:     st.Hint,
 		}
-		out = append(out, cloudConnection{
-			Alias:           src.Alias,
-			Provider:        provider,
-			AssumedIdentity: identity,
-			Valid:           st.Valid,
-			Hint:            st.Hint,
-		})
+		// The identity shape is provider-specific. gcp shows the one impersonated
+		// service account (the probe's resolved value, or the configured one when
+		// the probe degraded before resolving it). aws has no single identity: it
+		// shows the account set it spans and the operator's SSO base profile.
+		switch src.Provider {
+		case "aws":
+			conn.Accounts = make([]string, 0, len(src.Accounts))
+			for _, acct := range src.Accounts {
+				conn.Accounts = append(conn.Accounts, acct.AccountID)
+			}
+			conn.SourceProfile = src.SourceProfile
+		default:
+			conn.AssumedIdentity = st.AssumedIdentity
+			if conn.AssumedIdentity == "" {
+				conn.AssumedIdentity = src.AssumedIdentity
+			}
+		}
+		out = append(out, conn)
 	}
 	return out
 }

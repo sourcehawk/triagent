@@ -394,7 +394,7 @@ silently running in local-only mode.
 
 ## Cloud sources
 
-The `cloud:` block attaches read-only GCP / AWS context MCPs to every investigation, one `triagent-cloud-<alias>` per entry. Each source pins a read-only identity (a service-account email for GCP, a role ARN for AWS) that the agent can read but never select or escalate, with a `scope` allowlist constraining which projects / accounts / regions any command may reference.
+The `cloud:` block attaches read-only GCP / AWS context MCPs to every investigation, one `triagent-cloud-<alias>` per entry. Each source pins a read-only identity the agent can read but never select or escalate — one impersonated service account for GCP (`assumed_identity`), or a per-account assume-role set for AWS (`accounts`, each with its own `role_arn`) — with a `scope` allowlist constraining which projects / accounts / regions any command may reference.
 
 ```yaml
 cloud:
@@ -405,8 +405,7 @@ cloud:
       projects: [prod-platform]
       regions:  [us-central1]
   - alias: prod-aws
-    provider: aws
-    assumed_identity: arn:aws:iam::123456789012:role/triage-readonly # default account's role ARN
+    provider: aws                                                    # aws has no assumed_identity; identity is per-account
     source_profile: sso-admin                                        # operator's SSO base profile
     accounts:                                                        # one entry per account; single-account is a one-entry list
       - {account_id: "123456789012", role_arn: "arn:aws:iam::123456789012:role/triage-readonly"}

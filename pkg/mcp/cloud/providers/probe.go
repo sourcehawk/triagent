@@ -45,12 +45,17 @@ type Source struct {
 }
 
 // ProbeSource constructs the source's provider and runs the read-only identity
-// probe, threading the source's pinned identity and the subprocess credential
-// env explicitly so concurrent probes for different sources never share state.
-// It degrades, never blocks: a provider construction error (e.g. a missing CLI
+// probe, threading the expected identity and the subprocess credential env
+// explicitly so concurrent probes for different sources never share state. The
+// expected identity is provider-specific: gcp validates the resolved caller
+// against AssumedIdentity (the impersonated service account); aws probes the
+// default (first) account's generated profile and validates against that
+// account's role_arn — there is no source-level assumed identity for aws. It
+// degrades, never blocks: a provider construction error (e.g. a missing CLI
 // binary) returns an invalid status with the error as the hint, exactly like a
 // failed probe.
 func ProbeSource(ctx context.Context, src Source) cloud.IdentityStatus {
+	expected := expectedIdentity(src)
 	p, err := New(src.Provider, Options{
 		AWSAlias:         src.Alias,
 		AWSSourceProfile: src.SourceProfile,
@@ -59,12 +64,23 @@ func ProbeSource(ctx context.Context, src Source) cloud.IdentityStatus {
 	if err != nil {
 		return cloud.IdentityStatus{
 			Provider:        src.Provider,
-			AssumedIdentity: src.AssumedIdentity,
+			AssumedIdentity: expected,
 			Valid:           false,
 			Hint:            err.Error(),
 		}
 	}
-	return probeProvider(ctx, p, src.AssumedIdentity, sourceEnvFor(p, src))
+	return probeProvider(ctx, p, expected, sourceEnvFor(p, src))
+}
+
+// expectedIdentity is the identity the launcher-side probe validates against:
+// gcp's impersonated service account, or aws's default (first) account's
+// role_arn (the account whose generated profile awsProbeProfile authenticates
+// with), so the panel reflects the source's default target.
+func expectedIdentity(src Source) string {
+	if src.Provider == "aws" && len(src.Accounts) > 0 {
+		return src.Accounts[0].RoleARN
+	}
+	return src.AssumedIdentity
 }
 
 // probeProvider runs the identity probe for an already-constructed provider

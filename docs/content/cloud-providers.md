@@ -62,13 +62,12 @@ An AWS role lives in exactly one account, so a source names a list of `accounts`
 cloud:
   - alias: prod-aws
     provider: aws
-    assumed_identity: arn:aws:iam::123456789012:role/triage-readonly  # the default account's role
     source_profile: default                                           # the operator's SSO base
     accounts:
       - {account_id: "123456789012", role_arn: "arn:aws:iam::123456789012:role/triage-readonly"}
 ```
 
-The harness sets `AWS_PROFILE` to the active account's generated profile on each `run_cli`, so the AWS CLI assumes that account's read-only role from the operator's base credentials. The pin lives in environment, so `--profile` stays on the agent's deny floor. `assumed_identity` is the default (first) account's role ARN, which the connections panel validates against.
+An AWS source has no `assumed_identity` — its identity is per-account, in each `accounts` entry's `role_arn`. The harness sets `AWS_PROFILE` to the active account's generated profile on each `run_cli`, so the AWS CLI assumes that account's read-only role from the operator's base credentials. The pin lives in environment, so `--profile` stays on the agent's deny floor. The connections panel validates the default (first) account's role.
 
 Each account's read-only role needs a permission policy and a trust policy. The minimal permission policy, scoped to exactly the default tool surface:
 
@@ -128,7 +127,6 @@ An IAM role lives in exactly one account, so reaching several accounts is just a
 cloud:
   - alias: prod-aws
     provider: aws
-    assumed_identity: arn:aws:iam::111111111111:role/triage-readonly
     source_profile: sso-admin            # the operator's SSO base profile
     accounts:
       - {account_id: "111111111111", role_arn: "arn:aws:iam::111111111111:role/triage-readonly"}
@@ -177,9 +175,8 @@ cloud:
 
   - alias: prod-aws
     provider: aws
-    # For aws, the default account's role ARN, shown in the connections panel and
-    # validated by its probe.
-    assumed_identity: arn:aws:iam::123456789012:role/triage-readonly
+    # aws has no assumed_identity — its identity is per-account (each accounts
+    # entry's role_arn). The connections panel validates the default account.
     # aws: the operator's SSO base profile the generated per-account assume-role
     # profiles layer their role over. Required for aws; gcp ignores it.
     source_profile: sso-admin
@@ -196,7 +193,7 @@ The fields:
 
 - `alias` — stable name for the source; the MCP is aliased `triagent-cloud-<alias>` and the connections panel keys off it.
 - `provider` — `gcp` or `aws`. Selects the concrete provider behind the shared MCP.
-- `assumed_identity` — the canonical pinned identity shown in the connections panel: a service-account email for GCP, the default account's role ARN for AWS. GCP impersonates it directly. AWS validates the default account's resolved caller against it.
+- `assumed_identity` — GCP only: the impersonated read-only service-account email, shown in the connections panel and impersonated directly. AWS has no `assumed_identity` (setting it on an AWS source is rejected); its identity is per-account, in each `accounts` entry's `role_arn`.
 - `source_profile` — AWS only. The operator's SSO base profile the generated per-account assume-role profiles layer their role over. Required for AWS; GCP ignores it.
 - `accounts` — AWS only. The account set the agent selects among via `set_active_target`; each entry is `{account_id, role_arn}`, and a single-account source is a one-entry list. See [Spanning several AWS accounts](#spanning-several-aws-accounts). This is the source-level selectable set, distinct from the informational `scope.accounts` note.
 - `scope` — the target allowlist (see below).

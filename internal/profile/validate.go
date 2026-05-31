@@ -61,9 +61,11 @@ func (p *Profile) Validate() error {
 
 	// Cloud sources are wired per session as triagent-cloud-<alias> MCP servers
 	// keyed by alias, so a duplicate or empty alias silently overwrites another
-	// server's entry; an unknown provider, missing identity, or aws source
-	// without a profile reaches preflight as a broken connection. Catch all of
-	// it here.
+	// server's entry; an unknown provider or a malformed identity shape reaches
+	// preflight as a broken connection. Catch all of it here. The identity shape
+	// is provider-specific: gcp pins one impersonated service account
+	// (assumed_identity); aws pins a per-account role set (accounts +
+	// source_profile) and has no single assumed identity.
 	seenAliases := map[string]bool{}
 	for i, c := range p.Cloud {
 		if c.Alias == "" {
@@ -74,18 +76,19 @@ func (p *Profile) Validate() error {
 		seenAliases[c.Alias] = true
 
 		switch c.Provider {
-		case "gcp", "aws":
+		case "gcp":
+			if c.AssumedIdentity == "" {
+				errs = append(errs, fmt.Sprintf("cloud[%d].assumed_identity: required when provider=gcp", i))
+			}
+		case "aws":
+			if c.AssumedIdentity != "" {
+				errs = append(errs, fmt.Sprintf("cloud[%d].assumed_identity: must be empty when provider=aws (each account pins its own role_arn)", i))
+			}
+			errs = append(errs, validateAWSCredentials(i, c)...)
 		case "":
 			errs = append(errs, fmt.Sprintf("cloud[%d].provider: required (supported: gcp, aws)", i))
 		default:
 			errs = append(errs, fmt.Sprintf("cloud[%d].provider: unknown %q (supported: gcp, aws)", i, c.Provider))
-		}
-
-		if c.AssumedIdentity == "" {
-			errs = append(errs, fmt.Sprintf("cloud[%d].assumed_identity: required", i))
-		}
-		if c.Provider == "aws" {
-			errs = append(errs, validateAWSCredentials(i, c)...)
 		}
 	}
 

@@ -195,8 +195,18 @@ func kubeEnv(in mcpConfigInputs) map[string]string {
 // literals.
 func cloudSourceEnv(src profile.CloudSource) (map[string]string, error) {
 	env := map[string]string{
-		cloud.EnvProvider:         src.Provider,
-		cloud.EnvExpectedIdentity: src.AssumedIdentity,
+		cloud.EnvProvider: src.Provider,
+	}
+	// The expected identity is provider-specific: gcp's impersonated service
+	// account, or aws's default (first) account's role_arn — the server validates
+	// each active aws account against its own role, and falls back to this default
+	// only before a target is chosen.
+	if src.Provider == "aws" {
+		if len(src.Accounts) > 0 {
+			env[cloud.EnvExpectedIdentity] = src.Accounts[0].RoleARN
+		}
+	} else {
+		env[cloud.EnvExpectedIdentity] = src.AssumedIdentity
 	}
 	if src.CommandAllowlistPath != "" {
 		env[cloud.EnvAllowlistPath] = src.CommandAllowlistPath

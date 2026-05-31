@@ -239,7 +239,7 @@ func TestRun_CloudProbeFailureDegradesNotBlocks(t *testing.T) {
 	prof := &profile.Profile{
 		Cloud: []profile.CloudSource{
 			{Alias: "prod-gcp", Provider: "gcp", AssumedIdentity: "ro@p.iam.gserviceaccount.com"},
-			{Alias: "prod-aws", Provider: "aws", AssumedIdentity: "arn:aws:iam::1:role/ro", SourceProfile: "sso", Accounts: []profile.CloudAccount{{AccountID: "1", RoleARN: "arn:aws:iam::1:role/ro"}}},
+			{Alias: "prod-aws", Provider: "aws", SourceProfile: "sso", Accounts: []profile.CloudAccount{{AccountID: "1", RoleARN: "arn:aws:iam::1:role/ro"}}},
 		},
 	}
 	res, err := Run(Options{
@@ -316,10 +316,9 @@ func TestRun_CloudProviderConstructionErrorDegrades(t *testing.T) {
 func TestCloudProbeSource_ThreadsAWSMultiAccountFields(t *testing.T) {
 	t.Parallel()
 	src := profile.CloudSource{
-		Alias:           "prod-aws",
-		Provider:        "aws",
-		AssumedIdentity: "arn:aws:iam::111111111111:role/triage-ro",
-		SourceProfile:   "sso-base",
+		Alias:         "prod-aws",
+		Provider:      "aws",
+		SourceProfile: "sso-base",
 		Accounts: []profile.CloudAccount{
 			{AccountID: "111111111111", RoleARN: "arn:aws:iam::111111111111:role/triage-ro"},
 			{AccountID: "222222222222", RoleARN: "arn:aws:iam::222222222222:role/triage-ro"},
@@ -329,10 +328,9 @@ func TestCloudProbeSource_ThreadsAWSMultiAccountFields(t *testing.T) {
 	got := cloudProbeSource(src)
 
 	assert.Equal(t, providers.Source{
-		Provider:        "aws",
-		AssumedIdentity: "arn:aws:iam::111111111111:role/triage-ro",
-		Alias:           "prod-aws",
-		SourceProfile:   "sso-base",
+		Provider:      "aws",
+		Alias:         "prod-aws",
+		SourceProfile: "sso-base",
 		Accounts: []aws.Account{
 			{ID: "111111111111", RoleARN: "arn:aws:iam::111111111111:role/triage-ro"},
 			{ID: "222222222222", RoleARN: "arn:aws:iam::222222222222:role/triage-ro"},

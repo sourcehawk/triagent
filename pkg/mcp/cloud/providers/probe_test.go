@@ -69,7 +69,7 @@ func TestProbeSourceDoesNotMutateProcessEnv(t *testing.T) {
 
 	for _, src := range []Source{
 		{Provider: "gcp", AssumedIdentity: "ro-sa@proj.iam.gserviceaccount.com"},
-		{Provider: "aws", AssumedIdentity: "arn:aws:iam::111122223333:role/triage-ro", Alias: "probe-aws", SourceProfile: "triage-ro", Accounts: []aws.Account{{ID: "111122223333", RoleARN: "arn:aws:iam::111122223333:role/triage-ro"}}},
+		{Provider: "aws", Alias: "probe-aws", SourceProfile: "triage-ro", Accounts: []aws.Account{{ID: "111122223333", RoleARN: "arn:aws:iam::111122223333:role/triage-ro"}}},
 	} {
 		_ = ProbeSource(context.Background(), src)
 	}

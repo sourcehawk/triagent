@@ -155,20 +155,20 @@ type ExtraMCP struct {
 // configured in the profile, never entered in the connections panel: the agent
 // can read the pinned identity but cannot select or escalate it.
 //
-// AssumedIdentity is the canonical pinned identity shown in the connections
-// panel — a service-account email for gcp, a role ARN for aws (the source's
-// default account's role, which the panel probe validates against).
-//
-// GCP spans its projects with one impersonated identity (AssumedIdentity),
-// selecting among them by Scope.Projects. AWS pins a list of accounts, each
-// {account_id, role_arn}; triagent generates a per-account assume-role profile
-// layering each role over SourceProfile, and the agent selects among them via
-// set_active_target. A single-account AWS source is simply a one-entry Accounts
-// list — there is no separate single-account shape.
+// The pinned identity is provider-specific. GCP spans its projects with one
+// impersonated service account (AssumedIdentity, shown in the connections
+// panel), selecting among them by Scope.Projects. AWS has no single assumed
+// identity: it pins a list of accounts, each {account_id, role_arn}, and
+// triagent generates a per-account assume-role profile layering each role over
+// SourceProfile; the agent selects among them via set_active_target, and each
+// account validates against its own role_arn. A single-account AWS source is
+// simply a one-entry Accounts list — there is no separate single-account shape.
 type CloudSource struct {
-	Alias           string `yaml:"alias"`
-	Provider        string `yaml:"provider"` // "gcp" | "aws"
-	AssumedIdentity string `yaml:"assumed_identity"`
+	Alias    string `yaml:"alias"`
+	Provider string `yaml:"provider"` // "gcp" | "aws"
+	// AssumedIdentity is the gcp impersonated service-account email. Required for
+	// gcp; must be empty for aws (whose identity is per-account, in Accounts).
+	AssumedIdentity string `yaml:"assumed_identity,omitempty"`
 	// SourceProfile is the operator's SSO base profile the generated per-account
 	// assume-role profiles layer their role_arn over. Required for aws.
 	SourceProfile string `yaml:"source_profile,omitempty"`
