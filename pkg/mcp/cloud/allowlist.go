@@ -102,7 +102,7 @@ func filterAllowlist(list *CommandAllowlist, extra DenyFloor) *CommandAllowlist 
 	floor := mergeDenyFloor(extra)
 	out := &CommandAllowlist{Commands: make([]Command, 0, len(list.Commands))}
 	for _, c := range list.Commands {
-		if c.Path == "" || floor.deniesSubcommand(normalizePath(c.Path)) {
+		if c.Path == "" || floor.blocks(normalizePath(c.Path)) {
 			continue
 		}
 		out.Commands = append(out.Commands, c)
@@ -127,13 +127,23 @@ func (a *CommandAllowlist) Allows(argv []string) bool {
 	return false
 }
 
-// deniesSubcommand reports whether a normalized subcommand path falls under any
-// floored subcommand. A floor entry matches when it is a token-wise prefix of
-// the path, so "secrets" floors "secrets versions access" and "compute ssh"
-// floors "compute ssh foo".
-func (d DenyFloor) deniesSubcommand(path []string) bool {
+// blocks reports whether an allowlist entry's normalized subcommand path is
+// prefix-comparable to any floored subcommand, in either direction:
+//
+//   - a floor entry is a token-prefix of path: path sits UNDER a denied path, so
+//     allowing it runs a floored command directly ("secrets" floors "secrets
+//     versions access", "compute ssh" floors "compute ssh foo");
+//   - path is a token-prefix of a floor entry: path is a parent OF a denied path,
+//     so allowing it re-admits the floored command through Allows' prefix match
+//     (a bare "s3" entry would re-admit the floored "s3 cp").
+//
+// Both directions drop the entry. An entry that merely shares a leading token
+// but diverges deeper ("compute instances list" vs floored "compute ssh") is
+// prefix-comparable to neither and stays allowed.
+func (d DenyFloor) blocks(path []string) bool {
 	for _, s := range d.Subcommands {
-		if pathHasPrefix(path, normalizePath(s)) {
+		floor := normalizePath(s)
+		if pathHasPrefix(path, floor) || pathHasPrefix(floor, path) {
 			return true
 		}
 	}
