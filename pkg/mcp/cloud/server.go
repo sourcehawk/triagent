@@ -42,6 +42,11 @@ type Server struct {
 	allowlist        *CommandAllowlist
 	scope            ScopeAllowlist
 	expectedIdentity string
+	// activeTarget is the project (gcp) or account (aws) subsequent run_cli
+	// commands run against, chosen via set_active_target from selectableTargets.
+	// Empty means none chosen yet; subprocessEnv injects the provider's target
+	// env only when set.
+	activeTarget string
 }
 
 // New constructs a cloud-context MCP server. Provider is required. The command
@@ -67,8 +72,52 @@ func New(opts Options) (*Server, error) {
 		scope:            opts.Scope,
 		expectedIdentity: opts.ExpectedIdentity,
 	}
+	// A single selectable target is the active target from session start
+	// (today's behavior); with several, the agent must choose via
+	// set_active_target before run_cli will run.
+	if sel := s.selectableTargets(context.Background()); len(sel) == 1 {
+		s.activeTarget = sel[0].ID
+	}
 	s.registerOn(impl)
 	return s, nil
+}
+
+// selectableTargets returns the set the agent may choose from: the provider's
+// configured targets (aws accounts) when present, else the scope projects, else
+// (unconstrained) the live inventory scopes.
+func (s *Server) selectableTargets(ctx context.Context) []Target {
+	if t := s.provider.ConfiguredTargets(); len(t) > 0 {
+		return t
+	}
+	if len(s.scope.Projects) > 0 {
+		out := make([]Target, 0, len(s.scope.Projects))
+		for _, p := range s.scope.Projects {
+			out = append(out, Target{ID: p, Name: p})
+		}
+		return out
+	}
+	inv, err := s.provider.Inventory(ctx, s.run)
+	if err != nil {
+		return nil
+	}
+	out := make([]Target, 0, len(inv.Scopes))
+	for _, sc := range inv.Scopes {
+		out = append(out, Target{ID: sc.ID, Name: sc.Name})
+	}
+	return out
+}
+
+// setActive validates id against the selectable set and pins it as the active
+// target. An id outside the set is rejected, so the agent can never name a
+// target the deployment did not configure.
+func (s *Server) setActive(id string) error {
+	for _, t := range s.selectableTargets(context.Background()) {
+		if t.ID == id {
+			s.activeTarget = id
+			return nil
+		}
+	}
+	return fmt.Errorf("target %q is not in the configured set", id)
 }
 
 // loadAllowlist resolves the command allowlist for a provider: the override path
@@ -104,7 +153,11 @@ func (s *Server) run(ctx context.Context, argv []string) (CLIResult, error) {
 // names, read from the launcher-controlled process env. Everything else is
 // dropped, so the launcher's ambient secrets never reach the CLI.
 func (s *Server) subprocessEnv() []string {
-	return minimalEnv(s.provider.EnvPassthrough())
+	env := minimalEnv(s.provider.EnvPassthrough())
+	if s.activeTarget != "" {
+		env = append(env, s.provider.ActiveTargetEnv(s.activeTarget)...)
+	}
+	return env
 }
 
 // minimalEnv returns the subprocess environment built from os.Environ() filtered
