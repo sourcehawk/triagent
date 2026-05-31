@@ -4,12 +4,52 @@ import (
 	"context"
 	"os"
 	"testing"
+	"time"
 
+	"github.com/sourcehawk/triagent/pkg/mcp/cloud"
 	"github.com/sourcehawk/triagent/pkg/mcp/cloud/providers/aws"
 	"github.com/sourcehawk/triagent/pkg/mcp/cloud/providers/gcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// blockingProvider's Identity blocks until the probe context is cancelled, then
+// surfaces the context error the way a real provider does when its CLI is
+// killed by the deadline. It lets the timeout be observed without a real sleep.
+type blockingProvider struct{}
+
+func (blockingProvider) Name() string                                  { return "gcp" }
+func (blockingProvider) Binary() string                                { return "/bin/true" }
+func (blockingProvider) DefaultAllowlist() *cloud.CommandAllowlist     { return &cloud.CommandAllowlist{} }
+func (blockingProvider) DenyFloorAdditions() cloud.DenyFloor           { return cloud.DenyFloor{} }
+func (blockingProvider) EnvPassthrough() []string                      { return nil }
+func (blockingProvider) Inventory(context.Context, cloud.RunFunc) (cloud.Inventory, error) {
+	return cloud.Inventory{}, nil
+}
+
+func (blockingProvider) Identity(ctx context.Context, _ cloud.RunFunc, _ string) (cloud.IdentityStatus, error) {
+	<-ctx.Done()
+	return cloud.IdentityStatus{}, ctx.Err()
+}
+
+func TestProbeProviderBoundsHungCLI(t *testing.T) {
+	defer func(orig time.Duration) { probeTimeout = orig }(probeTimeout)
+	probeTimeout = 50 * time.Millisecond
+
+	done := make(chan cloud.IdentityStatus, 1)
+	go func() {
+		done <- probeProvider(context.Background(), blockingProvider{}, "", nil)
+	}()
+
+	select {
+	case st := <-done:
+		assert.False(t, st.Valid, "a hung probe must degrade to an invalid status, not block")
+		assert.Equal(t, "gcp", st.Provider)
+		assert.NotEmpty(t, st.Hint, "the deadline error must surface as a hint")
+	case <-time.After(2 * time.Second):
+		t.Fatal("probeProvider did not return: the probe timeout was not propagated")
+	}
+}
 
 // TestProbeSourceDoesNotMutateProcessEnv pins the core guarantee of the
 // explicit-threading refactor: ProbeSource builds the credential env for the
