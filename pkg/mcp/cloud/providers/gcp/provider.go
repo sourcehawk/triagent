@@ -97,6 +97,18 @@ func (p *Provider) DenyFloorAdditions() cloud.DenyFloor {
 	}
 }
 
+// ConfiguredTargets is empty for gcp: the selectable set comes from the
+// server's scope projects or live inventory, not the provider's own config.
+func (p *Provider) ConfiguredTargets() []cloud.Target { return nil }
+
+// ActiveTargetEnv pins gcloud to the active project via CLOUDSDK_CORE_PROJECT,
+// the default project for every command that takes one. One impersonated
+// identity spans the allowlisted projects, so switching changes only the
+// project, never the identity.
+func (p *Provider) ActiveTargetEnv(id string) []string {
+	return []string{"CLOUDSDK_CORE_PROJECT=" + id}
+}
+
 // EnvPassthrough names the gcloud env vars the subprocess needs: the pinned
 // impersonation target plus the config and active-project locations. PATH and
 // HOME are forwarded by the harness base set, so they are absent here.

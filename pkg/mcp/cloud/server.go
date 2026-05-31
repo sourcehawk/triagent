@@ -103,7 +103,7 @@ func (s *Server) selectableTargets(ctx context.Context) []Target {
 	}
 	out := make([]Target, 0, len(inv.Scopes))
 	for _, sc := range inv.Scopes {
-		out = append(out, Target{ID: sc.ID, Name: sc.Name})
+		out = append(out, Target(sc))
 	}
 	return out
 }
