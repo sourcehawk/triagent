@@ -30,6 +30,8 @@ func (p *envProbeProvider) Inventory(context.Context, RunFunc) (Inventory, error
 	return Inventory{}, nil
 }
 
+func (p *envProbeProvider) ConfiguredTargets() []Target        { return nil }
+func (p *envProbeProvider) ActiveTargetEnv(id string) []string { return []string{"FAKE_TARGET=" + id} }
 func (p *envProbeProvider) Identity(ctx context.Context, run RunFunc, _ string) (IdentityStatus, error) {
 	res, err := run(ctx, nil)
 	if err != nil {

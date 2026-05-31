@@ -7,6 +7,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestFakeProviderSatisfiesActiveTargetContract(t *testing.T) {
+	t.Parallel()
+	var p Provider = &fakeProvider{}
+	require.NotNil(t, p)
+	// compile-time: the interface now includes ActiveTargetEnv + ConfiguredTargets
+}
+
 func TestNewRequiresProvider(t *testing.T) {
 	t.Parallel()
 	_, err := New(Options{})

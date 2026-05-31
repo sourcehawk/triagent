@@ -15,6 +15,7 @@ type fakeProvider struct {
 	identity       IdentityStatus
 	identityErr    error
 	envPassthrough []string
+	targets        []Target
 }
 
 func (f *fakeProvider) Name() string {
@@ -49,3 +50,7 @@ func (f *fakeProvider) Inventory(context.Context, RunFunc) (Inventory, error) {
 func (f *fakeProvider) Identity(context.Context, RunFunc, string) (IdentityStatus, error) {
 	return f.identity, f.identityErr
 }
+
+func (f *fakeProvider) ConfiguredTargets() []Target { return f.targets }
+
+func (f *fakeProvider) ActiveTargetEnv(id string) []string { return []string{"FAKE_TARGET=" + id} }
