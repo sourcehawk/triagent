@@ -206,3 +206,48 @@ func keyOf(argv []string) string {
 }
 
 var errAccessDenied = errors.New("access denied (AccessDeniedException) when calling the ListAccounts operation")
+
+func TestConfiguredTargetsEmptyForSingleAccount(t *testing.T) {
+	p, err := newWithBinary("/usr/bin/aws")
+	require.NoError(t, err)
+	assert.Nil(t, p.ConfiguredTargets())
+}
+
+func TestConfiguredTargetsFromAccounts(t *testing.T) {
+	p := providerWithAccounts(t, "prod-aws", []Account{
+		{ID: "111111111111", RoleARN: "arn:aws:iam::111111111111:role/r"},
+		{ID: "222222222222", RoleARN: "arn:aws:iam::222222222222:role/r"},
+	})
+	targets := p.ConfiguredTargets()
+	require.Len(t, targets, 2)
+	assert.Equal(t, "111111111111", targets[0].ID)
+	assert.Equal(t, "111111111111", targets[0].Name)
+	assert.Equal(t, "222222222222", targets[1].ID)
+}
+
+func TestActiveTargetEnvUsesGeneratedProfileName(t *testing.T) {
+	p := providerWithAccounts(t, "prod-aws", []Account{
+		{ID: "111111111111", RoleARN: "arn:aws:iam::111111111111:role/r"},
+	})
+	assert.Equal(t, []string{"AWS_PROFILE=triagent-cloud-prod-aws-111111111111"}, p.ActiveTargetEnv("111111111111"))
+}
+
+// TestActiveTargetEnvSingleAccountPassthrough proves the legacy single-account
+// provider (no alias, no accounts) treats the active id as the profile name
+// directly, reproducing today's AWS_PROFILE=<id> behavior.
+func TestActiveTargetEnvSingleAccountPassthrough(t *testing.T) {
+	p, err := newWithBinary("/usr/bin/aws")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"AWS_PROFILE=ro"}, p.ActiveTargetEnv("ro"))
+}
+
+// providerWithAccounts builds an aws provider with a generated-profile config
+// pointed at a temp AWS config file so construction's writeManagedProfiles call
+// does not touch the developer's ~/.aws/config.
+func providerWithAccounts(t *testing.T, alias string, accs []Account) *Provider {
+	t.Helper()
+	t.Setenv("AWS_CONFIG_FILE", filepath.Join(t.TempDir(), "config"))
+	p, err := newWithBinary("/usr/bin/aws", Options{Alias: alias, SourceProfile: "sso-admin", Accounts: accs})
+	require.NoError(t, err)
+	return p
+}
