@@ -2,8 +2,10 @@ package cloud
 
 import (
 	"context"
+	"strings"
 	"testing"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
 )
 
@@ -16,6 +18,32 @@ func newTestServer(t *testing.T, p Provider, opts ...func(*Options)) *Server {
 	srv, err := New(o)
 	require.NoError(t, err)
 	return srv
+}
+
+// errText reads the text content of a tool error result.
+func errText(res *mcp.CallToolResult) string {
+	var b strings.Builder
+	for _, c := range res.Content {
+		if tc, ok := c.(*mcp.TextContent); ok {
+			b.WriteString(tc.Text)
+		}
+	}
+	return b.String()
+}
+
+func TestRunCLIRequiresActiveTargetWhenMultiple(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t, &fakeProvider{targets: []Target{{ID: "a"}, {ID: "b"}}, binary: "/bin/echo",
+		allowlist: &CommandAllowlist{Commands: []Command{{Path: "echo"}}}})
+	res, _, _ := s.runCLI(context.Background(), nil, RunCLIInput{Argv: []string{"echo", "x"}})
+	require.True(t, res.IsError)
+	require.Contains(t, errText(res), "set_active_target")
+
+	require.NoError(t, s.setActive("a"))
+	res2, out2, err2 := s.runCLI(context.Background(), nil, RunCLIInput{Argv: []string{"echo", "x"}})
+	require.NoError(t, err2)
+	require.Nil(t, res2, "with an active target the command runs (no error result)")
+	require.Contains(t, out2.Stdout, "x")
 }
 
 func TestSetActiveTargetTool(t *testing.T) {

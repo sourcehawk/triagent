@@ -2,6 +2,7 @@ package cloud
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -142,11 +143,19 @@ func (s *Server) Run(ctx context.Context) error {
 // and allowlist. Providers and tools exec only through this RunFunc, never
 // directly: it validates argv before handing it to the no-shell exec core.
 func (s *Server) run(ctx context.Context, argv []string) (CLIResult, error) {
+	if s.activeTarget == "" && len(s.selectableTargets(ctx)) > 1 {
+		return CLIResult{}, errNoActiveTarget
+	}
 	if err := validateArgv(argv, s.allowlist, s.scope); err != nil {
 		return CLIResult{}, err
 	}
 	return execCLI(ctx, s.provider.Binary(), argv, s.subprocessEnv(), defaultOutputLimit)
 }
+
+// errNoActiveTarget is returned by run when several targets are selectable but
+// none is active, so a command never runs against an unintended default. It is
+// surfaced to the agent as an actionable run_cli tool error.
+var errNoActiveTarget = errors.New("no active target; call set_active_target to choose one")
 
 // subprocessEnv builds the explicit, minimal environment for a provider CLI
 // invocation: only the base names plus the provider's declared passthrough
