@@ -177,6 +177,8 @@ scope:
 
 An empty (or omitted) `projects` or `regions` axis is unconstrained on that axis. A non-empty one is a closed set: a `--project`, `--region`, or `--zone` value outside it fails validation before the command runs.
 
+Scope constrains the value of an explicit flag; it does not force one to be present. If the agent omits `--project`, the CLI falls back to its own default target (the impersonated identity's default project, `CLOUDSDK_CORE_PROJECT`, or for AWS the configured `AWS_REGION`), which scope does not police. Hard project confinement therefore comes from the pinned identity's IAM, not from scope: grant the read-only roles only on the in-scope projects, as the setup above does, so an out-of-scope project is unreachable whatever the argv. Region has no equivalent IAM boundary, so treat region scope as a guardrail against explicit pivots rather than a hard limit.
+
 `accounts` is informational and reserved: it documents which AWS accounts the source is expected to reach, but `run_cli` does not validate account ids on argv. What actually bounds account reach is the pinned assume-role profile, whose role can only see the accounts its trust policy and permissions allow. Treat `accounts` as a note to operators, not an enforced allowlist.
 
 Identity-selecting flags (`--account`, `--profile`) never reach scope validation at all, because the deny floor rejects them first.
@@ -184,6 +186,8 @@ Identity-selecting flags (`--account`, `--profile`) never reach scope validation
 ## Command allowlist
 
 What the agent can run through `run_cli` is governed by a positive command allowlist of normalized subcommand paths, for example `compute firewall-rules list` for GCP or `ec2 describe-security-groups` for AWS. Each provider ships an embedded read-only default covering the six axes. Point `command_allowlist_path` at a file (relative to the profile.yaml) to override it; an empty value uses the embedded default. The allowlist is the single source of truth, so the discovery tool advertises exactly what is permitted.
+
+Allowlist entries must be complete leaf verbs, for example `compute instances list` or `ec2 describe-security-groups`, never an intermediate group path like `compute instances` or `ec2`. The allowlist matches an entry as a prefix of the command, so an intermediate entry would also admit its sibling verbs, including mutating ones (`compute instances delete`, `ec2 terminate-instances`). The shipped defaults are all leaf read verbs. The guarantee that the agent cannot write, even under a careless override, is the read-only IAM grant on the pinned identity: a viewer-only principal's mutating call fails at the cloud. The allowlist and deny floor keep the agent to reads and exclude secret-read and exfil; the no-write property itself rests on the identity's permissions.
 
 Underneath the allowlist sits a hardcoded deny floor the config can never re-enable, mirroring how the k8s MCP always filters Secret regardless of its kinds config. The floor covers dangerous subcommands (`secrets`, `ssh`, `scp`, `cp`, `sync`, `auth`, `config`), dangerous flags (`--impersonate-service-account`, `--account`, `--profile`, `--endpoint-url`, `--cli-input-json`, `--cli-input-yaml`, `--configuration`), and argument values beginning with `file://`, `fileb://`, `@`, `http://`, or `https://` (local-file read and SSRF vectors). A too-broad allowlist override cannot punch through it.
 
