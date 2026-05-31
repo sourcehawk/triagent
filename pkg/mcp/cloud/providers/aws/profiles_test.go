@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -89,4 +90,35 @@ func TestWriteManagedProfilesTwoAliases(t *testing.T) {
 	assert.Contains(t, got, "# BEGIN triagent-cloud-staging-aws")
 	assert.Equal(t, 1, strings.Count(got, "# BEGIN triagent-cloud-prod-aws"))
 	assert.Equal(t, 1, strings.Count(got, "# BEGIN triagent-cloud-staging-aws"))
+}
+
+// TestWriteManagedProfilesConcurrentAliasesSurvive pins that concurrent
+// generation for different aliases into the same config file does not drop a
+// block: the read-modify-write is serialized, so every alias's managed section
+// is present afterward. Without the lock, racing read-modify-writes clobber each
+// other and a block goes missing.
+func TestWriteManagedProfilesConcurrentAliasesSurvive(t *testing.T) {
+	cfg := filepath.Join(t.TempDir(), "config")
+	aliases := []string{"alpha", "bravo", "charlie", "delta", "echo"}
+
+	var wg sync.WaitGroup
+	for _, alias := range aliases {
+		wg.Add(1)
+		go func(a string) {
+			defer wg.Done()
+			err := writeManagedProfiles(cfg, a, "sso-admin", []Account{
+				{ID: "111111111111", RoleARN: "arn:aws:iam::111111111111:role/" + a},
+			})
+			assert.NoError(t, err)
+		}(alias)
+	}
+	wg.Wait()
+
+	data, err := os.ReadFile(cfg)
+	require.NoError(t, err)
+	got := string(data)
+	for _, a := range aliases {
+		begin, _ := blockMarkers(a)
+		assert.Contains(t, got, begin, "alias %q block must survive concurrent generation", a)
+	}
 }

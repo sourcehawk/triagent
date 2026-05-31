@@ -4,8 +4,17 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 )
+
+// managedProfilesMu serializes managed-profile writes within this process; the
+// advisory file lock acquireConfigLock takes serializes them across processes.
+// Together they make the read-modify-write of ~/.aws/config atomic against a
+// concurrent generation for another alias (a launcher probe and a serve
+// subprocess, or two AWS sources, all write the same file).
+var managedProfilesMu sync.Mutex
 
 // profileName is the AWS_PROFILE for one configured account: a deterministic
 // triagent-cloud-<alias>-<account_id> so the server's ActiveTargetEnv and the
@@ -50,12 +59,44 @@ func writeManagedProfiles(configPath, alias, sourceProfile string, accounts []Ac
 	block.WriteString(end)
 	block.WriteString("\n")
 
+	managedProfilesMu.Lock()
+	defer managedProfilesMu.Unlock()
+
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
+		return fmt.Errorf("aws: create config dir for %s: %w", configPath, err)
+	}
+	release, err := acquireConfigLock(configPath)
+	if err != nil {
+		return err
+	}
+	defer release()
+
 	existing, err := os.ReadFile(configPath)
 	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("aws: read config %s: %w", configPath, err)
 	}
 	merged := replaceBlock(string(existing), begin, end, block.String())
 	return atomicWrite(configPath, []byte(merged))
+}
+
+// acquireConfigLock takes an exclusive advisory lock on a sibling lock file so
+// the read-modify-write below is atomic across processes. It returns a release
+// func that unlocks and closes the lock file; the lock file itself is left in
+// place (an empty marker), never the config.
+func acquireConfigLock(configPath string) (func(), error) {
+	lockPath := configPath + ".lock"
+	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("aws: open config lock %s: %w", lockPath, err)
+	}
+	if err := lockExclusive(f); err != nil {
+		_ = f.Close()
+		return nil, fmt.Errorf("aws: lock config %s: %w", lockPath, err)
+	}
+	return func() {
+		_ = unlockFile(f)
+		_ = f.Close()
+	}, nil
 }
 
 // replaceBlock splices block in place of any existing begin..end region in
@@ -90,7 +131,7 @@ func atomicWrite(dst string, body []byte) error {
 	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
 		return fmt.Errorf("aws: create config dir for %s: %w", dst, err)
 	}
-	tmp := dst + ".tmp"
+	tmp := dst + ".tmp." + strconv.Itoa(os.Getpid())
 	if err := os.WriteFile(tmp, body, 0o600); err != nil {
 		return fmt.Errorf("aws: write config tmp %s: %w", tmp, err)
 	}
