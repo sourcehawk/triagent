@@ -20,6 +20,7 @@ import (
 	"github.com/sourcehawk/triagent/pkg/auth"
 	"github.com/sourcehawk/triagent/pkg/mcp/cloud"
 	"github.com/sourcehawk/triagent/pkg/mcp/cloud/providers"
+	"github.com/sourcehawk/triagent/pkg/mcp/cloud/providers/aws"
 )
 
 // Options describes a single preflight invocation.
@@ -260,10 +261,17 @@ func probeCloudSources(ctx context.Context, sources []profile.CloudSource, probe
 // provider and shells its whoami CLI. A construction error degrades to an
 // invalid status, never a session-fatal error.
 func defaultCloudProbe(ctx context.Context, src profile.CloudSource) cloud.IdentityStatus {
+	accounts := make([]aws.Account, 0, len(src.Accounts))
+	for _, a := range src.Accounts {
+		accounts = append(accounts, aws.Account{ID: a.AccountID, RoleARN: a.RoleARN})
+	}
 	return providers.ProbeSource(ctx, providers.Source{
 		Provider:        src.Provider,
 		AssumedIdentity: src.AssumedIdentity,
 		Profile:         src.Profile,
+		Alias:           src.Alias,
+		SourceProfile:   src.SourceProfile,
+		Accounts:        accounts,
 	})
 }
 

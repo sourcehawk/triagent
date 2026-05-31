@@ -190,8 +190,8 @@ type CloudSource struct {
 // id the agent selects by, and the read-only role_arn triagent assumes into it
 // from the source's SourceProfile.
 type CloudAccount struct {
-	AccountID string `yaml:"account_id"`
-	RoleARN   string `yaml:"role_arn"`
+	AccountID string `yaml:"account_id" json:"account_id"`
+	RoleARN   string `yaml:"role_arn" json:"role_arn"`
 }
 
 type InvestigationInput struct {

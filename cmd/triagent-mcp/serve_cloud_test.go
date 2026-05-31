@@ -65,3 +65,33 @@ func TestRunCloud_MalformedScopeAborts(t *testing.T) {
 	require.Error(t, err, "a malformed scope must abort cloud-server startup")
 	assert.Contains(t, err.Error(), "scope", "the error should name the scope")
 }
+
+func TestParseAWSAccounts_EmptyYieldsNil(t *testing.T) {
+	t.Parallel()
+	accs, err := parseAWSAccounts("")
+	require.NoError(t, err)
+	assert.Nil(t, accs)
+}
+
+func TestParseAWSAccounts_DecodesJSON(t *testing.T) {
+	t.Parallel()
+	accs, err := parseAWSAccounts(`[{"account_id":"111111111111","role_arn":"arn:aws:iam::111111111111:role/r"},{"account_id":"222222222222","role_arn":"arn:aws:iam::222222222222:role/r"}]`)
+	require.NoError(t, err)
+	require.Len(t, accs, 2)
+	assert.Equal(t, "111111111111", accs[0].ID)
+	assert.Equal(t, "arn:aws:iam::222222222222:role/r", accs[1].RoleARN)
+}
+
+func TestParseAWSAccounts_MalformedFailsClosed(t *testing.T) {
+	t.Parallel()
+	_, err := parseAWSAccounts(`[{"account_id":`)
+	require.Error(t, err, "a malformed accounts list must fail closed, not silently drop accounts")
+}
+
+func TestRunCloud_MalformedAWSAccountsAborts(t *testing.T) {
+	t.Setenv("TRIAGENT_CLOUD_PROVIDER", "aws")
+	t.Setenv("TRIAGENT_CLOUD_AWS_ACCOUNTS", `[{"account_id":`)
+	err := runCloud(context.Background(), serveFlags{kind: "cloud", cloudProvider: "aws"})
+	require.Error(t, err, "a malformed accounts list must abort cloud-server startup")
+	assert.Contains(t, err.Error(), "accounts", "the error should name the accounts")
+}
