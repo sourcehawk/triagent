@@ -24,5 +24,6 @@ func (s *Server) sessionStatus(ctx context.Context, _ *mcp.CallToolRequest, _ Se
 	if err != nil {
 		return errorResult(err.Error()), SessionStatusOutput{}, nil
 	}
+	st.ActiveTarget = s.activeTarget
 	return nil, st, nil
 }

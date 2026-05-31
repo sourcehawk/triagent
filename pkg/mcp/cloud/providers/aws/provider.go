@@ -119,6 +119,19 @@ func (p *Provider) DenyFloorAdditions() cloud.DenyFloor {
 	}
 }
 
+// ConfiguredTargets is the deployment-configured account set. The single-account
+// deployment carries no accounts list, so the selectable set comes from the
+// server's inventory; the multi-account accounts list arrives with the AWS
+// accounts config.
+func (p *Provider) ConfiguredTargets() []cloud.Target { return nil }
+
+// ActiveTargetEnv pins the aws CLI to the active account via AWS_PROFILE, the
+// generated assume-role profile for that account. The value is a profile name,
+// not a credential: the CLI performs the assume-role from the operator's base.
+func (p *Provider) ActiveTargetEnv(id string) []string {
+	return []string{EnvProfile + "=" + id}
+}
+
 // EnvPassthrough lists the env var NAMES the aws subprocess needs forwarded:
 // AWS_PROFILE pins the assume-role identity; the region and config-file names
 // let the launcher point the CLI at the right account/config without the agent

@@ -1,11 +1,19 @@
 package cloud
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestFakeProviderSatisfiesActiveTargetContract(t *testing.T) {
+	t.Parallel()
+	var p Provider = &fakeProvider{}
+	require.NotNil(t, p)
+	// compile-time: the interface now includes ActiveTargetEnv + ConfiguredTargets
+}
 
 func TestNewRequiresProvider(t *testing.T) {
 	t.Parallel()
@@ -13,6 +21,58 @@ func TestNewRequiresProvider(t *testing.T) {
 	require.Error(t, err, "expected error when Provider is nil")
 	_, err = New(Options{Provider: &fakeProvider{}})
 	require.NoError(t, err)
+}
+
+func TestSelectableTargetsPrefersConfigured(t *testing.T) {
+	t.Parallel()
+	p := &fakeProvider{targets: []Target{{ID: "acct-1", Name: "one"}}}
+	s := newTestServer(t, p)
+	got := s.selectableTargets(context.Background())
+	assert.Equal(t, []Target{{ID: "acct-1", Name: "one"}}, got)
+}
+
+func TestSelectableTargetsFallsBackToScopeProjects(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t, &fakeProvider{}, func(o *Options) {
+		o.Scope = ScopeAllowlist{Projects: []string{"prod", "staging"}}
+	})
+	got := s.selectableTargets(context.Background())
+	assert.Equal(t, []Target{{ID: "prod", Name: "prod"}, {ID: "staging", Name: "staging"}}, got)
+}
+
+func TestSelectableTargetsFallsBackToInventory(t *testing.T) {
+	t.Parallel()
+	p := &fakeProvider{inventory: Inventory{Scopes: []Scope{{ID: "p1", Name: "Project One"}}}}
+	s := newTestServer(t, p)
+	got := s.selectableTargets(context.Background())
+	assert.Equal(t, []Target{{ID: "p1", Name: "Project One"}}, got)
+}
+
+func TestSetActiveTargetRejectsOutOfSet(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t, &fakeProvider{targets: []Target{{ID: "acct-1"}}})
+	require.Error(t, s.setActive("acct-9"))
+	require.NoError(t, s.setActive("acct-1"))
+	assert.Equal(t, "acct-1", s.activeTarget)
+}
+
+func TestSubprocessEnvIncludesActiveTarget(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t, &fakeProvider{targets: []Target{{ID: "acct-1"}}})
+	require.NoError(t, s.setActive("acct-1"))
+	assert.Contains(t, s.subprocessEnv(), "FAKE_TARGET=acct-1")
+}
+
+func TestSingleTargetIsDefaultActive(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t, &fakeProvider{targets: []Target{{ID: "only"}}})
+	assert.Equal(t, "only", s.activeTarget)
+}
+
+func TestMultiTargetHasNoDefault(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t, &fakeProvider{targets: []Target{{ID: "a"}, {ID: "b"}}})
+	assert.Equal(t, "", s.activeTarget)
 }
 
 // TestSubprocessEnvDropsParentSecretsKeepsPassthrough exercises the env the

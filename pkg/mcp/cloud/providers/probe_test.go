@@ -18,14 +18,16 @@ import (
 // killed by the deadline. It lets the timeout be observed without a real sleep.
 type blockingProvider struct{}
 
-func (blockingProvider) Name() string                                  { return "gcp" }
-func (blockingProvider) Binary() string                                { return "/bin/true" }
-func (blockingProvider) DefaultAllowlist() *cloud.CommandAllowlist     { return &cloud.CommandAllowlist{} }
-func (blockingProvider) DenyFloorAdditions() cloud.DenyFloor           { return cloud.DenyFloor{} }
-func (blockingProvider) EnvPassthrough() []string                      { return nil }
+func (blockingProvider) Name() string                              { return "gcp" }
+func (blockingProvider) Binary() string                            { return "/bin/true" }
+func (blockingProvider) DefaultAllowlist() *cloud.CommandAllowlist { return &cloud.CommandAllowlist{} }
+func (blockingProvider) DenyFloorAdditions() cloud.DenyFloor       { return cloud.DenyFloor{} }
+func (blockingProvider) EnvPassthrough() []string                  { return nil }
 func (blockingProvider) Inventory(context.Context, cloud.RunFunc) (cloud.Inventory, error) {
 	return cloud.Inventory{}, nil
 }
+func (blockingProvider) ConfiguredTargets() []cloud.Target { return nil }
+func (blockingProvider) ActiveTargetEnv(string) []string   { return nil }
 
 func (blockingProvider) Identity(ctx context.Context, _ cloud.RunFunc, _ string) (cloud.IdentityStatus, error) {
 	<-ctx.Done()

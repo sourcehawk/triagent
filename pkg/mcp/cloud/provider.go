@@ -41,6 +41,21 @@ type Provider interface {
 	// empty when none is pinned); the provider validates the resolved identity
 	// against it. It execs only through run, never directly.
 	Identity(ctx context.Context, run RunFunc, expected string) (IdentityStatus, error)
+	// ConfiguredTargets is the deployment-configured selectable set the provider
+	// itself knows (aws: its accounts list). Empty when the set comes from the
+	// server's scope/inventory instead (gcp).
+	ConfiguredTargets() []Target
+	// ActiveTargetEnv returns the env var(s) that pin the CLI to targetID for the
+	// next invocation: gcp CLOUDSDK_CORE_PROJECT, aws AWS_PROFILE. The agent never
+	// supplies these; the server sets them per-exec.
+	ActiveTargetEnv(targetID string) []string
+}
+
+// Target is one selectable project (gcp) or account (aws) the agent may make
+// active via set_active_target.
+type Target struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 // RunFunc is the harness exec core, injected into providers so they never exec
@@ -67,6 +82,11 @@ type IdentityStatus struct {
 	AssumedIdentity string `json:"assumed_identity"`
 	Valid           bool   `json:"valid"`
 	Hint            string `json:"hint,omitempty"`
+	// ActiveTarget is the project (gcp) or account (aws) run_cli currently runs
+	// against. The probe leaves it empty; the server fills it from its
+	// active-target state so session_status reports the identity and the target
+	// together.
+	ActiveTarget string `json:"active_target,omitempty"`
 }
 
 // CLIResult is the result of one run_cli invocation. It carries the provider
