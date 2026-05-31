@@ -82,6 +82,11 @@ type IdentityStatus struct {
 	AssumedIdentity string `json:"assumed_identity"`
 	Valid           bool   `json:"valid"`
 	Hint            string `json:"hint,omitempty"`
+	// ActiveTarget is the project (gcp) or account (aws) run_cli currently runs
+	// against. The probe leaves it empty; the server fills it from its
+	// active-target state so session_status reports the identity and the target
+	// together.
+	ActiveTarget string `json:"active_target,omitempty"`
 }
 
 // CLIResult is the result of one run_cli invocation. It carries the provider

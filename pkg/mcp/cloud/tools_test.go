@@ -46,6 +46,14 @@ func TestRunCLIRequiresActiveTargetWhenMultiple(t *testing.T) {
 	require.Contains(t, out2.Stdout, "x")
 }
 
+func TestSessionStatusReportsActiveTarget(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t, &fakeProvider{targets: []Target{{ID: "acct-1"}}, identity: IdentityStatus{Provider: "fake", AssumedIdentity: "ro@acct-1", Valid: true}})
+	require.NoError(t, s.setActive("acct-1"))
+	_, out, _ := s.sessionStatus(context.Background(), nil, SessionStatusInput{})
+	require.Equal(t, "acct-1", out.ActiveTarget)
+}
+
 func TestSetActiveTargetTool(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t, &fakeProvider{targets: []Target{{ID: "acct-1"}}, identity: IdentityStatus{Provider: "fake", AssumedIdentity: "ro@acct-1", Valid: true}})
