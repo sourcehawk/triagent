@@ -84,6 +84,21 @@ func TestProbeSourceUnknownProviderDegrades(t *testing.T) {
 	assert.NotEmpty(t, st.Hint)
 }
 
+// TestProbeSourceConstructionFailureKeepsPinnedIdentity proves a provider
+// construction failure (here an unknown provider, which never reaches New's CLI
+// lookup but exercises the same construction-error path) still reports the
+// pinned identity, so preflight and connections name the degraded source's
+// identity the operator must fix instead of an empty one.
+func TestProbeSourceConstructionFailureKeepsPinnedIdentity(t *testing.T) {
+	const pinned = "arn:aws:iam::111122223333:role/triage-ro"
+	st := ProbeSource(context.Background(), Source{Provider: "azure", AssumedIdentity: pinned})
+	assert.False(t, st.Valid)
+	assert.Equal(t, "azure", st.Provider)
+	assert.Equal(t, pinned, st.AssumedIdentity,
+		"a construction failure must still carry the pinned identity")
+	assert.NotEmpty(t, st.Hint)
+}
+
 // fakePassthroughProvider exposes a fixed EnvPassthrough so sourceEnv's
 // carry-and-overlay behaviour can be asserted without a real cloud CLI.
 type fakePassthroughProvider struct{ passthrough []string }

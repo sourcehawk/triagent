@@ -45,7 +45,12 @@ type Source struct {
 func ProbeSource(ctx context.Context, src Source) cloud.IdentityStatus {
 	p, err := New(src.Provider)
 	if err != nil {
-		return cloud.IdentityStatus{Provider: src.Provider, Valid: false, Hint: err.Error()}
+		return cloud.IdentityStatus{
+			Provider:        src.Provider,
+			AssumedIdentity: src.AssumedIdentity,
+			Valid:           false,
+			Hint:            err.Error(),
+		}
 	}
 	return probeProvider(ctx, p, src.AssumedIdentity, sourceEnvFor(p, src))
 }

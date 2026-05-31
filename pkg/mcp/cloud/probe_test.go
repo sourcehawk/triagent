@@ -111,3 +111,31 @@ func TestProbeInvalidWhenIdentityEmpty(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, st.Valid, "an empty resolved identity must not be reported valid")
 }
+
+// TestProbeDegradedReportsPinnedIdentity proves a degraded probe still names
+// WHICH pinned identity is degraded: when the provider errors and resolves no
+// identity, Probe falls back to the expected identity the caller pinned, so
+// session_status stays actionable instead of showing an empty identity.
+func TestProbeDegradedReportsPinnedIdentity(t *testing.T) {
+	t.Parallel()
+	const pinned = "ro-sa@proj.iam.gserviceaccount.com"
+	p := &fakeProvider{name: "gcp", identityErr: errors.New("token expired")}
+	st, err := Probe(context.Background(), p, pinned, nil)
+	require.NoError(t, err, "Probe should degrade, not error")
+	assert.False(t, st.Valid)
+	assert.Equal(t, pinned, st.AssumedIdentity,
+		"a degraded probe must report the pinned identity so the operator knows what to fix")
+}
+
+// TestProbeFallsBackToExpectedWhenProviderOmitsIdentity covers the valid path:
+// a provider that resolves to valid but reports no identity (an unusual but
+// possible projection gap) still shows the pinned identity rather than empty.
+func TestProbeFallsBackToExpectedWhenProviderOmitsIdentity(t *testing.T) {
+	t.Parallel()
+	const pinned = "arn:aws:iam::111122223333:role/triage-ro"
+	p := &fakeProvider{name: "aws", identity: IdentityStatus{Provider: "aws", Valid: true}}
+	st, err := Probe(context.Background(), p, pinned, nil)
+	require.NoError(t, err)
+	assert.Equal(t, pinned, st.AssumedIdentity,
+		"an empty resolved identity must fall back to the pinned identity")
+}
