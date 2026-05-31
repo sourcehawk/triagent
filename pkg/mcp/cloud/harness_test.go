@@ -41,3 +41,19 @@ func TestExecCLITruncatesStderr(t *testing.T) {
 	require.NoError(t, err)
 	assert.LessOrEqual(t, len(r.Stderr), 10, "stderr exceeded limit")
 }
+
+// TestExecCLICapsLargeOutputWithoutBuffering drives a payload orders of
+// magnitude past the limit through a shell-free command (head reading 8MB from
+// /dev/zero) and asserts the captured stdout is capped at the limit with
+// Truncated set, so a command emitting a very large response cannot retain
+// unbounded bytes in memory. The cap is effective during the run, not a
+// post-hoc slice of a fully buffered output.
+func TestExecCLICapsLargeOutputWithoutBuffering(t *testing.T) {
+	t.Parallel()
+	const limit = 1024
+	r, err := execCLI(context.Background(), "/usr/bin/head",
+		[]string{"-c", "8388608", "/dev/zero"}, nil, limit)
+	require.NoError(t, err)
+	assert.True(t, r.Truncated, "an output far larger than limit must be flagged truncated")
+	assert.LessOrEqual(t, len(r.Stdout), limit, "captured stdout must be capped at limit, not the full 8MB payload")
+}
