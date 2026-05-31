@@ -195,6 +195,10 @@ func (s *Server) registerOn(impl *mcp.Server) {
 		Description: descSessionStatus,
 	}, telemetry.Wrap("session_status", s.sessionStatus))
 	mcp.AddTool(impl, &mcp.Tool{
+		Name:        "set_active_target",
+		Description: descSetActiveTarget,
+	}, telemetry.Wrap("set_active_target", s.setActiveTarget))
+	mcp.AddTool(impl, &mcp.Tool{
 		Name:        "run_cli",
 		Description: descRunCLI,
 	}, telemetry.Wrap("run_cli", s.runCLI))

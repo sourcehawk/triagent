@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestTools_Registered confirms the four cloud tools are exposed and that the
+// TestTools_Registered confirms the cloud tools are exposed and that the
 // set registered on the server matches the ToolSpecs() catalog exactly — the
 // wire test fails if registration drifts from the catalog.
 func TestTools_Registered(t *testing.T) {
@@ -45,7 +45,7 @@ func TestTools_Registered(t *testing.T) {
 		assert.True(t, cataloged[name], "tool %q registered but absent from ToolSpecs()", name)
 	}
 
-	for _, want := range []string{"list_inventory", "session_status", "run_cli", "list_allowed_commands"} {
+	for _, want := range []string{"list_inventory", "session_status", "set_active_target", "run_cli", "list_allowed_commands"} {
 		assert.True(t, registered[want], "%s not registered", want)
 	}
 }

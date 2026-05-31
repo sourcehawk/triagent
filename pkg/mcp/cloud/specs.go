@@ -22,6 +22,12 @@ func ToolSpecs() []toolspec.ToolSpec {
 		},
 		{
 			Server:      "triagent-cloud",
+			Name:        "set_active_target",
+			Description: descSetActiveTarget,
+			Inputs:      toolspec.FromStruct(SetActiveTargetInput{}),
+		},
+		{
+			Server:      "triagent-cloud",
 			Name:        "run_cli",
 			Description: descRunCLI,
 			Inputs:      toolspec.FromStruct(RunCLIInput{}),

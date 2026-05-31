@@ -18,6 +18,18 @@ func newTestServer(t *testing.T, p Provider, opts ...func(*Options)) *Server {
 	return srv
 }
 
+func TestSetActiveTargetTool(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t, &fakeProvider{targets: []Target{{ID: "acct-1"}}, identity: IdentityStatus{Provider: "fake", AssumedIdentity: "ro@acct-1", Valid: true}})
+	_, out, err := s.setActiveTarget(context.Background(), nil, SetActiveTargetInput{Target: "acct-1"})
+	require.NoError(t, err)
+	require.True(t, out.Valid)
+	require.Equal(t, "acct-1", s.activeTarget)
+
+	res, _, _ := s.setActiveTarget(context.Background(), nil, SetActiveTargetInput{Target: "nope"})
+	require.True(t, res.IsError)
+}
+
 func TestListInventoryReturnsProviderScopes(t *testing.T) {
 	t.Parallel()
 	p := &fakeProvider{inventory: Inventory{Scopes: []Scope{{ID: "prod", Name: "Production"}}}}
