@@ -220,6 +220,13 @@ func cloudSourceEnv(src profile.CloudSource) (map[string]string, error) {
 	switch src.Provider {
 	case "gcp":
 		env[gcp.EnvImpersonate] = src.AssumedIdentity
+		if len(src.Projects) > 0 {
+			projectsRaw, err := json.Marshal(src.Projects)
+			if err != nil {
+				return nil, fmt.Errorf("cloud source %q: encode projects: %w", src.Alias, err)
+			}
+			env[cloud.EnvGCPProjects] = string(projectsRaw)
+		}
 	case "aws":
 		accountsRaw, err := json.Marshal(src.Accounts)
 		if err != nil {

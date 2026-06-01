@@ -5,16 +5,15 @@ import (
 	"strings"
 )
 
-// ScopeAllowlist is the deployment's set of cloud targets any run_cli argv may
-// reference. An empty field means that target axis is unconstrained. Region/zone
-// is enforced here against argv (allowedFor maps --region/--zone). Project is not
-// an argv axis: --project sits on the deny floor and the project is chosen only
-// via set_active_target, validated against Projects there. Account reach is also
-// not validated at the argv layer: it is constrained by the pinned identity or
-// role the session assumes, and the identity-selecting flags (--account,
-// --profile) sit on the deny floor.
+// ScopeAllowlist constrains which cloud targets a run_cli argv may reference. An
+// empty field means that axis is unconstrained. Only region/zone is enforced here
+// against argv (allowedFor maps --region/--zone). The selectable project (gcp) /
+// account (aws) set is not an argv axis: it is the deployment's configured target
+// list (the provider's projects/accounts), chosen via set_active_target, and the
+// target-selecting flags (--project, --account, --profile) sit on the deny floor.
+// Accounts here is an informational note (the AWS accounts a source documents);
+// account reach is bounded by the pinned roles, not by argv.
 type ScopeAllowlist struct {
-	Projects []string `json:"projects,omitempty"`
 	Accounts []string `json:"accounts,omitempty"`
 	Regions  []string `json:"regions,omitempty"`
 }

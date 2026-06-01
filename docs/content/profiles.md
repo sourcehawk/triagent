@@ -70,9 +70,10 @@ cloud:
   - alias: prod-gcp
     provider: gcp
     assumed_identity: triage-readonly@prod.iam.gserviceaccount.com
+    projects:
+      - {id: prod-platform, tags: [prod, payments]}
     scope:
-      projects: [prod-platform]
-      regions:  [us-central1]
+      regions: [us-central1]
 
 # Authentication for cluster access. Two kinds:
 #   kubeconfig — reads $KUBECONFIG / ~/.kube/config. Zero setup.
@@ -401,14 +402,15 @@ cloud:
   - alias: prod-gcp
     provider: gcp                                                  # "gcp" | "aws"
     assumed_identity: triage-readonly@prod.iam.gserviceaccount.com # impersonated SA
+    projects:                                                      # selectable projects + tags returned by list_inventory
+      - {id: prod-platform, tags: [prod, payments]}
     scope:
-      projects: [prod-platform]
-      regions:  [us-central1]
+      regions: [us-central1]
   - alias: prod-aws
     provider: aws                                                    # aws has no assumed_identity; identity is per-account
     source_profile: sso-admin                                        # operator's SSO base profile
-    accounts:                                                        # one entry per account; single-account is a one-entry list
-      - {account_id: "123456789012", role_arn: "arn:aws:iam::123456789012:role/triage-readonly"}
+    accounts:                                                        # one {account_id, role_arn, tags} per account; single = one entry
+      - {account_id: "123456789012", role_arn: "arn:aws:iam::123456789012:role/triage-readonly", tags: [prod, payments]}
     scope:
       accounts: ["123456789012"]
       regions:  [eu-west-1]

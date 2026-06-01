@@ -14,7 +14,7 @@ import (
 func (p *Provider) Inventory(_ context.Context, _ cloud.RunFunc) (cloud.Inventory, error) {
 	scopes := make([]cloud.Scope, 0, len(p.accounts))
 	for _, a := range p.accounts {
-		scopes = append(scopes, cloud.Scope{ID: a.ID, Name: a.ID})
+		scopes = append(scopes, cloud.Scope{ID: a.ID, Name: a.ID, Tags: a.Tags})
 	}
 	return cloud.Inventory{Scopes: scopes}, nil
 }

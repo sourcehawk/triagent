@@ -80,9 +80,16 @@ func (p *Profile) Validate() error {
 			if c.AssumedIdentity == "" {
 				errs = append(errs, fmt.Sprintf("cloud[%d].assumed_identity: required when provider=gcp", i))
 			}
+			if len(c.Accounts) > 0 || c.SourceProfile != "" {
+				errs = append(errs, fmt.Sprintf("cloud[%d]: accounts/source_profile are aws-only; gcp selects projects", i))
+			}
+			errs = append(errs, validateGCPProjects(i, c)...)
 		case "aws":
 			if c.AssumedIdentity != "" {
 				errs = append(errs, fmt.Sprintf("cloud[%d].assumed_identity: must be empty when provider=aws (each account pins its own role_arn)", i))
+			}
+			if len(c.Projects) > 0 {
+				errs = append(errs, fmt.Sprintf("cloud[%d].projects: gcp-only; an aws source selects accounts", i))
 			}
 			errs = append(errs, validateAWSCredentials(i, c)...)
 		case "":
@@ -96,6 +103,24 @@ func (p *Profile) Validate() error {
 		return nil
 	}
 	return errors.New("profile " + p.Name + " invalid:\n  - " + strings.Join(errs, "\n  - "))
+}
+
+// validateGCPProjects checks the optional gcp project set: each entry needs a
+// non-empty id, unique across the source. Tags are free-form and unchecked. An
+// empty set is valid — the agent selects among the live-listed projects instead.
+func validateGCPProjects(i int, c CloudSource) []string {
+	var errs []string
+	seen := map[string]bool{}
+	for j, pr := range c.Projects {
+		switch {
+		case pr.ID == "":
+			errs = append(errs, fmt.Sprintf("cloud[%d].projects[%d].id: required", i, j))
+		case seen[pr.ID]:
+			errs = append(errs, fmt.Sprintf("cloud[%d].projects[%d].id: duplicate %q", i, j, pr.ID))
+		}
+		seen[pr.ID] = true
+	}
+	return errs
 }
 
 // validateAWSCredentials checks the aws credential shape: an accounts list (a

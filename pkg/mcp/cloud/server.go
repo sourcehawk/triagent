@@ -84,18 +84,11 @@ func New(opts Options) (*Server, error) {
 }
 
 // selectableTargets returns the set the agent may choose from: the provider's
-// configured targets (aws accounts) when present, else the scope projects, else
-// (unconstrained) the live inventory scopes.
+// configured targets (aws accounts, gcp projects) when the deployment configured
+// any, else (unconstrained) the live inventory scopes.
 func (s *Server) selectableTargets(ctx context.Context) []Target {
 	if t := s.provider.ConfiguredTargets(); len(t) > 0 {
 		return t
-	}
-	if len(s.scope.Projects) > 0 {
-		out := make([]Target, 0, len(s.scope.Projects))
-		for _, p := range s.scope.Projects {
-			out = append(out, Target{ID: p, Name: p})
-		}
-		return out
 	}
 	inv, err := s.provider.Inventory(ctx, s.runValidated)
 	if err != nil {

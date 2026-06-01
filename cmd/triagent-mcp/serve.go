@@ -14,6 +14,7 @@ import (
 	"github.com/sourcehawk/triagent/pkg/mcp/cloud"
 	"github.com/sourcehawk/triagent/pkg/mcp/cloud/providers"
 	"github.com/sourcehawk/triagent/pkg/mcp/cloud/providers/aws"
+	"github.com/sourcehawk/triagent/pkg/mcp/cloud/providers/gcp"
 	"github.com/sourcehawk/triagent/pkg/mcp/git"
 	"github.com/sourcehawk/triagent/pkg/mcp/incidentio"
 	"github.com/sourcehawk/triagent/pkg/mcp/k8s"
@@ -458,10 +459,15 @@ func runCloud(ctx context.Context, f serveFlags) error {
 	if err != nil {
 		return fmt.Errorf("build cloud mcp server: %w", err)
 	}
+	gcpProjects, err := parseGCPProjects(os.Getenv(cloud.EnvGCPProjects))
+	if err != nil {
+		return fmt.Errorf("build cloud mcp server: %w", err)
+	}
 	provider, err := providers.New(f.cloudProvider, providers.Options{
 		AWSAlias:         os.Getenv(cloud.EnvAWSAlias),
 		AWSSourceProfile: os.Getenv(cloud.EnvAWSSourceProfile),
 		AWSAccounts:      accounts,
+		GCPProjects:      gcpProjects,
 	})
 	if err != nil {
 		return err
@@ -505,17 +511,39 @@ func parseAWSAccounts(raw string) ([]aws.Account, error) {
 		return nil, nil
 	}
 	var wire []struct {
-		AccountID string `json:"account_id"`
-		RoleARN   string `json:"role_arn"`
+		AccountID string   `json:"account_id"`
+		RoleARN   string   `json:"role_arn"`
+		Tags      []string `json:"tags"`
 	}
 	if err := json.Unmarshal([]byte(raw), &wire); err != nil {
 		return nil, fmt.Errorf("malformed cloud aws accounts in $%s: %w", cloud.EnvAWSAccounts, err)
 	}
 	accounts := make([]aws.Account, 0, len(wire))
 	for _, w := range wire {
-		accounts = append(accounts, aws.Account{ID: w.AccountID, RoleARN: w.RoleARN})
+		accounts = append(accounts, aws.Account{ID: w.AccountID, RoleARN: w.RoleARN, Tags: w.Tags})
 	}
 	return accounts, nil
+}
+
+// parseGCPProjects decodes the JSON-encoded gcp project set the launcher froze
+// into []gcp.Project. Empty yields nil (the unconstrained form). A malformed
+// value aborts startup, failing closed like parseAWSAccounts.
+func parseGCPProjects(raw string) ([]gcp.Project, error) {
+	if raw == "" {
+		return nil, nil
+	}
+	var wire []struct {
+		ID   string   `json:"id"`
+		Tags []string `json:"tags"`
+	}
+	if err := json.Unmarshal([]byte(raw), &wire); err != nil {
+		return nil, fmt.Errorf("malformed cloud gcp projects in $%s: %w", cloud.EnvGCPProjects, err)
+	}
+	projects := make([]gcp.Project, 0, len(wire))
+	for _, w := range wire {
+		projects = append(projects, gcp.Project{ID: w.ID, Tags: w.Tags})
+	}
+	return projects, nil
 }
 
 func runGit(ctx context.Context, f serveFlags) error {

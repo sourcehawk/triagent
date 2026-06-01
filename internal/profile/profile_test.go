@@ -307,6 +307,51 @@ func TestValidateCloudAWSMissingAccounts(t *testing.T) {
 	assert.Contains(t, err.Error(), "accounts")
 }
 
+func TestValidateCloudGCPProjectsOK(t *testing.T) {
+	p := validCloudBase()
+	p.Cloud = []profile.CloudSource{
+		{Alias: "prod-gcp", Provider: "gcp", AssumedIdentity: "ro@p.iam.gserviceaccount.com", Projects: []profile.CloudProject{
+			{ID: "prod-a", Tags: []string{"prod"}},
+			{ID: "prod-b"},
+		}},
+	}
+	assert.NoError(t, p.Validate(), "a gcp source with valid projects must validate clean")
+}
+
+func TestValidateCloudGCPProjectDuplicateID(t *testing.T) {
+	p := validCloudBase()
+	p.Cloud = []profile.CloudSource{
+		{Alias: "x", Provider: "gcp", AssumedIdentity: "ro@p.iam.gserviceaccount.com", Projects: []profile.CloudProject{
+			{ID: "dup"}, {ID: "dup"},
+		}},
+	}
+	err := p.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "projects")
+	assert.Contains(t, err.Error(), "duplicate")
+}
+
+func TestValidateCloudGCPRejectsAWSFields(t *testing.T) {
+	p := validCloudBase()
+	p.Cloud = []profile.CloudSource{
+		{Alias: "x", Provider: "gcp", AssumedIdentity: "ro@p.iam.gserviceaccount.com", SourceProfile: "sso"},
+	}
+	err := p.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "aws-only")
+}
+
+func TestValidateCloudAWSRejectsProjects(t *testing.T) {
+	p := validCloudBase()
+	src := awsAccountsBase()
+	src.Projects = []profile.CloudProject{{ID: "prod-a"}}
+	p.Cloud = []profile.CloudSource{src}
+	err := p.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "projects")
+	assert.Contains(t, err.Error(), "gcp-only")
+}
+
 func TestValidateCloudAWSRejectsAssumedIdentity(t *testing.T) {
 	p := validCloudBase()
 	src := awsAccountsBase()
@@ -885,16 +930,15 @@ cloud:
   - alias: prod-gcp
     provider: gcp
     assumed_identity: triage-ro@prod.iam.gserviceaccount.com
-    scope:
-      projects:
-        - prod-a
-        - prod-b
+    projects:
+      - {id: prod-a, tags: [prod, payments]}
+      - {id: prod-b}
     command_allowlist_path: /etc/triagent/gcp-allow.json
   - alias: prod-aws
     provider: aws
     source_profile: sso-admin
     accounts:
-      - {account_id: "123456789012", role_arn: "arn:aws:iam::123456789012:role/triage-ro"}
+      - {account_id: "123456789012", role_arn: "arn:aws:iam::123456789012:role/triage-ro", tags: [prod, analytics]}
     scope:
       regions:
         - us-east-1
@@ -907,7 +951,11 @@ cloud:
 	assert.Equal(t, "prod-gcp", gcp.Alias)
 	assert.Equal(t, "gcp", gcp.Provider)
 	assert.Equal(t, "triage-ro@prod.iam.gserviceaccount.com", gcp.AssumedIdentity)
-	assert.Equal(t, []string{"prod-a", "prod-b"}, gcp.Scope.Projects)
+	require.Len(t, gcp.Projects, 2)
+	assert.Equal(t, "prod-a", gcp.Projects[0].ID)
+	assert.Equal(t, []string{"prod", "payments"}, gcp.Projects[0].Tags)
+	assert.Equal(t, "prod-b", gcp.Projects[1].ID)
+	assert.Empty(t, gcp.Projects[1].Tags)
 	assert.Equal(t, "/etc/triagent/gcp-allow.json", gcp.CommandAllowlistPath)
 
 	aws := p.Cloud[1]
@@ -917,5 +965,6 @@ cloud:
 	assert.Equal(t, "sso-admin", aws.SourceProfile)
 	require.Len(t, aws.Accounts, 1)
 	assert.Equal(t, "123456789012", aws.Accounts[0].AccountID)
+	assert.Equal(t, []string{"prod", "analytics"}, aws.Accounts[0].Tags)
 	assert.Equal(t, []string{"us-east-1"}, aws.Scope.Regions)
 }

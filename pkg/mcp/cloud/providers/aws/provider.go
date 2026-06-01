@@ -45,11 +45,13 @@ var _ cloud.Provider = (*Provider)(nil)
 // it belongs in the shared validateArgv, not in this provider.
 
 // Account is one configured aws account the agent may make active: the account
-// id it selects by, and the read-only role_arn triagent generates an assume-role
-// profile for, layered over the source's SSO base.
+// id it selects by, the read-only role_arn triagent generates an assume-role
+// profile for (layered over the source's SSO base), and the deployment's
+// free-form tags surfaced by list_inventory so the agent can judge relevance.
 type Account struct {
 	ID      string
 	RoleARN string
+	Tags    []string
 }
 
 // Options carries the multi-account config the launcher threads through from the
@@ -170,7 +172,7 @@ func (p *Provider) DenyFloorAdditions() cloud.DenyFloor {
 func (p *Provider) ConfiguredTargets() []cloud.Target {
 	out := make([]cloud.Target, 0, len(p.accounts))
 	for _, a := range p.accounts {
-		out = append(out, cloud.Target{ID: a.ID, Name: a.ID})
+		out = append(out, cloud.Target{ID: a.ID, Name: a.ID, Tags: a.Tags})
 	}
 	return out
 }

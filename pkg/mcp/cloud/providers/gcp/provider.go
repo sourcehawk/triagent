@@ -31,10 +31,28 @@ const EnvImpersonate = "CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT"
 
 var _ cloud.Provider = (*Provider)(nil)
 
-// Provider implements cloud.Provider over the gcloud CLI.
+// Project is one deployment-configured selectable project: the project id the
+// agent selects by, and the free-form tags surfaced by list_inventory so it can
+// judge relevance.
+type Project struct {
+	ID   string
+	Tags []string
+}
+
+// Options carries the gcp config the launcher threads from the profile: the
+// deployment's selectable projects and their tags. The zero value (no projects)
+// is the unconstrained form — the provider lists projects live instead.
+type Options struct {
+	Projects []Project
+}
+
+// Provider implements cloud.Provider over the gcloud CLI. projects is the
+// deployment-configured selectable set (with tags); empty means unconstrained
+// (Inventory lists projects live).
 type Provider struct {
 	binary    string
 	allowlist *cloud.CommandAllowlist
+	projects  []Project
 }
 
 // New constructs the gcp provider, resolving gcloud to an absolute path once via
@@ -42,7 +60,7 @@ type Provider struct {
 // PATH with relative entries makes LookPath return a relative path (flagged with
 // exec.ErrDot); the path is made absolute so a later subprocess env/PATH change
 // cannot reinterpret it against a different working directory.
-func New() (*Provider, error) {
+func New(opts ...Options) (*Provider, error) {
 	bin, err := exec.LookPath("gcloud")
 	if err != nil && !errors.Is(err, exec.ErrDot) {
 		return nil, fmt.Errorf("gcp: resolve gcloud binary: %w", err)
@@ -51,17 +69,22 @@ func New() (*Provider, error) {
 	if err != nil {
 		return nil, fmt.Errorf("gcp: resolve gcloud binary to absolute path: %w", err)
 	}
-	return newWithBinary(abs)
+	return newWithBinary(abs, opts...)
 }
 
 // newWithBinary builds the provider against an already-resolved binary path. It
-// is the seam tests inject a fixed path through, bypassing exec.LookPath.
-func newWithBinary(binary string) (*Provider, error) {
+// is the seam tests inject a fixed path through, bypassing exec.LookPath. At most
+// one Options is honored.
+func newWithBinary(binary string, opts ...Options) (*Provider, error) {
 	var list cloud.CommandAllowlist
 	if err := json.Unmarshal(defaultCommandsJSON, &list); err != nil {
 		return nil, fmt.Errorf("gcp: parse embedded default_commands.json: %w", err)
 	}
-	return &Provider{binary: binary, allowlist: &list}, nil
+	var o Options
+	if len(opts) > 0 {
+		o = opts[0]
+	}
+	return &Provider{binary: binary, allowlist: &list, projects: o.Projects}, nil
 }
 
 // Name reports the provider identifier.
@@ -97,9 +120,17 @@ func (p *Provider) DenyFloorAdditions() cloud.DenyFloor {
 	}
 }
 
-// ConfiguredTargets is empty for gcp: the selectable set comes from the
-// server's scope projects or live inventory, not the provider's own config.
-func (p *Provider) ConfiguredTargets() []cloud.Target { return nil }
+// ConfiguredTargets is the deployment-configured project set surfaced as the
+// agent's selectable targets, with each project's tags. Empty when the source
+// configured no projects (the unconstrained form), so the server falls back to
+// the live inventory instead.
+func (p *Provider) ConfiguredTargets() []cloud.Target {
+	out := make([]cloud.Target, 0, len(p.projects))
+	for _, pr := range p.projects {
+		out = append(out, cloud.Target{ID: pr.ID, Name: pr.ID, Tags: pr.Tags})
+	}
+	return out
+}
 
 // ActiveTargetEnv pins gcloud to the active project via CLOUDSDK_CORE_PROJECT,
 // the default project for every command that takes one. One impersonated

@@ -15,12 +15,21 @@ type project struct {
 	Name      string `json:"name"`
 }
 
-// Inventory lists the projects the pinned identity can read, projected to id +
-// name. It is called with the server's validated RunFunc, so the argv must match
-// the allowlisted `projects list` verb chain exactly. A run error here is a real
-// failure of the inventory tool and is returned to the caller, unlike the
-// identity probe which degrades.
+// Inventory lists the projects the agent may reach. When the deployment
+// configured a project set, that set (with its tags) is the inventory and
+// nothing is shelled — it is exactly what the agent can select among. Only when
+// no projects are configured (the unconstrained form) does it list projects live
+// via `gcloud projects list` (untagged). A live run error is a real failure of
+// the inventory tool and is returned, unlike the identity probe which degrades.
 func (p *Provider) Inventory(ctx context.Context, run cloud.RunFunc) (cloud.Inventory, error) {
+	if len(p.projects) > 0 {
+		scopes := make([]cloud.Scope, 0, len(p.projects))
+		for _, pr := range p.projects {
+			scopes = append(scopes, cloud.Scope{ID: pr.ID, Name: pr.ID, Tags: pr.Tags})
+		}
+		return cloud.Inventory{Scopes: scopes}, nil
+	}
+
 	res, err := run(ctx, []string{"projects", "list", "--format=json"})
 	if err != nil {
 		return cloud.Inventory{}, fmt.Errorf("gcloud projects list: %w", err)

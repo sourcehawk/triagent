@@ -9,7 +9,7 @@ import (
 func TestValidateArgvRejectsDenyFloorAndScope(t *testing.T) {
 	t.Parallel()
 	al := &CommandAllowlist{Commands: []Command{{Path: "compute instances list"}}}
-	scope := ScopeAllowlist{Projects: []string{"prod"}, Regions: []string{"us-central1"}}
+	scope := ScopeAllowlist{Regions: []string{"us-central1"}}
 	cases := []struct {
 		name string
 		argv []string
@@ -71,7 +71,7 @@ func TestValidateArgvEqualsFormFlag(t *testing.T) {
 func TestValidateArgvAllowsResourceOperand(t *testing.T) {
 	t.Parallel()
 	al := &CommandAllowlist{Commands: []Command{{Path: "compute instances describe"}}}
-	scope := ScopeAllowlist{Projects: []string{"prod"}}
+	scope := ScopeAllowlist{}
 	// describe/get verbs take a resource operand; the allowlisted verb chain
 	// matches as a prefix, and the operand is an inert positional argument.
 	assert.NoError(t, validateArgv(

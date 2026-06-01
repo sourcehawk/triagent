@@ -404,7 +404,7 @@ func TestWriteMCPConfig_GCPCloudSource_RegistersServerWithImpersonationEnv(t *te
 		Alias:                "prod-gcp",
 		Provider:             "gcp",
 		AssumedIdentity:      "triage-ro@prod.iam.gserviceaccount.com",
-		Scope:                cloud.ScopeAllowlist{Projects: []string{"prod-a"}},
+		Projects:             []profile.CloudProject{{ID: "prod-a", Tags: []string{"prod"}}},
 		CommandAllowlistPath: "/etc/triagent/gcp-allow.json",
 	}}
 	path, err := writeMCPConfig(in)
@@ -429,11 +429,14 @@ func TestWriteMCPConfig_GCPCloudSource_RegistersServerWithImpersonationEnv(t *te
 	// AWS-specific env must not leak onto a gcp source.
 	assert.NotContains(t, env, aws.EnvProfile)
 
-	rawScope, _ := env[cloud.EnvScope].(string)
-	require.NotEmpty(t, rawScope, "scope must be JSON-encoded into the env")
-	var scope cloud.ScopeAllowlist
-	require.NoError(t, json.Unmarshal([]byte(rawScope), &scope))
-	assert.Equal(t, []string{"prod-a"}, scope.Projects)
+	// The configured projects (with tags) are JSON-encoded into the gcp env.
+	rawProjects, _ := env[cloud.EnvGCPProjects].(string)
+	require.NotEmpty(t, rawProjects, "gcp projects must be JSON-encoded into the env")
+	var projects []profile.CloudProject
+	require.NoError(t, json.Unmarshal([]byte(rawProjects), &projects))
+	require.Len(t, projects, 1)
+	assert.Equal(t, "prod-a", projects[0].ID)
+	assert.Equal(t, []string{"prod"}, projects[0].Tags)
 }
 
 func TestWriteMCPConfig_AWSCloudSource_RegistersServerWithAccountsAndExpectedRole(t *testing.T) {

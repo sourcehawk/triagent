@@ -20,10 +20,16 @@ const (
 	// threads it into the identity probe; the provider validates the resolved
 	// identity against it.
 	EnvExpectedIdentity = "TRIAGENT_CLOUD_EXPECTED_IDENTITY"
-	// EnvAWSAccounts carries the aws multi-account set as a JSON array of
-	// {account_id, role_arn} objects. The serve subprocess decodes it and builds
-	// the aws provider's configured targets and generated assume-role profiles.
-	// Empty for gcp and for the single-account aws form.
+	// EnvGCPProjects carries the gcp project set as a JSON array of {id, tags}
+	// objects: the deployment-configured selectable projects and their free-form
+	// tags. The serve subprocess decodes it into the gcp provider's configured
+	// targets. Empty means unconstrained — the provider lists projects live
+	// instead. gcp-only.
+	EnvGCPProjects = "TRIAGENT_CLOUD_GCP_PROJECTS"
+	// EnvAWSAccounts carries the aws account set as a JSON array of
+	// {account_id, role_arn, tags} objects. The serve subprocess decodes it and
+	// builds the aws provider's configured targets and generated assume-role
+	// profiles. A single-account source is a one-entry array. gcp leaves it empty.
 	EnvAWSAccounts = "TRIAGENT_CLOUD_AWS_ACCOUNTS"
 	// EnvAWSSourceProfile carries the operator's SSO base profile the generated
 	// multi-account assume-role profiles layer their role over. aws-only.

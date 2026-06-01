@@ -59,10 +59,13 @@ type Provider interface {
 }
 
 // Target is one selectable project (gcp) or account (aws) the agent may make
-// active via set_active_target.
+// active via set_active_target. Tags are the deployment's free-form labels for
+// the target (e.g. "prod", "payments"), surfaced so the agent can judge which
+// target an investigation belongs to.
 type Target struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	ID   string   `json:"id"`
+	Name string   `json:"name"`
+	Tags []string `json:"tags,omitempty"`
 }
 
 // RunFunc is the harness exec core, injected into providers so they never exec
@@ -75,10 +78,13 @@ type Inventory struct {
 	Scopes []Scope `json:"scopes"`
 }
 
-// Scope is one project (gcp) or account (aws) the pinned identity can read.
+// Scope is one project (gcp) or account (aws) the agent can reach, as surfaced
+// by list_inventory. Tags are the deployment's free-form labels for it (e.g.
+// "prod", "payments"), so the agent can judge which target is relevant.
 type Scope struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	ID   string   `json:"id"`
+	Name string   `json:"name"`
+	Tags []string `json:"tags,omitempty"`
 }
 
 // IdentityStatus is the single struct the identity probe returns. The

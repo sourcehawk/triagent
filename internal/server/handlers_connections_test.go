@@ -292,7 +292,7 @@ func TestGetConnections_IncludesCloudArrayProbedAtRequestTime(t *testing.T) {
 	t.Parallel()
 	prof := &profile.Profile{
 		Cloud: []profile.CloudSource{
-			{Alias: "prod-gcp", Provider: "gcp", AssumedIdentity: "ro@p.iam.gserviceaccount.com", Scope: cloud.ScopeAllowlist{Projects: []string{"prod-platform", "prod-data"}}},
+			{Alias: "prod-gcp", Provider: "gcp", AssumedIdentity: "ro@p.iam.gserviceaccount.com", Projects: []profile.CloudProject{{ID: "prod-platform", Tags: []string{"prod"}}, {ID: "prod-data"}}},
 			{Alias: "prod-aws", Provider: "aws", SourceProfile: "sso-admin", Accounts: []profile.CloudAccount{
 				{AccountID: "111111111111", RoleARN: "arn:aws:iam::111111111111:role/ro"},
 				{AccountID: "222222222222", RoleARN: "arn:aws:iam::222222222222:role/ro"},

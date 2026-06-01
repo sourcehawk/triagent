@@ -113,7 +113,10 @@ func (a *apiHandlers) cloudConnections(ctx context.Context) []cloudConnection {
 			if conn.AssumedIdentity == "" {
 				conn.AssumedIdentity = src.AssumedIdentity
 			}
-			conn.Projects = src.Scope.Projects
+			conn.Projects = make([]string, 0, len(src.Projects))
+			for _, pr := range src.Projects {
+				conn.Projects = append(conn.Projects, pr.ID)
+			}
 		}
 		out = append(out, conn)
 	}

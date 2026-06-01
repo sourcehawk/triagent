@@ -32,6 +32,45 @@ func runReturning(out string) cloud.RunFunc {
 	}
 }
 
+// TestInventoryUsesConfiguredProjects proves that a provider built with a
+// configured project set reports exactly those projects (with their tags) and
+// shells nothing — the live RunFunc must never be invoked.
+func TestInventoryUsesConfiguredProjects(t *testing.T) {
+	t.Parallel()
+	p, err := newWithBinary("/usr/bin/gcloud", Options{Projects: []Project{
+		{ID: "prod-platform", Tags: []string{"prod", "payments"}},
+		{ID: "prod-data"},
+	}})
+	require.NoError(t, err)
+
+	failRun := func(_ context.Context, argv []string) (cloud.CLIResult, error) {
+		t.Fatalf("Inventory must not shell the CLI when projects are configured; got %v", argv)
+		return cloud.CLIResult{}, nil
+	}
+	inv, err := p.Inventory(context.Background(), failRun)
+	require.NoError(t, err)
+	require.Len(t, inv.Scopes, 2)
+	assert.Equal(t, cloud.Scope{ID: "prod-platform", Name: "prod-platform", Tags: []string{"prod", "payments"}}, inv.Scopes[0])
+	assert.Equal(t, cloud.Scope{ID: "prod-data", Name: "prod-data"}, inv.Scopes[1])
+}
+
+// TestConfiguredTargetsFromProjects proves the selectable set mirrors the
+// configured projects, tags included; empty config yields no configured targets
+// (the server then falls back to live inventory).
+func TestConfiguredTargetsFromProjects(t *testing.T) {
+	t.Parallel()
+	p, err := newWithBinary("/usr/bin/gcloud", Options{Projects: []Project{
+		{ID: "prod-platform", Tags: []string{"prod"}},
+	}})
+	require.NoError(t, err)
+	require.Len(t, p.ConfiguredTargets(), 1)
+	assert.Equal(t, cloud.Target{ID: "prod-platform", Name: "prod-platform", Tags: []string{"prod"}}, p.ConfiguredTargets()[0])
+
+	bare, err := newWithBinary("/usr/bin/gcloud")
+	require.NoError(t, err)
+	assert.Empty(t, bare.ConfiguredTargets())
+}
+
 func TestInventoryProjectsIDAndName(t *testing.T) {
 	t.Parallel()
 	p, err := newWithBinary("/usr/bin/gcloud")

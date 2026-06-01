@@ -213,14 +213,15 @@ extra_mcps: []
 #     - alias: prod-gcp
 #       provider: gcp
 #       assumed_identity: triage-readonly@prod.iam.gserviceaccount.com
+#       projects:                                                         # selectable projects + tags (list_inventory returns the tags)
+#         - {id: prod-platform, tags: [prod, payments]}
 #       scope:
-#         projects: [prod-platform]
-#         regions:  [us-central1]
+#         regions: [us-central1]
 #     - alias: prod-aws
 #       provider: aws                                                     # no assumed_identity; identity is per-account
 #       source_profile: sso-admin                                         # operator's SSO base
 #       accounts:                                                         # single-account = a one-entry list
-#         - {account_id: "123456789012", role_arn: "arn:aws:iam::123456789012:role/triage-readonly"}
+#         - {account_id: "123456789012", role_arn: "arn:aws:iam::123456789012:role/triage-readonly", tags: [prod, payments]}
 #       scope:
 #         accounts: ["123456789012"]
 #         regions:  [eu-west-1]

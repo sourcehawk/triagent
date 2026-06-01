@@ -140,11 +140,11 @@ Give every account's role the same read-only permission and trust policies shown
 
 ## Active target: moving across projects and accounts
 
-A source can span more than one target — several projects under one GCP identity, or several accounts under an AWS `accounts` list. The agent chooses which one subsequent `run_cli` commands run against with the `set_active_target` tool, naming a target id from `list_inventory` (a project id for GCP, an account id for AWS). The agent can select only among the deployment-configured targets; a target outside that set is rejected, and `session_status` reports the active target alongside the pinned identity.
+A source can span more than one target — several projects under one GCP identity, or several accounts under an AWS `accounts` list. The agent chooses which one subsequent `run_cli` commands run against with the `set_active_target` tool, naming a target id from `list_inventory` (a project id for GCP, an account id for AWS). `list_inventory` returns each target's deployment-supplied `tags` (e.g. `prod`, `payments`) so the agent can judge which target an investigation belongs to. The agent can select only among the deployment-configured targets; a target outside that set is rejected, and `session_status` reports the active target alongside the pinned identity.
 
-The two clouds reach their target set by different mechanisms, which is why AWS needs the `accounts` list and GCP does not:
+The two clouds reach their target set by different mechanisms, but configure it the same way — a `{id/account_id, tags}` list per source:
 
-- **GCP — one identity, many projects.** A single impersonated read-only service account can be granted viewer on every in-scope project, so one identity already spans them. Switching target changes only `CLOUDSDK_CORE_PROJECT`; the identity is unchanged, and `session_status` reports the same service account throughout. The selectable set is the source's `scope.projects` (or, when that axis is empty, the projects `list_inventory` surfaces).
+- **GCP — one identity, many projects.** A single impersonated read-only service account can be granted viewer on every project, so one identity already spans them. Switching target changes only `CLOUDSDK_CORE_PROJECT`; the identity is unchanged, and `session_status` reports the same service account throughout. The selectable set is the source's `projects` list (or, when it is omitted, the projects `list_inventory` surfaces live, untagged).
 - **AWS — one account per role.** A role lives in one account, so each account is its own read-only role. The selectable set is the source's `accounts` list, and switching target sets `AWS_PROFILE` to that account's generated profile — a different identity per account, so `session_status` re-probes on switch.
 
 When a source has exactly one target, it is active from session start and the agent need not choose. When it has several and the agent has not yet chosen, `run_cli` returns an actionable error naming `set_active_target` rather than running against an unintended default. This is also why omitting a target flag is safe under multiple targets: the active target is an in-scope pin, never the CLI's ambient default.
@@ -164,11 +164,15 @@ cloud:
     # The pinned read-only identity. For gcp, the service-account email the
     # harness impersonates via CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT.
     assumed_identity: triage-readonly@prod.iam.gserviceaccount.com
-    # Project and region/zone targets enforced on run_cli argv. An empty axis
-    # is unconstrained; a non-empty axis means the agent cannot pivot outside it.
+    # The selectable projects the agent may set_active_target to, each with
+    # free-form tags list_inventory returns so the agent can judge relevance.
+    # Omit projects entirely to let the agent select among all projects the SA
+    # can see (live, untagged).
+    projects:
+      - {id: prod-platform, tags: [prod, payments]}
+      - {id: prod-data,     tags: [prod, analytics]}
     scope:
-      projects: [prod-platform, prod-data]
-      regions:  [us-central1, us-east1]
+      regions: [us-central1, us-east1]      # --region / --zone enforced on run_cli argv.
     # Optional run_cli allowlist override. Empty uses the provider's
     # embedded read-only default.
     # command_allowlist_path: gcp-commands.json
@@ -181,11 +185,12 @@ cloud:
     # profiles layer their role over. Required for aws; gcp ignores it.
     source_profile: sso-admin
     # aws: the account set the agent selects among via set_active_target. Each
-    # entry is {account_id, role_arn}; a single-account source is a one-entry list.
+    # entry is {account_id, role_arn, tags}; a single-account source is a
+    # one-entry list. Tags are returned by list_inventory.
     accounts:
-      - {account_id: "123456789012", role_arn: "arn:aws:iam::123456789012:role/triage-readonly"}
+      - {account_id: "123456789012", role_arn: "arn:aws:iam::123456789012:role/triage-readonly", tags: [prod, payments]}
     scope:
-      regions:  [eu-west-1]                 # enforced on run_cli argv.
+      regions:  [eu-west-1]                 # --region / --zone enforced on run_cli argv.
       accounts: ["123456789012"]            # informational scope note; distinct from the source-level accounts list.
 ```
 
@@ -195,24 +200,25 @@ The fields:
 - `provider` — `gcp` or `aws`. Selects the concrete provider behind the shared MCP.
 - `assumed_identity` — GCP only: the impersonated read-only service-account email, shown in the connections panel and impersonated directly. AWS has no `assumed_identity` (setting it on an AWS source is rejected); its identity is per-account, in each `accounts` entry's `role_arn`.
 - `source_profile` — AWS only. The operator's SSO base profile the generated per-account assume-role profiles layer their role over. Required for AWS; GCP ignores it.
-- `accounts` — AWS only. The account set the agent selects among via `set_active_target`; each entry is `{account_id, role_arn}`, and a single-account source is a one-entry list. See [Spanning several AWS accounts](#spanning-several-aws-accounts). This is the source-level selectable set, distinct from the informational `scope.accounts` note.
-- `scope` — the target allowlist (see below).
+- `accounts` — AWS only. The account set the agent selects among via `set_active_target`; each entry is `{account_id, role_arn, tags}`, and a single-account source is a one-entry list. See [Spanning several AWS accounts](#spanning-several-aws-accounts). This is the source-level selectable set, distinct from the informational `scope.accounts` note.
+- `projects` — GCP only. The selectable project set, each `{id, tags}`. Optional: when omitted the agent selects among the projects `list_inventory` surfaces live (untagged).
+- `tags` — on each `accounts`/`projects` entry: a free-form list of deployment-supplied labels (e.g. `[prod, payments]`) returned by `list_inventory`, so the agent can judge which target an investigation belongs to. Not validated, not security-bearing.
+- `scope` — the argv allowlist (see below).
 - `command_allowlist_path` — an optional `run_cli` allowlist override (see below). Empty uses the provider's embedded default.
 
 ## Scope allowlist
 
-`scope` constrains which cloud targets the agent may reach, so it cannot pivot to an un-allowlisted project or region. Region/zone is enforced against `run_cli` argv. Project is not an argv axis: `--project` is deny-floored and the project is chosen with `set_active_target`, validated against `scope.projects`. Account reach is governed by the pinned role or profile, not by argv.
+`scope` constrains the `run_cli` argv. Only the region/zone axis is enforced here: a `--region`/`--zone` value outside it fails validation before the command runs. The selectable project (GCP) / account (AWS) set is not part of `scope` — it is the source's `projects`/`accounts` list, chosen via `set_active_target` — and the target-selecting flags (`--project`, `--account`, `--profile`) are deny-floored, so the agent cannot pivot through argv.
 
 ```yaml
 scope:
-  projects: [prod-platform]    # gcp projects the agent may set_active_target to
   regions:  [us-central1]      # --region / --zone values the agent may use (argv-enforced)
   accounts: ["123456789012"]   # aws accounts reachable via the pinned role (informational)
 ```
 
-An empty (or omitted) `projects` or `regions` axis is unconstrained on that axis. A non-empty `regions` is a closed set: a `--region` or `--zone` value outside it fails validation before the command runs. A non-empty `projects` is the closed set `set_active_target` will accept.
+An empty (or omitted) `regions` axis is unconstrained; a non-empty one is a closed set enforced before the command runs.
 
-The active target is the effective default, so a command that omits the target flag runs against an in-scope target rather than an ambient one (`CLOUDSDK_CORE_PROJECT` for GCP, the active account's profile for AWS). Region has no active-target equivalent: an omitted `--region` falls back to the configured `AWS_REGION` / gcloud default, which scope does not police. Hard project confinement therefore comes from the pinned identity's IAM, not from scope: grant the read-only roles only on the in-scope projects, as the setup above does, so an out-of-scope project is unreachable whatever the argv. Treat region scope as a guardrail against explicit pivots rather than a hard limit.
+The active target is the effective default, so a command that omits the target flag runs against the active target rather than an ambient one (`CLOUDSDK_CORE_PROJECT` for GCP, the active account's profile for AWS). Region has no active-target equivalent: an omitted `--region` falls back to the configured `AWS_REGION` / gcloud default, which scope does not police. Hard project confinement comes from the pinned identity's IAM, not from scope: grant the read-only roles only on the projects you list, so an out-of-scope project is unreachable whatever the argv. Treat region scope as a guardrail against explicit pivots rather than a hard limit.
 
 `accounts` is informational and reserved: it documents which AWS accounts the source is expected to reach, but `run_cli` does not validate account ids on argv. What actually bounds account reach is the pinned assume-role profile, whose role can only see the accounts its trust policy and permissions allow. Treat `accounts` as a note to operators, not an enforced allowlist.
 

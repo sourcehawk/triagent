@@ -172,10 +172,14 @@ type CloudSource struct {
 	// SourceProfile is the operator's SSO base profile the generated per-account
 	// assume-role profiles layer their role_arn over. Required for aws.
 	SourceProfile string `yaml:"source_profile,omitempty"`
-	// Accounts is the aws account set, each entry a {account_id, role_arn} that
-	// becomes a generated assume-role profile the agent may make active. Required
-	// for aws (a single-account source is a one-entry list); unused by gcp.
-	Accounts []CloudAccount       `yaml:"accounts,omitempty"`
+	// Accounts is the aws account set, each entry a {account_id, role_arn, tags}
+	// that becomes a generated assume-role profile the agent may make active.
+	// Required for aws (a single-account source is a one-entry list); unused by gcp.
+	Accounts []CloudAccount `yaml:"accounts,omitempty"`
+	// Projects is the gcp selectable project set, each a {id, tags}. Optional:
+	// when empty the agent selects among the projects list_inventory surfaces
+	// live. Unused by aws.
+	Projects []CloudProject       `yaml:"projects,omitempty"`
 	Scope    cloud.ScopeAllowlist `yaml:"scope,omitempty"`
 	// CommandAllowlistPath points the cloud MCP at a run_cli allowlist override
 	// file; empty uses the provider's embedded default. A relative path resolves
@@ -184,12 +188,21 @@ type CloudSource struct {
 	CommandAllowlistPath string `yaml:"command_allowlist_path,omitempty"`
 }
 
-// CloudAccount is one aws account in a multi-account cloud source: the account
-// id the agent selects by, and the read-only role_arn triagent assumes into it
-// from the source's SourceProfile.
+// CloudAccount is one aws account in a cloud source: the account id the agent
+// selects by, the read-only role_arn triagent assumes into it from the source's
+// SourceProfile, and the deployment's free-form tags surfaced by list_inventory
+// so the agent can judge which account an investigation belongs to.
 type CloudAccount struct {
-	AccountID string `yaml:"account_id" json:"account_id"`
-	RoleARN   string `yaml:"role_arn" json:"role_arn"`
+	AccountID string   `yaml:"account_id" json:"account_id"`
+	RoleARN   string   `yaml:"role_arn" json:"role_arn"`
+	Tags      []string `yaml:"tags,omitempty" json:"tags,omitempty"`
+}
+
+// CloudProject is one gcp project the agent may select: the project id and the
+// deployment's free-form tags surfaced by list_inventory.
+type CloudProject struct {
+	ID   string   `yaml:"id" json:"id"`
+	Tags []string `yaml:"tags,omitempty" json:"tags,omitempty"`
 }
 
 type InvestigationInput struct {

@@ -15,15 +15,17 @@ import (
 	"github.com/sourcehawk/triagent/pkg/mcp/cloud/providers/gcp"
 )
 
-// Options carries the multi-account config the aws provider needs from the
-// profile's cloud source: the source alias (the generated profiles' namespace),
-// the operator's SSO source_profile, and the account set. gcp ignores it. The
-// zero value is the single-account / single-identity form, so callers that do
-// not configure accounts call New(name) unchanged.
+// Options carries the per-provider target config from the profile's cloud
+// source. aws: the source alias (the generated profiles' namespace), the
+// operator's SSO source_profile, and the account set. gcp: the configured
+// project set. Each provider ignores the other's fields. The zero value is the
+// unconstrained form (no configured targets), so a probe that only needs the
+// identity can call New(name) unchanged.
 type Options struct {
 	AWSAlias         string
 	AWSSourceProfile string
 	AWSAccounts      []aws.Account
+	GCPProjects      []gcp.Project
 }
 
 // New constructs the cloud.Provider for the named provider ("gcp" | "aws"),
@@ -40,7 +42,7 @@ func New(name string, opts ...Options) (cloud.Provider, error) {
 	}
 	switch name {
 	case "gcp":
-		return gcp.New()
+		return gcp.New(gcp.Options{Projects: o.GCPProjects})
 	case "aws":
 		return aws.New(aws.Options{
 			Alias:         o.AWSAlias,

@@ -32,13 +32,12 @@ func TestSelectableTargetsPrefersConfigured(t *testing.T) {
 	assert.Equal(t, []Target{{ID: "acct-1", Name: "one"}}, got)
 }
 
-func TestSelectableTargetsFallsBackToScopeProjects(t *testing.T) {
+func TestSelectableTargetsCarriesTags(t *testing.T) {
 	t.Parallel()
-	s := newTestServer(t, &fakeProvider{}, func(o *Options) {
-		o.Scope = ScopeAllowlist{Projects: []string{"prod", "staging"}}
-	})
+	p := &fakeProvider{targets: []Target{{ID: "acct-1", Name: "one", Tags: []string{"prod", "payments"}}}}
+	s := newTestServer(t, p)
 	got := s.selectableTargets(context.Background())
-	assert.Equal(t, []Target{{ID: "prod", Name: "prod"}, {ID: "staging", Name: "staging"}}, got)
+	assert.Equal(t, []Target{{ID: "acct-1", Name: "one", Tags: []string{"prod", "payments"}}}, got)
 }
 
 func TestSelectableTargetsFallsBackToInventory(t *testing.T) {

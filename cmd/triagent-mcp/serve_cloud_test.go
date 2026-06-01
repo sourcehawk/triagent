@@ -39,17 +39,40 @@ func TestParseCloudScope_EmptyYieldsUnconstrained(t *testing.T) {
 	t.Parallel()
 	scope, err := parseCloudScope("")
 	require.NoError(t, err)
-	assert.Empty(t, scope.Projects)
 	assert.Empty(t, scope.Regions)
 	assert.Empty(t, scope.Accounts)
 }
 
 func TestParseCloudScope_ValidJSON(t *testing.T) {
 	t.Parallel()
-	scope, err := parseCloudScope(`{"projects":["prod"],"regions":["us-central1"]}`)
+	scope, err := parseCloudScope(`{"regions":["us-central1"],"accounts":["123456789012"]}`)
 	require.NoError(t, err)
-	assert.Equal(t, []string{"prod"}, scope.Projects)
 	assert.Equal(t, []string{"us-central1"}, scope.Regions)
+	assert.Equal(t, []string{"123456789012"}, scope.Accounts)
+}
+
+func TestParseGCPProjects_EmptyYieldsNil(t *testing.T) {
+	t.Parallel()
+	got, err := parseGCPProjects("")
+	require.NoError(t, err)
+	assert.Nil(t, got)
+}
+
+func TestParseGCPProjects_DecodesIDsAndTags(t *testing.T) {
+	t.Parallel()
+	got, err := parseGCPProjects(`[{"id":"prod-a","tags":["prod","payments"]},{"id":"prod-b"}]`)
+	require.NoError(t, err)
+	require.Len(t, got, 2)
+	assert.Equal(t, "prod-a", got[0].ID)
+	assert.Equal(t, []string{"prod", "payments"}, got[0].Tags)
+	assert.Equal(t, "prod-b", got[1].ID)
+	assert.Empty(t, got[1].Tags)
+}
+
+func TestParseGCPProjects_MalformedFailsClosed(t *testing.T) {
+	t.Parallel()
+	_, err := parseGCPProjects(`[{"id":`)
+	require.Error(t, err)
 }
 
 func TestParseCloudScope_MalformedFailsClosed(t *testing.T) {
