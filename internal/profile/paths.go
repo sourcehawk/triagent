@@ -60,6 +60,12 @@ type Paths struct {
 	// per-repo clones used for architecture summaries / draft_pr.
 	GitCacheDir string `yaml:"git_cache_dir"`
 
+	// CloudCacheDir holds the triagent-owned AWS config the cloud MCP
+	// reads via AWS_CONFIG_FILE. triagent generates a `<dir>/config` here
+	// (a copy of the operator's ~/.aws/config plus the managed assume-role
+	// profiles) rather than editing ~/.aws/config in place.
+	CloudCacheDir string `yaml:"cloud_cache_dir"`
+
 	// UserReposFile is the per-machine YAML the manage-repos UI
 	// writes additions to. The launcher reads it at startup to
 	// reconstruct the linked-repos list.
@@ -91,6 +97,7 @@ var defaultPathTemplates = Paths{
 	CodefixProposalsDir:  "${XDG_CONFIG_HOME}/triagent/${PROFILE_NAME}/codefix-proposals",
 	WikiProposalsDir:     "${XDG_CONFIG_HOME}/triagent/${PROFILE_NAME}/wiki-proposals",
 	GitCacheDir:          "${XDG_CACHE_HOME}/triagent-mcp/${PROFILE_NAME}/git",
+	CloudCacheDir:        "${XDG_CACHE_HOME}/triagent-mcp/${PROFILE_NAME}/aws",
 	UserReposFile:        "${XDG_CONFIG_HOME}/triagent/${PROFILE_NAME}/user_repos.yaml",
 	UserWatchesFile:      "${XDG_CONFIG_HOME}/triagent/${PROFILE_NAME}/user_watches.yaml",
 }
@@ -128,7 +135,7 @@ func (p Paths) Resolve(profileName string) (Paths, error) {
 		p.UpstreamPlaybooksDir, p.SystemPlaybooksDir, p.UserPlaybooksDir,
 		p.WikiDir, p.SessionsRoot, p.UpstreamSessionsDir,
 		p.SessionsProposalsDir, p.CodefixProposalsDir, p.WikiProposalsDir,
-		p.GitCacheDir, p.UserReposFile, p.UserWatchesFile,
+		p.GitCacheDir, p.CloudCacheDir, p.UserReposFile, p.UserWatchesFile,
 	} {
 		if strings.Contains(s, "${PROFILE_NAME}") && profileName == "" {
 			return Paths{}, fmt.Errorf("path %q references ${PROFILE_NAME} but the loaded profile has no name", s)
@@ -152,6 +159,7 @@ func (p Paths) Resolve(profileName string) (Paths, error) {
 		CodefixProposalsDir:  expand(p.CodefixProposalsDir),
 		WikiProposalsDir:     expand(p.WikiProposalsDir),
 		GitCacheDir:          expand(p.GitCacheDir),
+		CloudCacheDir:        expand(p.CloudCacheDir),
 		UserReposFile:        expand(p.UserReposFile),
 		UserWatchesFile:      expand(p.UserWatchesFile),
 	}, nil
@@ -178,6 +186,7 @@ func mergePaths(base, override Paths) Paths {
 		CodefixProposalsDir:  pick(override.CodefixProposalsDir, base.CodefixProposalsDir),
 		WikiProposalsDir:     pick(override.WikiProposalsDir, base.WikiProposalsDir),
 		GitCacheDir:          pick(override.GitCacheDir, base.GitCacheDir),
+		CloudCacheDir:        pick(override.CloudCacheDir, base.CloudCacheDir),
 		UserReposFile:        pick(override.UserReposFile, base.UserReposFile),
 		UserWatchesFile:      pick(override.UserWatchesFile, base.UserWatchesFile),
 	}
