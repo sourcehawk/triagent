@@ -8,7 +8,14 @@ import {
   type ConnectionStatus,
 } from "@/lib/api";
 import { useDialog } from "@/lib/dialog";
-import { CheckIcon, CloudIcon, IncidentIoIcon, SlackIcon } from "./Icons";
+import {
+  AwsIcon,
+  CheckIcon,
+  CloudIcon,
+  GcpIcon,
+  IncidentIoIcon,
+  SlackIcon,
+} from "./Icons";
 import { Spinner } from "./Spinner";
 
 // ConnectionsPanel sits at the bottom of the sidenav next to
@@ -233,6 +240,26 @@ function CloudConnectionsSection({ cloud }: { cloud: CloudConnection[] }) {
   );
 }
 
+// ProviderMark renders the cloud provider's brand icon, falling back to the
+// generic cloud glyph for an unrecognised provider. The provider name stays in
+// the title/aria-label so it is still announced and discoverable.
+function ProviderMark({ provider }: { provider: string }) {
+  const title = provider.toUpperCase();
+  const icon =
+    provider === "aws" ? (
+      <AwsIcon className="h-4 w-4" />
+    ) : provider === "gcp" ? (
+      <GcpIcon className="h-4 w-4" />
+    ) : (
+      <CloudIcon className="h-4 w-4 text-zinc-500" />
+    );
+  return (
+    <span title={title} aria-label={title} className="shrink-0">
+      {icon}
+    </span>
+  );
+}
+
 function CloudPill({ conn }: { conn: CloudConnection }) {
   return (
     <div
@@ -241,11 +268,9 @@ function CloudPill({ conn }: { conn: CloudConnection }) {
     >
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
+          <ProviderMark provider={conn.provider} />
           <span className="truncate text-xs font-medium text-zinc-200">
             {conn.alias}
-          </span>
-          <span className="text-[10px] uppercase tracking-wide text-zinc-500">
-            {conn.provider}
           </span>
         </div>
         {conn.valid ? (
