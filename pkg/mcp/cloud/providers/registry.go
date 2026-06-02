@@ -26,6 +26,11 @@ type Options struct {
 	AWSSourceProfile string
 	AWSAccounts      []aws.Account
 	GCPProjects      []gcp.Project
+	// AWSConfigTarget is the triagent-owned config the aws provider generates
+	// (a copy of the operator config plus the managed blocks); AWSConfigSource is
+	// the operator config it copies from. aws-only.
+	AWSConfigTarget string
+	AWSConfigSource string
 }
 
 // New constructs the cloud.Provider for the named provider ("gcp" | "aws"),
@@ -45,9 +50,11 @@ func New(name string, opts ...Options) (cloud.Provider, error) {
 		return gcp.New(gcp.Options{Projects: o.GCPProjects})
 	case "aws":
 		return aws.New(aws.Options{
-			Alias:         o.AWSAlias,
-			SourceProfile: o.AWSSourceProfile,
-			Accounts:      o.AWSAccounts,
+			Alias:            o.AWSAlias,
+			SourceProfile:    o.AWSSourceProfile,
+			Accounts:         o.AWSAccounts,
+			ConfigTargetPath: o.AWSConfigTarget,
+			ConfigSourcePath: o.AWSConfigSource,
 		})
 	default:
 		return nil, fmt.Errorf("unknown cloud provider %q (want gcp or aws)", name)

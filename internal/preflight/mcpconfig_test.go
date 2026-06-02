@@ -487,10 +487,14 @@ func TestCloudSourceEnv_AWSAccounts_EmitsAccountsAndSourceProfile(t *testing.T) 
 			{AccountID: "111111111111", RoleARN: "arn:aws:iam::111111111111:role/triage-ro"},
 			{AccountID: "222222222222", RoleARN: "arn:aws:iam::222222222222:role/triage-ro"},
 		},
-	})
+	}, "/cache/triagent-mcp/p/aws")
 	require.NoError(t, err)
 
 	assert.Equal(t, "sso-admin", env[cloud.EnvAWSSourceProfile])
+	// AWS sources point the subprocess at the triagent-owned config (not
+	// ~/.aws/config) and name the operator config to copy from.
+	assert.Equal(t, "/cache/triagent-mcp/p/aws/config", env[cloud.EnvAWSConfigFile])
+	assert.NotEmpty(t, env[cloud.EnvAWSSourceConfig], "operator source config must be named")
 	require.NotEmpty(t, env[cloud.EnvAWSAccounts], "accounts must be emitted as JSON")
 
 	var decoded []profile.CloudAccount
@@ -510,8 +514,9 @@ func TestCloudSourceEnv_GCP_CarriesNoAWSAccountsEnv(t *testing.T) {
 		Alias:           "prod-gcp",
 		Provider:        "gcp",
 		AssumedIdentity: "ro@proj.iam.gserviceaccount.com",
-	})
+	}, "/cache/triagent-mcp/p/aws")
 	require.NoError(t, err)
 	assert.NotContains(t, env, cloud.EnvAWSAccounts)
 	assert.NotContains(t, env, cloud.EnvAWSSourceProfile)
+	assert.NotContains(t, env, cloud.EnvAWSConfigFile, "gcp sources never set AWS_CONFIG_FILE")
 }

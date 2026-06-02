@@ -468,6 +468,8 @@ func runCloud(ctx context.Context, f serveFlags) error {
 		AWSSourceProfile: os.Getenv(cloud.EnvAWSSourceProfile),
 		AWSAccounts:      accounts,
 		GCPProjects:      gcpProjects,
+		AWSConfigTarget:  os.Getenv(cloud.EnvAWSConfigFile),
+		AWSConfigSource:  os.Getenv(cloud.EnvAWSSourceConfig),
 	})
 	if err != nil {
 		return err

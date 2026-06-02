@@ -42,6 +42,11 @@ type Source struct {
 	Alias           string // aws: the generated profiles' namespace
 	SourceProfile   string // aws: the operator's SSO base profile
 	Accounts        []aws.Account
+	// ConfigTarget is the triagent-owned config the aws provider generates and
+	// the probe's aws CLI reads (via AWS_CONFIG_FILE); ConfigSource is the
+	// operator config copied into it. aws-only.
+	ConfigTarget string
+	ConfigSource string
 }
 
 // ProbeSource constructs the source's provider and runs the read-only identity
@@ -60,6 +65,8 @@ func ProbeSource(ctx context.Context, src Source) cloud.IdentityStatus {
 		AWSAlias:         src.Alias,
 		AWSSourceProfile: src.SourceProfile,
 		AWSAccounts:      src.Accounts,
+		AWSConfigTarget:  src.ConfigTarget,
+		AWSConfigSource:  src.ConfigSource,
 	})
 	if err != nil {
 		return cloud.IdentityStatus{
@@ -146,7 +153,13 @@ func credentialEnv(src Source) map[string]string {
 	case "gcp":
 		return map[string]string{gcp.EnvImpersonate: src.AssumedIdentity}
 	case "aws":
-		return map[string]string{aws.EnvProfile: awsProbeProfile(src)}
+		m := map[string]string{aws.EnvProfile: awsProbeProfile(src)}
+		// Point the probe's aws CLI at the generated target config so it finds
+		// the assume-role profile (we no longer write ~/.aws/config).
+		if src.ConfigTarget != "" {
+			m[cloud.EnvAWSConfigFile] = src.ConfigTarget
+		}
+		return m
 	default:
 		return nil
 	}

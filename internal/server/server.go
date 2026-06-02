@@ -81,6 +81,10 @@ type Options struct {
 	// lets each server resolve its own default ($XDG_CACHE_HOME/triagent-mcp/git).
 	GitCacheDir string
 
+	// CloudCacheDir is the per-profile dir for the triagent-owned AWS config the
+	// cloud MCP reads via AWS_CONFIG_FILE (so ~/.aws/config is never written).
+	CloudCacheDir string
+
 	// UserPlaybooksDir holds operator-customised investigation playbooks
 	// the editor writes to, and the strategies MCP layers on top of the
 	// system set. Empty disables the editor's persistence (read-only).
@@ -604,6 +608,7 @@ func New(opts Options) (*Server, error) {
 		editorMgr:    editorMgr,
 		connections:  connMgr,
 		prof:         opts.Profile,
+		cloudProbe:   preflight.NewCloudProbe(opts.CloudCacheDir),
 		capabilities: caps,
 		metaCache:    cache,
 		mcpHealth:    newMCPHealth(),

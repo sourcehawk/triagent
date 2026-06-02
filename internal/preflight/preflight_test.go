@@ -314,7 +314,9 @@ func TestRun_CloudProviderConstructionErrorDegrades(t *testing.T) {
 // multi-account fields. Dropping them probes a multi-account source with an
 // empty AWS_PROFILE, which would show a valid source as unavailable.
 func TestCloudProbeSource_ThreadsAWSMultiAccountFields(t *testing.T) {
-	t.Parallel()
+	// Not parallel: sets AWS_CONFIG_FILE so the copied operator-config path is
+	// deterministic.
+	t.Setenv("AWS_CONFIG_FILE", "/op/aws/config")
 	src := profile.CloudSource{
 		Alias:         "prod-aws",
 		Provider:      "aws",
@@ -325,7 +327,7 @@ func TestCloudProbeSource_ThreadsAWSMultiAccountFields(t *testing.T) {
 		},
 	}
 
-	got := cloudProbeSource(src)
+	got := cloudProbeSource(src, "/cache/triagent-mcp/p/aws")
 
 	assert.Equal(t, providers.Source{
 		Provider:      "aws",
@@ -335,5 +337,7 @@ func TestCloudProbeSource_ThreadsAWSMultiAccountFields(t *testing.T) {
 			{ID: "111111111111", RoleARN: "arn:aws:iam::111111111111:role/triage-ro"},
 			{ID: "222222222222", RoleARN: "arn:aws:iam::222222222222:role/triage-ro"},
 		},
+		ConfigTarget: "/cache/triagent-mcp/p/aws/config",
+		ConfigSource: "/op/aws/config",
 	}, got)
 }

@@ -44,6 +44,11 @@ type Options struct {
 	// default ($XDG_CACHE_HOME/triagent-mcp/git or ~/.cache/triagent-mcp/git).
 	GitCacheDir string
 
+	// CloudCacheDir is the per-profile dir holding the triagent-owned AWS config
+	// (<dir>/config). The AWS cloud MCP reads it via AWS_CONFIG_FILE and the
+	// provider generates into it, so ~/.aws/config is never written.
+	CloudCacheDir string
+
 	// UserPlaybooksDir is the directory holding operator-customised
 	// strategy playbooks; the launcher's editor writes there, the
 	// strategies MCP layers them on top of the system set. Empty means
@@ -177,7 +182,11 @@ func Run(opts Options) (*Result, error) {
 	// probe is Valid are wired as MCP servers. The full set (valid and degraded)
 	// stays in Result.CloudSources so the status surface still shows the
 	// degraded ones with their hint. The probe degrades, never blocks.
-	cloudStatuses := probeCloudSources(opts.Ctx, cloudSources(opts.Profile), opts.CloudProbe)
+	cloudProbe := opts.CloudProbe
+	if cloudProbe == nil {
+		cloudProbe = NewCloudProbe(opts.CloudCacheDir)
+	}
+	cloudStatuses := probeCloudSources(opts.Ctx, cloudSources(opts.Profile), cloudProbe)
 
 	mcpPath, err := writeMCPConfig(mcpConfigInputs{
 		Dir:            opts.SessionDir,
@@ -188,6 +197,7 @@ func Run(opts Options) (*Result, error) {
 		LinkedRepos:        opts.LinkedRepos,
 		CloudSources:       validCloudSources(cloudSources(opts.Profile), cloudStatuses),
 		GitCacheDir:        opts.GitCacheDir,
+		CloudCacheDir:      opts.CloudCacheDir,
 		UserPlaybooksDir:   opts.UserPlaybooksDir,
 		PluginPlaybooksDir: opts.PluginPlaybooksDir,
 		SystemPlaybooksDir: opts.SystemPlaybooksDir,
@@ -256,21 +266,32 @@ func probeCloudSources(ctx context.Context, sources []profile.CloudSource, probe
 	return out
 }
 
-// DefaultCloudProbe is the real prober: it maps a profile cloud source to the
-// providers package's neutral Source and runs ProbeSource, which constructs the
-// provider and shells its whoami CLI. A construction error degrades to an
-// invalid status, never a session-fatal error. The session preflight gate and
-// the connections panel both probe through it, so the two surfaces resolve the
-// same identity and can never disagree.
+// NewCloudProbe returns the real prober bound to a profile's CloudCacheDir: it
+// maps a profile cloud source to the providers package's neutral Source (with
+// the AWS managed-config target/source paths derived from cloudCacheDir) and
+// runs ProbeSource, which constructs the provider and shells its whoami CLI. A
+// construction error degrades to an invalid status, never a session-fatal error.
+// The session preflight gate and the connections panel both probe through it, so
+// the two surfaces resolve the same identity and can never disagree.
+func NewCloudProbe(cloudCacheDir string) func(context.Context, profile.CloudSource) cloud.IdentityStatus {
+	return func(ctx context.Context, src profile.CloudSource) cloud.IdentityStatus {
+		return providers.ProbeSource(ctx, cloudProbeSource(src, cloudCacheDir))
+	}
+}
+
+// DefaultCloudProbe is NewCloudProbe with no cache dir: usable for gcp and for
+// tests, but an aws source with accounts needs a cache dir to generate its
+// managed config, so production callers build the probe with NewCloudProbe.
 func DefaultCloudProbe(ctx context.Context, src profile.CloudSource) cloud.IdentityStatus {
-	return providers.ProbeSource(ctx, cloudProbeSource(src))
+	return NewCloudProbe("")(ctx, src)
 }
 
 // cloudProbeSource maps a profile cloud source to the providers package's
 // neutral probe Source, threading the aws multi-account fields (alias, source
 // profile, accounts) so a multi-account source probes its default account's
-// generated profile rather than an empty AWS_PROFILE.
-func cloudProbeSource(src profile.CloudSource) providers.Source {
+// generated profile, plus the managed-config target/source paths so the probe's
+// aws CLI reads the triagent-owned config rather than ~/.aws/config.
+func cloudProbeSource(src profile.CloudSource, cloudCacheDir string) providers.Source {
 	accounts := make([]aws.Account, 0, len(src.Accounts))
 	for _, a := range src.Accounts {
 		accounts = append(accounts, aws.Account{ID: a.AccountID, RoleARN: a.RoleARN})
@@ -281,6 +302,8 @@ func cloudProbeSource(src profile.CloudSource) providers.Source {
 		Alias:           src.Alias,
 		SourceProfile:   src.SourceProfile,
 		Accounts:        accounts,
+		ConfigTarget:    awsManagedConfigPath(cloudCacheDir),
+		ConfigSource:    operatorAWSConfigPath(),
 	}
 }
 

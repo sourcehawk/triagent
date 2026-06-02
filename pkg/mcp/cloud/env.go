@@ -39,4 +39,13 @@ const (
 	// The launcher-side probe and the serve subprocess both build the provider
 	// with it, so they name and generate the same profiles. aws-only.
 	EnvAWSAlias = "TRIAGENT_CLOUD_AWS_ALIAS"
+	// EnvAWSConfigFile is the standard aws CLI config-file selector. The launcher
+	// sets it to the triagent-owned per-profile config (under CloudCacheDir): the
+	// aws CLI reads it, and the provider generates into it. aws-only.
+	EnvAWSConfigFile = "AWS_CONFIG_FILE"
+	// EnvAWSSourceConfig is the operator's own aws config the provider copies into
+	// EnvAWSConfigFile so source_profile resolves. Distinct from EnvAWSConfigFile
+	// (the generated target) because the subprocess sees the latter as
+	// AWS_CONFIG_FILE and cannot infer the operator's original. aws-only.
+	EnvAWSSourceConfig = "TRIAGENT_CLOUD_AWS_SOURCE_CONFIG"
 )

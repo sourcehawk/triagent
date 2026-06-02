@@ -427,6 +427,7 @@ func (a *apiHandlers) handlePreflight(w http.ResponseWriter, r *http.Request) {
 		DocsServerName:     a.opts.DocsServerName,
 		LinkedRepos:        linked,
 		GitCacheDir:        a.opts.GitCacheDir,
+		CloudCacheDir:      a.opts.CloudCacheDir,
 		UserPlaybooksDir:   a.opts.UserPlaybooksDir,
 		PluginPlaybooksDir: a.opts.PluginPlaybooksDir,
 		SystemPlaybooksDir: a.opts.SystemPlaybooksDir,

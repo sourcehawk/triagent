@@ -111,6 +111,7 @@ type mcpConfigInputs struct {
 	// `triagent-cloud-<alias>` server entry pinned to that source's identity.
 	CloudSources       []profile.CloudSource
 	GitCacheDir        string             // optional override for git repo cache root
+	CloudCacheDir      string             // per-profile dir for the triagent-owned AWS config (<dir>/config)
 	UserPlaybooksDir   string             // optional override-or-extend dir for strategies playbooks
 	PluginPlaybooksDir string             // launcher-managed clone of the upstream playbooks repo (overridable)
 	SystemPlaybooksDir string             // launcher-bundled meta-playbooks (locked, non-overridable)
@@ -193,7 +194,7 @@ func kubeEnv(in mcpConfigInputs) map[string]string {
 // per run_cli from the active target, so no static profile selector belongs in
 // this env. The env-name constants come from the provider packages, never raw
 // literals.
-func cloudSourceEnv(src profile.CloudSource) (map[string]string, error) {
+func cloudSourceEnv(src profile.CloudSource, cloudCacheDir string) (map[string]string, error) {
 	env := map[string]string{
 		cloud.EnvProvider: src.Provider,
 	}
@@ -235,8 +236,39 @@ func cloudSourceEnv(src profile.CloudSource) (map[string]string, error) {
 		env[cloud.EnvAWSAccounts] = string(accountsRaw)
 		env[cloud.EnvAWSSourceProfile] = src.SourceProfile
 		env[cloud.EnvAWSAlias] = src.Alias
+		// Point the subprocess at the triagent-owned config (the aws CLI reads
+		// it, the provider generates into it) and name the operator config to
+		// copy from, so ~/.aws/config is never written.
+		if target := awsManagedConfigPath(cloudCacheDir); target != "" {
+			env[cloud.EnvAWSConfigFile] = target
+			env[cloud.EnvAWSSourceConfig] = operatorAWSConfigPath()
+		}
 	}
 	return env, nil
+}
+
+// awsManagedConfigPath is the triagent-owned AWS config file for a profile:
+// <CloudCacheDir>/config. Empty when no cache dir is configured (the provider
+// then declines to generate rather than writing a surprising path).
+func awsManagedConfigPath(cloudCacheDir string) string {
+	if cloudCacheDir == "" {
+		return ""
+	}
+	return filepath.Join(cloudCacheDir, "config")
+}
+
+// operatorAWSConfigPath is the operator's own AWS config the managed file copies
+// from: $AWS_CONFIG_FILE when the operator set one in the launcher's env, else
+// $HOME/.aws/config.
+func operatorAWSConfigPath() string {
+	if v := os.Getenv(cloud.EnvAWSConfigFile); v != "" {
+		return v
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return ""
+	}
+	return filepath.Join(home, ".aws", "config")
 }
 
 // resolveKindsFile returns the --crds-file path to pass to triagent-mcp's k8s
@@ -386,7 +418,7 @@ func writeMCPConfig(in mcpConfigInputs) (string, error) {
 
 	for _, src := range in.CloudSources {
 		alias := MCPAliasCloudPrefix + src.Alias
-		cloudEnv, err := cloudSourceEnv(src)
+		cloudEnv, err := cloudSourceEnv(src, in.CloudCacheDir)
 		if err != nil {
 			return "", err
 		}
