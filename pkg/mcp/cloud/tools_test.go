@@ -76,6 +76,14 @@ func TestListInventoryReturnsProviderScopes(t *testing.T) {
 	require.Equal(t, "prod", out.Scopes[0].ID)
 }
 
+func TestListInventoryDescriptionSurfacesTags(t *testing.T) {
+	t.Parallel()
+	// The output schema is not introspected into the tool spec, so the
+	// description is the agent's only prompt-time signal that each entry
+	// carries deployment tags. Guard that it says so.
+	require.Contains(t, descListInventory, "tags")
+}
+
 func TestSessionStatusReturnsProbeIdentity(t *testing.T) {
 	t.Parallel()
 	p := &fakeProvider{

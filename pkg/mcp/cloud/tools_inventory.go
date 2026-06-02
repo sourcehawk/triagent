@@ -7,7 +7,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-const descListInventory = "List the cloud projects (GCP) or accounts (AWS) the pinned read-only identity can see, so you can orient before drilling in. Read-only."
+const descListInventory = "List the cloud projects (GCP) or accounts (AWS) the pinned read-only identity can see, so you can orient before drilling in. Each entry carries the deployment's free-form tags (e.g. prod, payments) so you can judge which target an investigation belongs to. Read-only."
 
 // ListInventoryInput is the input schema for list_inventory. It takes no
 // parameters: the accessible scope is fixed by the pinned identity.
