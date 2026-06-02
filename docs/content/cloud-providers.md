@@ -2,6 +2,8 @@
 
 Triagent optionally gives the agent read-only context from the cloud the cluster sits on, GCP or AWS, so a Kubernetes investigation can follow a thread down into the cloud layer without a human leaving the loop. It is opt-in and configured entirely in the deployment profile: the core investigation flow (Kubernetes triage, playbooks, wiki) works without it.
 
+Enable it when your clusters run on GKE or EKS and incidents routinely reach into cloud networking, IAM, logs, or the change-audit trail. Skip it when triage stays inside the cluster.
+
 ## What the cloud-context MCP gives the agent
 
 A managed-Kubernetes incident is often only explicable from cloud context. A Pod cannot reach a dependency because of a firewall rule or a security group. A workload is denied because an identity lost a binding. The GKE or EKS cluster behaves unexpectedly because of how its networking or workload identity is configured. The smoking gun is in cloud logs, and "what changed right before this broke?" lives in the cloud audit trail, not in the cluster.
@@ -16,6 +18,8 @@ When a cloud source is configured, the launcher registers a `triagent-cloud-<ali
 | cluster | GKE/EKS networking and node config | `container clusters describe` | `eks describe-cluster` |
 | logs | cloud logs | `logging read` | `logs filter-log-events` |
 | audit | change history ("what changed before this broke") | `logging read … activity` | `cloudtrail lookup-events` |
+
+In practice, chasing a Pod that cannot reach its database, the agent calls `list_inventory` to see the configured projects or accounts, `set_active_target` to pin the right one, then `run_cli` with `ec2 describe-security-groups` (or `compute firewall-rules list`) to find a rule blocking the path and `cloudtrail lookup-events` (or `logging read … activity`) to see which change introduced it and when. Every call is read-only.
 
 The MCP is read-only by construction, not by convention. The agent supplies argument tokens to a fixed `gcloud` or `aws` binary that runs without a shell, against a positive command allowlist with a hardcoded deny floor underneath, as a pinned read-only identity it can neither select nor escalate. Three independent layers each have to hold for a read to go through, and none of them can be widened by the agent:
 
@@ -32,11 +36,41 @@ flowchart LR
 
 Gates 1 and 2 are enforced by the harness before the binary runs; Gate 3 is enforced by the cloud itself. A misconfigured-too-broad allowlist still cannot read secrets or write, because Gate 3 is the identity's own permissions.
 
+Stated as a capability boundary, what an adversarial or compromised agent cannot do, and what stops each:
+
+| The agent cannot… | Stopped by | Hard or soft |
+| --- | --- | --- |
+| write or mutate anything | Gate 3: read-only IAM on the pinned identity | hard |
+| read secret values, object contents, or decrypted material | Gate 2 deny floor, backed by Gate 3 IAM | hard |
+| exfiltrate via local files or URLs (`file://`, `@`, `http://`) | Gate 2 deny floor on argument values | hard |
+| select, escalate, or authenticate a different identity | pin lives in environment; `--impersonate-service-account` / `--profile` deny-floored | hard |
+| pivot to an unconfigured project or account | target-selecting flags deny-floored; reachable set bounded by the identity's IAM | hard |
+| leave the allowed regions | `scope.regions` checked on argv | soft |
+
+The first five hold even under a careless allowlist override, because they rest on the identity's own permissions and the hardcoded floor, neither of which the config can widen. Region scope is the one soft control: it rejects an explicit out-of-region `--region`/`--zone` but does not police an omitted one, so treat it as a guardrail against pivots, not a boundary (see [Scope allowlist](#scope-allowlist)).
+
 ## The pinned identity
 
 The cloud identity is a deployment-chosen, read-only principal pinned in the profile. The agent can read which identity is active (it has a `session_status` whoami tool) and, when the deployment configures more than one target, switch among that pinned set with `set_active_target` (see [Active target](#active-target-moving-across-projects-and-accounts)) — but it has no tool to name an arbitrary identity, escalate one, or authenticate one. The deployment grants each pinned identity read-only IAM, and that grant is the outermost floor: even a misconfigured-too-broad command allowlist cannot read secrets or exfiltrate, because the identity itself lacks the permission.
 
 The operator authenticates as themselves through their own normal cloud tooling. The harness then pins impersonation (GCP) or assume-role (AWS) of the configured read-only identity through environment it controls, never through anything the agent can supply. Triagent stores no cloud credential. Re-authentication is the operator's own corporate flow, outside Triagent.
+
+## Before you start
+
+You need:
+
+- The provider CLI on the launcher host: `gcloud` for a GCP source, `aws` (v2) for an AWS source. Triagent shells these directly.
+- A read-only identity to pin, created by whoever administers the cloud: a service account (GCP) or one IAM role per account (AWS). This is a one-time admin step.
+- Permission for the operator to assume that identity: `roles/iam.serviceAccountTokenCreator` on the service account (GCP), or a role trust policy naming the operator's principal (AWS).
+
+Setup has the same shape for both clouds:
+
+1. Authenticate as yourself (`gcloud auth login` / `aws sso login`).
+2. Create the read-only identity and grant it the read-only roles (per provider, below).
+3. Add a `cloud:` entry to the deployment profile pinning that identity.
+4. Restart the launcher, then open the connections panel: the source shows valid once its identity probe succeeds.
+
+The `cloud:` block lives in the deployment profile (`profile.yaml`); see [Profiles](/docs/profiles) for where that file is and how it is structured. The launcher reads the profile once at startup, so restart it after editing.
 
 ## GCP setup
 
@@ -148,7 +182,7 @@ Each account's read-only role needs a permission policy and a trust policy. The 
 }
 ```
 
-The trust policy lets the operator's base principal assume the role:
+The trust policy names the principal allowed to assume the role. That principal is whatever your `source_profile` authenticates as. In this single-account example the operator's SSO identity and the role both live in `123456789012`, so the account's own root works:
 
 ```json
 {
@@ -163,7 +197,24 @@ The trust policy lets the operator's base principal assume the role:
 }
 ```
 
-Scope the trust `Principal` to the specific operator users or SSO role rather than the whole account root where you can. If you would rather not curate the permission policy, the AWS-managed `ReadOnlyAccess` policy is the broader, simpler alternative. Action names are current as of writing; verify against AWS's service-authorization reference, which evolves.
+Scope the `Principal` down from the account root where you can. With AWS IAM Identity Center, name the SSO permission-set role your operators log in as:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::555500000000:role/aws-reserved/sso.amazonaws.com/AWSReservedSSO_PlatformOps_0123456789abcdef"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+```
+
+Here `555500000000` is the account your SSO login resolves into, which need not be the account the role lives in. That distinction is what makes multi-account work, below. For cross-account trust, harden it further with a `Condition` rather than relying on the principal ARN alone: an `sts:ExternalId` agreed between the accounts, or an `aws:PrincipalOrgID` restricting the trust to your organization, narrows who may assume the role beyond naming the permission set. If you would rather not curate the permission policy, the AWS-managed `ReadOnlyAccess` policy is the broader, simpler alternative. Action names are current as of writing; verify against AWS's service-authorization reference, which evolves.
 
 The whoami probe resolves the active caller with `aws sts get-caller-identity`. It reports valid when the caller is an assumed-role ARN whose underlying role matches the active account's `role_arn`. A plain user or root ARN means the assume-role pin did not take effect and base credentials leaked through, so the source degrades.
 
@@ -184,7 +235,9 @@ cloud:
 
 Triagent writes the generated profiles into a managed block in your `~/.aws/config` (or `$AWS_CONFIG_FILE`) delimited by `# BEGIN triagent-cloud-<alias>` / `# END triagent-cloud-<alias>` markers. The block is rewritten idempotently and never touches profiles you authored yourself or another alias's block; triagent stores no credential, the AWS CLI performs the assume-role from your SSO base.
 
-Give every account's role the same read-only permission and trust policies shown above. The connections panel shows the default (first) account's validity; `session_status` re-probes the active account's own role when the agent switches, so a non-default account reports its own validity in-session.
+Give every account's role the same read-only permission policy. The trust policy needs care across accounts: each role's `Principal` must be the identity your `source_profile` authenticates as, which for cross-account reach is a *different* account than the role lives in. Point all of them at that one SSO identity (the IAM Identity Center example above); do not copy the single-account `:root` principal into each account, or a role will only trust callers from its own account and the assume-role fails. The same SSO base assuming a read-only role in each account is what lets one login span the set.
+
+The connections panel shows the default (first) account's validity; `session_status` re-probes the active account's own role when the agent switches, so a non-default account reports its own validity in-session.
 
 ## Active target: moving across projects and accounts
 
@@ -312,11 +365,23 @@ Underneath the allowlist sits a hardcoded deny floor the config can never re-ena
 
 The command allowlist and the IAM grant are independent layers and must stay aligned. The recommended policies above are least-privilege for the default allowlist. Tightening the allowlist needs no IAM change; if you widen it with `command_allowlist_path`, widen the identity's read-only grant to match, or the added commands fail at the cloud rather than at the harness. Never widen either beyond read-only. The authoritative list of what a configured source permits is whatever the agent's `list_allowed_commands` tool returns, which reads the same allowlist `run_cli` enforces; each provider's shipped default lives in its `default_commands.json` under `pkg/mcp/cloud/providers/<provider>/`.
 
-## Visible degrade
+## Verifying and troubleshooting
 
-A stale or invalid cloud credential never blocks Kubernetes triage. Unlike the cluster-auth preflight, which gates the session, a failed cloud probe degrades only that cloud source. The connections panel shows the source unavailable with a re-auth hint, and the session starts with the source disabled and visibly marked unavailable. The Kubernetes investigation proceeds without the cloud axis.
+A source is working when the connections panel shows it valid: the whoami probe confirmed the pin took effect (impersonation for GCP, an assumed-role ARN matching the account's `role_arn` for AWS). The probe runs on connections-panel load, so you confirm a source before starting a session rather than discovering a degraded one mid-investigation.
 
-Re-authentication is the operator's own cloud login (`gcloud auth login`, `aws sso login`), not anything entered in Triagent. The probe runs on connections-panel load so the operator can fix a stale credential before starting a session rather than discovering a degraded one mid-investigation.
+A stale or invalid cloud credential never blocks Kubernetes triage. Unlike the cluster-auth preflight, which gates the session, a failed cloud probe degrades only that source: the panel marks it unavailable with a re-auth hint, the session starts with that source disabled, and the Kubernetes investigation proceeds without the cloud axis.
+
+SSO and assume-role sessions expire on their own schedule, so a long investigation can outlast them and a source that started healthy can go unavailable mid-session. The fix is the same operator re-auth (step 1 below); subsequent reads pick up the refreshed credentials.
+
+If a source shows unavailable, check in order:
+
+1. **Authentication.** Re-run your own cloud login (`gcloud auth login`, `aws sso login`). An expired credential is the most common cause, and the only fix that lives with the operator rather than the deployment.
+2. **The resolved identity.** For AWS, a plain user or root ARN instead of an assumed-role ARN means the assume-role pin did not take effect and base credentials leaked through: check `source_profile` names your SSO base. For GCP, a failed pin means impersonation did not resolve: check `roles/iam.serviceAccountTokenCreator` is granted to you on the service account.
+3. **The read grant.** Confirm the service account (GCP) or role (AWS) actually carries the read-only roles on the target project or account.
+4. **The trust policy (AWS).** Confirm each role trusts the principal your `source_profile` authenticates as. A `Principal` pointing at the role's own account instead of your SSO base is the usual cross-account failure.
+5. **Allowlist vs. IAM.** If you widened the allowlist, the added commands fail at the cloud unless you widened the identity's grant to match.
+
+Two records show what the agent did. The investigation transcript captures every tool call, including the exact `run_cli` argv, so the agent's cloud reads are reviewable in-session. Cloud-side, because every call runs under the pinned identity, your provider's audit log (CloudTrail, Cloud Logging) records them under the assumed role or impersonated service account, giving the human-plus-role trail.
 
 ## See also
 
