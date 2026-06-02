@@ -200,9 +200,12 @@ extra_mcps: []
 # `gcloud auth login`; for aws it generates a per-account assume-role profile
 # (role_arn over the operator's `source_profile`) for each `accounts` entry and
 # pins AWS_PROFILE to the active account, checking the resolved caller against
-# that account's role_arn. `scope` is the projects/accounts/regions allowlist
-# any command may reference; an empty axis is unconstrained.
-# `command_allowlist_path` overrides the provider's embedded read-only default.
+# that account's role_arn. `scope.regions` is the only argv-enforced axis: a
+# `--region`/`--zone` outside it is rejected before the command runs (an empty
+# axis is unconstrained). Projects/accounts are selected via the `projects`/
+# `accounts` lists and `set_active_target`, not by `scope`; `scope.accounts` is
+# informational only. `command_allowlist_path` overrides the provider's embedded
+# read-only default.
 #
 # Setup (one-time, per deployment): grant the operator
 # roles/iam.serviceAccountTokenCreator on the gcp SA, or grant the aws

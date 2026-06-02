@@ -395,7 +395,7 @@ silently running in local-only mode.
 
 ## Cloud sources
 
-The `cloud:` block attaches read-only GCP / AWS context MCPs to every investigation, one `triagent-cloud-<alias>` per entry. Each source pins a read-only identity the agent can read but never select or escalate — one impersonated service account for GCP (`assumed_identity`), or a per-account assume-role set for AWS (`accounts`, each with its own `role_arn`) — with a `scope` allowlist constraining which projects / accounts / regions any command may reference.
+The `cloud:` block attaches read-only GCP / AWS context MCPs to every investigation, one `triagent-cloud-<alias>` per entry. Each source pins a read-only identity the agent can read but never select or escalate — one impersonated service account for GCP (`assumed_identity`), or a per-account assume-role set for AWS (`accounts`, each with its own `role_arn`). Region reach is constrained by `scope.regions`, the only argv-enforced axis; project/account selection is handled by the source's `projects`/`accounts` targets and `set_active_target`, and `scope.accounts` is informational. See [Cloud providers](/docs/cloud-providers) for the precise enforcement model.
 
 ```yaml
 cloud:

@@ -15,7 +15,7 @@ const descListAllowedCommands = "List the provider CLI subcommands run_cli permi
 // tokens, never a single command string: the harness never tokenizes, so there
 // is no in-house splitter to fool and shell metacharacters are inert.
 type RunCLIInput struct {
-	Argv []string `json:"argv" jsonschema:"The provider CLI argument tokens as an array (for example [\"compute\",\"firewall-rules\",\"list\",\"--project\",\"prod\"]). Do not include the binary name or pass a single string."`
+	Argv []string `json:"argv" jsonschema:"The provider CLI argument tokens as an array (for example [\"ec2\",\"describe-instances\",\"--region\",\"eu-west-1\"]). Do not include the binary name or pass a single string. Do not pass identity or target-selecting flags (--project, --account, --profile); they are rejected, and the active target is the default."`
 }
 
 // RunCLIOutput is the response schema for run_cli: the shaped CLI result, never
