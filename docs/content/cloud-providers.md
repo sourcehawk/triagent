@@ -6,9 +6,31 @@ Triagent optionally gives the agent read-only context from the cloud the cluster
 
 A managed-Kubernetes incident is often only explicable from cloud context. A Pod cannot reach a dependency because of a firewall rule or a security group. A workload is denied because an identity lost a binding. The GKE or EKS cluster behaves unexpectedly because of how its networking or workload identity is configured. The smoking gun is in cloud logs, and "what changed right before this broke?" lives in the cloud audit trail, not in the cluster.
 
-When a cloud source is configured, the launcher registers a `triagent-cloud-<alias>` MCP server for each investigation session. The agent reads cloud context along six axes: inventory (which projects/accounts and resources it can see), reachability (VPCs, subnets, firewall rules, security groups, routes), permissions (IAM policies, roles, service accounts), cluster (GKE/EKS networking and node config), logs, and the audit trail.
+When a cloud source is configured, the launcher registers a `triagent-cloud-<alias>` MCP server for each investigation session. The agent reads cloud context along six axes:
 
-The MCP is read-only by construction, not by convention. The agent supplies argument tokens to a fixed `gcloud` or `aws` binary that runs without a shell, against a positive command allowlist with a hardcoded deny floor underneath, as a pinned read-only identity it can neither select nor escalate. Three independent layers (the command allowlist, the deny floor, and the read-only IAM grant on the pinned identity) each have to hold for a read to go through, and none of them can be widened by the agent.
+| Axis | What it reads | GCP example | AWS example |
+| --- | --- | --- | --- |
+| inventory | projects/accounts and resources in view | `compute instances list` | `ec2 describe-instances` |
+| reachability | VPCs, subnets, firewall rules, security groups, routes | `compute firewall-rules list` | `ec2 describe-security-groups` |
+| permissions | IAM policies, roles, service accounts | `projects get-iam-policy` | `iam list-roles` |
+| cluster | GKE/EKS networking and node config | `container clusters describe` | `eks describe-cluster` |
+| logs | cloud logs | `logging read` | `logs filter-log-events` |
+| audit | change history ("what changed before this broke") | `logging read … activity` | `cloudtrail lookup-events` |
+
+The MCP is read-only by construction, not by convention. The agent supplies argument tokens to a fixed `gcloud` or `aws` binary that runs without a shell, against a positive command allowlist with a hardcoded deny floor underneath, as a pinned read-only identity it can neither select nor escalate. Three independent layers each have to hold for a read to go through, and none of them can be widened by the agent:
+
+```mermaid
+flowchart LR
+  A["agent: run_cli argv"] --> B{"Gate 1: command allowlist<br/>leaf-verb prefix match"}
+  B -->|not listed| X["denied at harness"]
+  B -->|listed| C{"Gate 2: deny floor<br/>subcommands, flags, file/url args"}
+  C -->|hits floor| X
+  C -->|clean| D{"Gate 3: read-only IAM<br/>on the pinned identity"}
+  D -->|no permission| Y["denied at cloud"]
+  D -->|allowed| Z["read returns"]
+```
+
+Gates 1 and 2 are enforced by the harness before the binary runs; Gate 3 is enforced by the cloud itself. A misconfigured-too-broad allowlist still cannot read secrets or write, because Gate 3 is the identity's own permissions.
 
 ## The pinned identity
 
@@ -228,9 +250,39 @@ Identity- and target-selecting flags (`--account`, `--profile`, `--project`) nev
 
 What the agent can run through `run_cli` is governed by a positive command allowlist of normalized subcommand paths, for example `compute firewall-rules list` for GCP or `ec2 describe-security-groups` for AWS. Each provider ships an embedded read-only default covering the six axes. Point `command_allowlist_path` at a file (relative to the profile.yaml) to override it; an empty value uses the embedded default. The allowlist is the single source of truth, so the discovery tool advertises exactly what is permitted.
 
-Allowlist entries must be complete leaf verbs, for example `compute instances list` or `ec2 describe-security-groups`, never an intermediate group path like `compute instances` or `ec2`. The allowlist matches an entry as a prefix of the command, so an intermediate entry would also admit its sibling verbs, including mutating ones (`compute instances delete`, `ec2 terminate-instances`). The shipped defaults are all leaf read verbs. The guarantee that the agent cannot write, even under a careless override, is the read-only IAM grant on the pinned identity: a viewer-only principal's mutating call fails at the cloud. The allowlist and deny floor keep the agent to reads and exclude secret-read and exfil; the no-write property itself rests on the identity's permissions.
+An allowlist is a flat list of `{path, description}` entries, grouped by axis. A few lines from the AWS default:
 
-Underneath the allowlist sits a hardcoded deny floor the config can never re-enable, mirroring how the k8s MCP always filters Secret regardless of its kinds config. The floor covers dangerous subcommands (`secrets`, `ssh`, `scp`, `cp`, `sync`, `auth`, `config`), dangerous flags (`--impersonate-service-account`, `--account`, `--profile`, `--endpoint-url`, `--cli-input-json`, `--cli-input-yaml`, `--configuration`), and argument values beginning with `file://`, `fileb://`, `@`, `http://`, or `https://` (local-file read and SSRF vectors). A too-broad allowlist override cannot punch through it.
+```json
+{
+  "commands": [
+    { "path": "ec2 describe-instances", "description": "inventory: list EC2 instances and their state/placement" },
+    { "path": "ec2 describe-security-groups", "description": "reachability: inspect security-group ingress/egress rules" },
+    { "path": "iam list-roles", "description": "permissions: enumerate IAM roles in the account" },
+    { "path": "eks describe-cluster", "description": "cluster: read EKS cluster networking and config" },
+    { "path": "logs filter-log-events", "description": "logs: read CloudWatch log events filtered by pattern/time" },
+    { "path": "cloudtrail lookup-events", "description": "audit: read recent management-event history from CloudTrail" }
+  ]
+}
+```
+
+Allowlist entries must be complete leaf verbs, never an intermediate group path. The allowlist matches an entry as a prefix of the command, so a group-path entry would also admit its sibling verbs, including mutating ones:
+
+| Entry | Prefix-matches | Verdict |
+| --- | --- | --- |
+| `ec2 describe-security-groups` | that one verb | ✅ leaf read |
+| `ec2` | `ec2 terminate-instances`, every verb | ❌ admits mutating siblings |
+| `compute instances list` | that one verb | ✅ leaf read |
+| `compute instances` | `compute instances delete` | ❌ admits mutating siblings |
+
+The shipped defaults are all leaf read verbs. The guarantee that the agent cannot write, even under a careless override, is the read-only IAM grant on the pinned identity (Gate 3): a viewer-only principal's mutating call fails at the cloud. The allowlist and deny floor keep the agent to reads and exclude secret-read and exfil; the no-write property itself rests on the identity's permissions.
+
+Underneath the allowlist sits a hardcoded deny floor the config can never re-enable, mirroring how the k8s MCP always filters Secret regardless of its kinds config. A too-broad allowlist override cannot punch through it. The floor covers three categories:
+
+| Category | What it rejects |
+| --- | --- |
+| dangerous subcommands | `secrets`, `ssh`, `scp`, `cp`, `sync`, `auth`, `config` |
+| dangerous flags | `--impersonate-service-account`, `--account`, `--profile`, `--endpoint-url`, `--cli-input-json`, `--cli-input-yaml`, `--configuration` |
+| argument-value prefixes | values beginning with `file://`, `fileb://`, `@`, `http://`, `https://` (local-file read and SSRF vectors) |
 
 The command allowlist and the IAM grant are independent layers and must stay aligned. The recommended policies above are least-privilege for the default allowlist. Tightening the allowlist needs no IAM change; if you widen it with `command_allowlist_path`, widen the identity's read-only grant to match, or the added commands fail at the cloud rather than at the harness. Never widen either beyond read-only. The authoritative list of what a configured source permits is whatever the agent's `list_allowed_commands` tool returns, which reads the same allowlist `run_cli` enforces; each provider's shipped default lives in its `default_commands.json` under `pkg/mcp/cloud/providers/<provider>/`.
 
