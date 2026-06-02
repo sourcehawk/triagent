@@ -80,7 +80,19 @@ done
 
 `roles/browser` lists and reads projects, `compute.viewer` and `container.viewer` cover networking and GKE, `iam.securityReviewer` reads IAM policies and service accounts, and the logging and monitoring viewers cover the logs and audit axes. If you would rather not curate, the single basic role `roles/viewer` is read-only across all of these and is the simpler, broader alternative. Role names are current as of writing; verify against GCP's IAM reference, which evolves.
 
-The profile pins that service account as `assumed_identity`. The harness sets `CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT=<pinned-sa>` on the cloud MCP subprocess, so every `gcloud` call runs as the pinned service account while authenticating from the operator's base credentials. The agent never picks the identity, and because the pin lives in environment rather than in argv, `--impersonate-service-account` stays on the agent's deny floor without contradiction.
+The profile pins that service account as `assumed_identity` and lists the projects the agent may select among as `projects`:
+
+```yaml
+cloud:
+  - alias: prod-gcp
+    provider: gcp
+    assumed_identity: triage-readonly@prod.iam.gserviceaccount.com    # the impersonated read-only SA
+    projects:
+      - {id: prod-platform}
+      - {id: prod-data}
+```
+
+The harness sets `CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT=<assumed_identity>` on the cloud MCP subprocess, so every `gcloud` call runs as the pinned service account while authenticating from the operator's base credentials. The agent never picks the identity, and because the pin lives in environment rather than in argv, `--impersonate-service-account` stays on the agent's deny floor without contradiction.
 
 The whoami probe reports the source valid when impersonation is pinned to the configured service account and a minimal impersonated token read succeeds, proving the pin took effect. Under impersonation the operator's own base account stays active, so the probe does not require the active `gcloud` account to equal the service account; it confirms the pin and the read instead.
 
