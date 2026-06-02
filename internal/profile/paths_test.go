@@ -102,6 +102,23 @@ func TestPathsResolveExpandsProfileName(t *testing.T) {
 	}
 }
 
+// CloudCacheDir defaults to the per-profile cache slot (like GitCacheDir) when
+// a profile leaves it unset, so the AWS provider writes its managed config under
+// the profile's own namespace rather than the operator's ~/.aws/config.
+func TestPathsResolveCloudCacheDirDefault(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "/cfg")
+	t.Setenv("XDG_CACHE_HOME", "/cache")
+	t.Setenv("HOME", "/home/me")
+
+	out, err := (profile.Paths{}).Resolve("camunda")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if out.CloudCacheDir != "/cache/triagent-mcp/camunda/aws" {
+		t.Errorf("CloudCacheDir=%q", out.CloudCacheDir)
+	}
+}
+
 // An empty profile name with a ${PROFILE_NAME} token is a load-time
 // programming error (every profile carries a name). Surface it loudly
 // instead of silently producing a path with a doubled separator.
@@ -187,6 +204,7 @@ func TestPathsResolveFillsDefaultsWhenEmpty(t *testing.T) {
 		CodefixProposalsDir:  "/cfg/triagent/camunda/codefix-proposals",
 		WikiProposalsDir:     "/cfg/triagent/camunda/wiki-proposals",
 		GitCacheDir:          "/cache/triagent-mcp/camunda/git",
+		CloudCacheDir:        "/cache/triagent-mcp/camunda/aws",
 		UserReposFile:        "/cfg/triagent/camunda/user_repos.yaml",
 		UserWatchesFile:      "/cfg/triagent/camunda/user_watches.yaml",
 	}

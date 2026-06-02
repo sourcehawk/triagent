@@ -2,22 +2,9 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { DocsView } from "@/components/DocsView";
+import { SECTION_IDS, type SectionID } from "@/lib/docs-sections";
 
-// Section ids must match DocsView's SectionID union exactly — that is
-// the source of truth for which markdown files exist under /public/docs/.
-type SectionID = "overview" | "investigations" | "watches" | "mcp" | "playbooks" | "wiki" | "repos" | "connections" | "profiles";
-
-const VALID_SECTIONS = new Set<SectionID>([
-  "overview",
-  "investigations",
-  "watches",
-  "mcp",
-  "playbooks",
-  "wiki",
-  "repos",
-  "connections",
-  "profiles",
-]);
+const VALID_SECTIONS = new Set<SectionID>(SECTION_IDS);
 
 // Reads the section id from the URL pathname. Cannot use useParams()
 // here: the static export pre-renders only the "_" placeholder shell,

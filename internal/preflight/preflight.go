@@ -18,6 +18,9 @@ import (
 	"github.com/sourcehawk/triagent/internal/promforward"
 	"github.com/sourcehawk/triagent/internal/repos"
 	"github.com/sourcehawk/triagent/pkg/auth"
+	"github.com/sourcehawk/triagent/pkg/mcp/cloud"
+	"github.com/sourcehawk/triagent/pkg/mcp/cloud/providers"
+	"github.com/sourcehawk/triagent/pkg/mcp/cloud/providers/aws"
 )
 
 // Options describes a single preflight invocation.
@@ -40,6 +43,11 @@ type Options struct {
 	// $TRIAGENT_MCP_GIT_CACHE_DIR. Empty means each triagent-mcp resolves its own
 	// default ($XDG_CACHE_HOME/triagent-mcp/git or ~/.cache/triagent-mcp/git).
 	GitCacheDir string
+
+	// CloudCacheDir is the per-profile dir holding the triagent-owned AWS config
+	// (<dir>/config). The AWS cloud MCP reads it via AWS_CONFIG_FILE and the
+	// provider generates into it, so ~/.aws/config is never written.
+	CloudCacheDir string
 
 	// UserPlaybooksDir is the directory holding operator-customised
 	// strategy playbooks; the launcher's editor writes there, the
@@ -109,6 +117,21 @@ type Options struct {
 	// entry even if PromTarget is non-nil. Set when the operator opts out
 	// in the preflight form.
 	PromDisabled bool
+
+	// CloudProbe runs the read-only identity probe for one cloud source. Nil
+	// uses the default prober (providers.ProbeSource), which constructs the
+	// source's provider and shells its CLI; tests inject a stub. The probe
+	// degrades, never blocks — a failed probe marks the source unavailable but
+	// the session still starts.
+	CloudProbe func(context.Context, profile.CloudSource) cloud.IdentityStatus
+}
+
+// CloudSourceStatus is one cloud source's preflight outcome: its alias and the
+// identity-probe result. A source with Valid:false started the session degraded
+// — visibly unavailable, with Hint pointing at the fix.
+type CloudSourceStatus struct {
+	Alias string
+	cloud.IdentityStatus
 }
 
 // Result holds the artifacts a successful preflight produces.
@@ -116,6 +139,9 @@ type Result struct {
 	MCPConfigPath  string
 	DocsPrefix     string // e.g. "mcp__example-docs__"; empty when not registered
 	KubeconfigPath string // resolved + frozen path; mirrored back to caller for persistence
+	// CloudSources is the per-source identity-probe outcome for each profile
+	// cloud source. A failed probe degrades that source, never the session.
+	CloudSources []CloudSourceStatus
 }
 
 // Run performs the full preflight sequence. On any failure, in-flight
@@ -151,6 +177,17 @@ func Run(opts Options) (*Result, error) {
 		}
 	}
 
+	// Probe the cloud sources before writing the MCP config so a failed probe
+	// disables the source rather than merely reporting it: only sources whose
+	// probe is Valid are wired as MCP servers. The full set (valid and degraded)
+	// stays in Result.CloudSources so the status surface still shows the
+	// degraded ones with their hint. The probe degrades, never blocks.
+	cloudProbe := opts.CloudProbe
+	if cloudProbe == nil {
+		cloudProbe = NewCloudProbe(opts.CloudCacheDir)
+	}
+	cloudStatuses := probeCloudSources(opts.Ctx, cloudSources(opts.Profile), cloudProbe)
+
 	mcpPath, err := writeMCPConfig(mcpConfigInputs{
 		Dir:            opts.SessionDir,
 		MCPBin:         opts.MCPBinaryPath,
@@ -158,7 +195,9 @@ func Run(opts Options) (*Result, error) {
 		KubeconfigPath: kubeconfigPath,
 		Profile:        opts.Profile,
 		LinkedRepos:        opts.LinkedRepos,
+		CloudSources:       validCloudSources(cloudSources(opts.Profile), cloudStatuses),
 		GitCacheDir:        opts.GitCacheDir,
+		CloudCacheDir:      opts.CloudCacheDir,
 		UserPlaybooksDir:   opts.UserPlaybooksDir,
 		PluginPlaybooksDir: opts.PluginPlaybooksDir,
 		SystemPlaybooksDir: opts.SystemPlaybooksDir,
@@ -185,7 +224,96 @@ func Run(opts Options) (*Result, error) {
 		MCPConfigPath:  mcpPath,
 		DocsPrefix:     docsPrefix,
 		KubeconfigPath: kubeconfigPath,
+		CloudSources:   cloudStatuses,
 	}, nil
+}
+
+// validCloudSources returns the subset of sources whose probe came back Valid,
+// keyed by alias. A degraded source is dropped here so it is never wired as an
+// MCP server, while it remains in Result.CloudSources for the status surface.
+func validCloudSources(sources []profile.CloudSource, statuses []CloudSourceStatus) []profile.CloudSource {
+	valid := make(map[string]bool, len(statuses))
+	for _, s := range statuses {
+		valid[s.Alias] = s.Valid
+	}
+	out := make([]profile.CloudSource, 0, len(sources))
+	for _, src := range sources {
+		if valid[src.Alias] {
+			out = append(out, src)
+		}
+	}
+	return out
+}
+
+// probeCloudSources runs the identity probe for each cloud source and returns
+// its per-source status. It degrades, never blocks: a failed probe marks the
+// source unavailable with a hint, and the session proceeds regardless. probe
+// defaults to the real prober (providers.ProbeSource) when nil.
+func probeCloudSources(ctx context.Context, sources []profile.CloudSource, probe func(context.Context, profile.CloudSource) cloud.IdentityStatus) []CloudSourceStatus {
+	if len(sources) == 0 {
+		return nil
+	}
+	if probe == nil {
+		probe = DefaultCloudProbe
+	}
+	out := make([]CloudSourceStatus, 0, len(sources))
+	for _, src := range sources {
+		out = append(out, CloudSourceStatus{
+			Alias:          src.Alias,
+			IdentityStatus: probe(ctx, src),
+		})
+	}
+	return out
+}
+
+// NewCloudProbe returns the real prober bound to a profile's CloudCacheDir: it
+// maps a profile cloud source to the providers package's neutral Source (with
+// the AWS managed-config target/source paths derived from cloudCacheDir) and
+// runs ProbeSource, which constructs the provider and shells its whoami CLI. A
+// construction error degrades to an invalid status, never a session-fatal error.
+// The session preflight gate and the connections panel both probe through it, so
+// the two surfaces resolve the same identity and can never disagree.
+func NewCloudProbe(cloudCacheDir string) func(context.Context, profile.CloudSource) cloud.IdentityStatus {
+	return func(ctx context.Context, src profile.CloudSource) cloud.IdentityStatus {
+		return providers.ProbeSource(ctx, cloudProbeSource(src, cloudCacheDir))
+	}
+}
+
+// DefaultCloudProbe is NewCloudProbe with no cache dir: usable for gcp and for
+// tests, but an aws source with accounts needs a cache dir to generate its
+// managed config, so production callers build the probe with NewCloudProbe.
+func DefaultCloudProbe(ctx context.Context, src profile.CloudSource) cloud.IdentityStatus {
+	return NewCloudProbe("")(ctx, src)
+}
+
+// cloudProbeSource maps a profile cloud source to the providers package's
+// neutral probe Source, threading the aws multi-account fields (alias, source
+// profile, accounts) so a multi-account source probes its default account's
+// generated profile, plus the managed-config target/source paths so the probe's
+// aws CLI reads the triagent-owned config rather than ~/.aws/config.
+func cloudProbeSource(src profile.CloudSource, cloudCacheDir string) providers.Source {
+	accounts := make([]aws.Account, 0, len(src.Accounts))
+	for _, a := range src.Accounts {
+		accounts = append(accounts, aws.Account{ID: a.AccountID, RoleARN: a.RoleARN})
+	}
+	return providers.Source{
+		Provider:        src.Provider,
+		AssumedIdentity: src.AssumedIdentity,
+		Alias:           src.Alias,
+		SourceProfile:   src.SourceProfile,
+		Accounts:        accounts,
+		ConfigTarget:    awsManagedConfigPath(cloudCacheDir),
+		ConfigSource:    operatorAWSConfigPath(),
+	}
+}
+
+// cloudSources returns the profile's read-only cloud connections, or nil when
+// no profile is loaded. Each becomes a triagent-cloud-<alias> MCP server.
+func cloudSources(prof *profile.Profile) []profile.CloudSource {
+	if prof == nil {
+		return nil
+	}
+	return prof.Cloud
 }
 
 // freezeKubeconfig writes a session-private copy of the operator's

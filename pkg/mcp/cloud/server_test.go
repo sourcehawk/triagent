@@ -1,0 +1,211 @@
+package cloud
+
+import (
+	"context"
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestFakeProviderSatisfiesActiveTargetContract(t *testing.T) {
+	t.Parallel()
+	var p Provider = &fakeProvider{}
+	require.NotNil(t, p)
+	// compile-time: the interface now includes ActiveTargetEnv + ConfiguredTargets
+}
+
+func TestNewRequiresProvider(t *testing.T) {
+	t.Parallel()
+	_, err := New(Options{})
+	require.Error(t, err, "expected error when Provider is nil")
+	_, err = New(Options{Provider: &fakeProvider{}})
+	require.NoError(t, err)
+}
+
+func TestSelectableTargetsPrefersConfigured(t *testing.T) {
+	t.Parallel()
+	p := &fakeProvider{targets: []Target{{ID: "acct-1", Name: "one"}}}
+	s := newTestServer(t, p)
+	got := s.selectableTargets(context.Background())
+	assert.Equal(t, []Target{{ID: "acct-1", Name: "one"}}, got)
+}
+
+func TestSelectableTargetsCarriesTags(t *testing.T) {
+	t.Parallel()
+	p := &fakeProvider{targets: []Target{{ID: "acct-1", Name: "one", Tags: []string{"prod", "payments"}}}}
+	s := newTestServer(t, p)
+	got := s.selectableTargets(context.Background())
+	assert.Equal(t, []Target{{ID: "acct-1", Name: "one", Tags: []string{"prod", "payments"}}}, got)
+}
+
+func TestSelectableTargetsFallsBackToInventory(t *testing.T) {
+	t.Parallel()
+	p := &fakeProvider{inventory: Inventory{Scopes: []Scope{{ID: "p1", Name: "Project One"}}}}
+	s := newTestServer(t, p)
+	got := s.selectableTargets(context.Background())
+	assert.Equal(t, []Target{{ID: "p1", Name: "Project One"}}, got)
+}
+
+// liveInventoryProvider mirrors the real gcp/aws providers: its Inventory shells
+// through the injected RunFunc rather than returning a canned set. The
+// in-package fakeProvider ignores run, so only this double exercises the path
+// where deriving the selectable set executes the CLI — the path that recursed
+// before selectableTargets was given a run core without the active-target gate.
+type liveInventoryProvider struct {
+	fakeProvider
+	scopes []Scope
+}
+
+func (p *liveInventoryProvider) Inventory(ctx context.Context, run RunFunc) (Inventory, error) {
+	if _, err := run(ctx, []string{"echo", "inventory"}); err != nil {
+		return Inventory{}, err
+	}
+	return Inventory{Scopes: p.scopes}, nil
+}
+
+// TestSelectableTargetsInventoryDoesNotRecurse pins that deriving the selectable
+// set from live inventory does not re-enter the active-target gate. With no
+// configured targets and no scope, selectableTargets shells inventory; that
+// inventory run must not consult selectableTargets again, or New stack-overflows
+// for unconstrained GCP and single-account AWS sources.
+func TestSelectableTargetsInventoryDoesNotRecurse(t *testing.T) {
+	t.Parallel()
+	p := &liveInventoryProvider{
+		fakeProvider: fakeProvider{
+			binary:    "/bin/echo",
+			allowlist: &CommandAllowlist{Commands: []Command{{Path: "echo"}}},
+		},
+		scopes: []Scope{{ID: "p1", Name: "one"}, {ID: "p2", Name: "two"}},
+	}
+	s := newTestServer(t, p)
+	got := s.selectableTargets(context.Background())
+	assert.Equal(t, []Target{{ID: "p1", Name: "one"}, {ID: "p2", Name: "two"}}, got)
+}
+
+// TestListInventoryDoesNotGateOnActiveTarget pins that list_inventory works
+// before a target is chosen: the agent needs inventory to know which target it
+// can select, so inventory must use the ungated exec path, not s.run (whose
+// active-target gate would fail with "call set_active_target" for a multi-target
+// GCP source with nothing active yet).
+func TestListInventoryDoesNotGateOnActiveTarget(t *testing.T) {
+	t.Parallel()
+	p := &liveInventoryProvider{
+		fakeProvider: fakeProvider{
+			binary:    "/bin/echo",
+			allowlist: &CommandAllowlist{Commands: []Command{{Path: "echo"}}},
+		},
+		scopes: []Scope{{ID: "p1", Name: "one"}, {ID: "p2", Name: "two"}},
+	}
+	s := newTestServer(t, p)
+	res, out, err := s.listInventory(context.Background(), nil, ListInventoryInput{})
+	require.NoError(t, err)
+	if res != nil {
+		t.Fatalf("list_inventory must not error before an active target is chosen: %s", errText(res))
+	}
+	assert.Len(t, out.Scopes, 2)
+}
+
+// TestSubprocessEnvActiveTargetWinsOverAmbient pins that the active-target env
+// the MCP controls overrides an ambient value for the same variable carried
+// through passthrough — no duplicate entry an exec reader could resolve to the
+// ambient target instead of the set_active_target choice.
+func TestSubprocessEnvActiveTargetWinsOverAmbient(t *testing.T) {
+	t.Setenv("FAKE_TARGET", "ambient-leak")
+	p := &fakeProvider{targets: []Target{{ID: "chosen"}}, envPassthrough: []string{"FAKE_TARGET"}}
+	s := newTestServer(t, p)
+	require.NoError(t, s.setActive("chosen"))
+
+	env := s.subprocessEnv()
+
+	assert.Contains(t, env, "FAKE_TARGET=chosen", "the active-target value must be present")
+	assert.NotContains(t, env, "FAKE_TARGET=ambient-leak",
+		"the ambient value must not survive alongside the active-target value")
+	var n int
+	for _, kv := range env {
+		if name, _, _ := strings.Cut(kv, "="); name == "FAKE_TARGET" {
+			n++
+		}
+	}
+	assert.Equal(t, 1, n, "FAKE_TARGET must appear exactly once")
+}
+
+func TestSetActiveTargetRejectsOutOfSet(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t, &fakeProvider{targets: []Target{{ID: "acct-1"}}})
+	require.Error(t, s.setActive("acct-9"))
+	require.NoError(t, s.setActive("acct-1"))
+	assert.Equal(t, "acct-1", s.activeTarget)
+}
+
+// TestExpectedIdentityForActiveUsesPerTargetIdentity pins that the probe
+// validates against the active target's own identity when the provider pins one
+// per target (aws: the account's role ARN), so session_status reports Valid for
+// any selected account — not only the source default. With no active target, or
+// a provider that pins no per-target identity, it falls back to the session's
+// pinned identity.
+func TestExpectedIdentityForActiveUsesPerTargetIdentity(t *testing.T) {
+	t.Parallel()
+	p := &fakeProvider{
+		targets:     []Target{{ID: "a"}, {ID: "b"}},
+		expectedFor: map[string]string{"a": "role-a", "b": "role-b"},
+	}
+	s := newTestServer(t, p, func(o *Options) { o.ExpectedIdentity = "source-pin" })
+
+	assert.Equal(t, "source-pin", s.expectedIdentityForActive(),
+		"with no active target, the session's pinned identity is used")
+
+	require.NoError(t, s.setActive("b"))
+	assert.Equal(t, "role-b", s.expectedIdentityForActive(),
+		"the active account's own identity is validated, not the source default")
+}
+
+func TestExpectedIdentityForActiveFallsBackWhenProviderHasNone(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t, &fakeProvider{targets: []Target{{ID: "only"}}},
+		func(o *Options) { o.ExpectedIdentity = "source-pin" })
+	// fakeProvider has no expectedFor entry; the provider pins no per-target
+	// identity (the gcp case), so the session's pinned identity is used.
+	assert.Equal(t, "source-pin", s.expectedIdentityForActive())
+}
+
+func TestSubprocessEnvIncludesActiveTarget(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t, &fakeProvider{targets: []Target{{ID: "acct-1"}}})
+	require.NoError(t, s.setActive("acct-1"))
+	assert.Contains(t, s.subprocessEnv(), "FAKE_TARGET=acct-1")
+}
+
+func TestSingleTargetIsDefaultActive(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t, &fakeProvider{targets: []Target{{ID: "only"}}})
+	assert.Equal(t, "only", s.activeTarget)
+}
+
+func TestMultiTargetHasNoDefault(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t, &fakeProvider{targets: []Target{{ID: "a"}, {ID: "b"}}})
+	assert.Equal(t, "", s.activeTarget)
+}
+
+// TestSubprocessEnvDropsParentSecretsKeepsPassthrough exercises the env the
+// server actually builds for run_cli — the path the real harness takes, which
+// the isolated execCLI test cannot cover. A parent-env canary must be dropped
+// while a declared passthrough var survives, so ambient launcher secrets never
+// reach the provider CLI.
+func TestSubprocessEnvDropsParentSecretsKeepsPassthrough(t *testing.T) {
+	t.Setenv("TRIAGENT_CLOUD_LEAK_CANARY", "should-not-appear")
+	t.Setenv("CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT", "ro-sa@proj.iam.gserviceaccount.com")
+	p := &fakeProvider{
+		envPassthrough: []string{"CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT"},
+	}
+	srv := newTestServer(t, p)
+
+	env := srv.subprocessEnv()
+
+	assert.NotContains(t, env, "TRIAGENT_CLOUD_LEAK_CANARY=should-not-appear",
+		"parent-env secret must be dropped from the subprocess env")
+	assert.Contains(t, env, "CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT=ro-sa@proj.iam.gserviceaccount.com",
+		"declared passthrough var must be forwarded")
+}

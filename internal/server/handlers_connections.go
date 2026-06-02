@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/sourcehawk/triagent/internal/connections"
+	"github.com/sourcehawk/triagent/internal/preflight"
 )
 
 // Connection-management endpoints. The panel reads /api/connections to
@@ -25,12 +27,36 @@ import (
 // endpoint.
 type connectionsResponse struct {
 	connections.Status
-	SlackChannelPrefix string `json:"slack_channel_prefix"`
+	SlackChannelPrefix string            `json:"slack_channel_prefix"`
+	Cloud              []cloudConnection `json:"cloud"`
+}
+
+// cloudConnection is the read-only view of one profile cloud source: its alias,
+// the pinned identity, and the request-time probe result. The alias keys the
+// triagent-cloud-<alias> MCP and distinguishes two sources that share a
+// provider and identity but differ in scope. It carries no edit affordance —
+// cloud is configured in the profile, never entered in the panel.
+type cloudConnection struct {
+	Alias    string `json:"alias"`
+	Provider string `json:"provider"`
+	// Each pill renders the same two-line shape — a principal and the reach it
+	// grants — with provider-specific content. gcp: AssumedIdentity (the
+	// impersonated service account) over Projects (the source's `projects:`
+	// selectable set; empty means the agent selects among live-listed projects).
+	// aws: SourceProfile (the operator's SSO base) over Accounts (the account
+	// ids the agent may select among).
+	AssumedIdentity string   `json:"assumed_identity,omitempty"`
+	Projects        []string `json:"projects,omitempty"`
+	SourceProfile   string   `json:"source_profile,omitempty"`
+	Accounts        []string `json:"accounts,omitempty"`
+	Valid           bool     `json:"valid"`
+	Hint            string   `json:"hint,omitempty"`
 }
 
 // connectionsResp builds the full response body for all /api/connections
-// endpoints, merging connection status with profile boot config.
-func (a *apiHandlers) connectionsResp() connectionsResponse {
+// endpoints, merging connection status with profile boot config and the
+// request-time cloud identity probe.
+func (a *apiHandlers) connectionsResp(ctx context.Context) connectionsResponse {
 	var prefix string
 	if a.prof != nil {
 		prefix = a.prof.Slack.ChannelPrefix
@@ -38,11 +64,69 @@ func (a *apiHandlers) connectionsResp() connectionsResponse {
 	return connectionsResponse{
 		Status:             a.connections.Status(),
 		SlackChannelPrefix: prefix,
+		Cloud:              a.cloudConnections(ctx),
 	}
 }
 
+// cloudConnections probes each profile cloud source at request time and projects
+// the result into the read-only panel view. Returns an empty slice when no
+// profile or no cloud sources are configured, so the JSON field is always an
+// array. The probe degrades, never blocks: an invalid source still appears, with
+// its hint, so the operator can fix a stale credential before starting a session.
+func (a *apiHandlers) cloudConnections(ctx context.Context) []cloudConnection {
+	if a.prof == nil || len(a.prof.Cloud) == 0 {
+		return []cloudConnection{}
+	}
+	probe := a.cloudProbe
+	if probe == nil {
+		probe = preflight.DefaultCloudProbe
+	}
+	out := make([]cloudConnection, 0, len(a.prof.Cloud))
+	for _, src := range a.prof.Cloud {
+		st := probe(ctx, src)
+		// A probe that fails before resolving the provider leaves it blank; fall
+		// back to the configured value so a degraded source still renders. The
+		// alias is always the source's.
+		provider := st.Provider
+		if provider == "" {
+			provider = src.Provider
+		}
+		conn := cloudConnection{
+			Alias:    src.Alias,
+			Provider: provider,
+			Valid:    st.Valid,
+			Hint:     st.Hint,
+		}
+		// Each provider fills the same principal + reach shape differently. gcp:
+		// the one impersonated service account (the probe's resolved value, or the
+		// configured one when the probe degraded before resolving it) over its
+		// allowlisted projects. aws: the operator's SSO base profile over the
+		// account set it spans.
+		switch src.Provider {
+		case "aws":
+			conn.SourceProfile = src.SourceProfile
+			conn.Accounts = make([]string, 0, len(src.Accounts))
+			for _, acct := range src.Accounts {
+				conn.Accounts = append(conn.Accounts, acct.AccountID)
+			}
+		default:
+			conn.AssumedIdentity = st.AssumedIdentity
+			if conn.AssumedIdentity == "" {
+				conn.AssumedIdentity = src.AssumedIdentity
+			}
+			conn.Projects = make([]string, 0, len(src.Projects))
+			for _, pr := range src.Projects {
+				conn.Projects = append(conn.Projects, pr.ID)
+			}
+		}
+		out = append(out, conn)
+	}
+	return out
+}
+
 // handleGetConnections returns which integrations have a usable token, plus
-// profile boot config (slack_channel_prefix).
+// profile boot config (slack_channel_prefix) and the request-time cloud
+// identity probe.
 //
 // GET /api/connections
 func (a *apiHandlers) handleGetConnections(w http.ResponseWriter, r *http.Request) {
@@ -50,7 +134,7 @@ func (a *apiHandlers) handleGetConnections(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	writeJSON(w, http.StatusOK, a.connectionsResp())
+	writeJSON(w, http.StatusOK, a.connectionsResp(r.Context()))
 }
 
 // handlePutSlackToken validates a Slack token via auth.test, then persists
@@ -80,7 +164,7 @@ func (a *apiHandlers) handlePutSlackToken(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, a.connectionsResp())
+	writeJSON(w, http.StatusOK, a.connectionsResp(r.Context()))
 }
 
 // handlePutIncidentioToken validates an incident.io API key by calling
@@ -108,7 +192,7 @@ func (a *apiHandlers) handlePutIncidentioToken(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, a.connectionsResp())
+	writeJSON(w, http.StatusOK, a.connectionsResp(r.Context()))
 }
 
 // handleDeleteConnection clears the token for the given kind.
@@ -124,7 +208,7 @@ func (a *apiHandlers) handleDeleteConnection(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, a.connectionsResp())
+	writeJSON(w, http.StatusOK, a.connectionsResp(r.Context()))
 }
 
 // channelDTO is the redacted shape returned by /api/slack/channels: just

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/sourcehawk/triagent/internal/auto"
+	"github.com/sourcehawk/triagent/internal/profile"
 	"github.com/sourcehawk/triagent/internal/promforward"
 	"github.com/sourcehawk/triagent/pkg/mcp/k8s"
 	"github.com/stretchr/testify/assert"
@@ -352,6 +353,30 @@ func TestPublishPushState_ReachesMultiplexStream(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("subscriber timed out waiting for envelope")
 	}
+}
+
+func TestInvestigation_Snapshot_DerivesCloudMCPsFromProfile(t *testing.T) {
+	// Cloud sources attach a triagent-cloud-<alias> MCP to every session, so the
+	// snapshot derives the wired set from the profile, prefixing each source
+	// alias into its wire alias and carrying the provider for the chip.
+	inv := &Investigation{
+		ID:        "inv-cloud",
+		CreatedAt: time.Now().UTC(),
+		Profile: &profile.Profile{
+			Cloud: []profile.CloudSource{
+				{Alias: "prod-gcp", Provider: "gcp"},
+				{Alias: "prod-aws", Provider: "aws"},
+			},
+		},
+	}
+	dto := inv.Snapshot()
+	require.Len(t, dto.CloudMCPs, 2)
+	assert.Equal(t, CloudMCP{Alias: "triagent-cloud-prod-gcp", Provider: "gcp"}, dto.CloudMCPs[0])
+	assert.Equal(t, CloudMCP{Alias: "triagent-cloud-prod-aws", Provider: "aws"}, dto.CloudMCPs[1])
+
+	// A session without a profile (e.g. an imported share bundle) wires no cloud.
+	bare := &Investigation{ID: "inv-bare", CreatedAt: time.Now().UTC()}
+	assert.Empty(t, bare.Snapshot().CloudMCPs)
 }
 
 func TestInvestigation_Publish_PersistsClaudeSessionID(t *testing.T) {

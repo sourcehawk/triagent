@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/sourcehawk/triagent/pkg/mcp/strategies"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
@@ -43,6 +44,49 @@ func TestExtract_IncludesPRProposal(t *testing.T) {
 	assert.Contains(t, s, "edit_mode_refine")
 	assert.Contains(t, s, "terminal_no_codefix")
 	assert.Contains(t, s, "terminal_awaiting_review")
+}
+
+// TestExtract_IncludesCloudTriage confirms the cloud-triage sub-flow ships
+// with the embedded set, parses, and validates structurally (entrypoint and
+// every goto resolve to its own nodes, no empty descriptions) the same way
+// the strategies MCP checks a playbook at load time.
+func TestExtract_IncludesCloudTriage(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	typeDir, err := Extract(root)
+	require.NoError(t, err)
+
+	body, err := os.ReadFile(filepath.Join(typeDir, "cloud_triage.yaml"))
+	require.NoError(t, err, "cloud_triage.yaml not extracted")
+
+	var head struct {
+		ID            string `yaml:"id"`
+		SchemaVersion int    `yaml:"schema_version"`
+		Type          string `yaml:"type"`
+		Entrypoint    string `yaml:"entrypoint"`
+	}
+	require.NoError(t, yaml.Unmarshal(body, &head))
+	assert.Equal(t, "cloud_triage", head.ID)
+	assert.Equal(t, 1, head.SchemaVersion)
+	assert.Equal(t, "general", head.Type)
+	assert.Equal(t, "gate", head.Entrypoint)
+
+	// Real structural validation: entrypoint resolves, every goto resolves,
+	// no empty node descriptions.
+	_, errs := strategies.ParseAndValidatePlaybookYAML(body)
+	assert.Empty(t, errs, "cloud_triage.yaml failed structural validation: %v", errs)
+
+	s := string(body)
+	for _, node := range []string{
+		"gate",
+		"orient",
+		"investigate",
+		"terminal_done",
+		"terminal_no_signal",
+		"terminal_blocked",
+	} {
+		assert.Contains(t, s, node+":", "cloud_triage must define node %q", node)
+	}
 }
 
 // TestExtract_CaptureOfferV3HasBugReportRoute confirms that capture_offer was

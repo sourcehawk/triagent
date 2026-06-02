@@ -1,0 +1,188 @@
+id: cloud_triage
+schema_version: 1
+type: general
+symptom: "An investigation has surfaced a cloud-shaped signal — an account id, role or service-account ARN, a cloud resource name, or a cloud permission / quota / throttle error — that looks suspicious or causal, or the user has asked you to check the cloud"
+description: |
+  Sub-flow the agent walks when a Kubernetes investigation needs to
+  follow a thread down into the cloud layer (GCP or AWS) through the
+  read-only triagent-cloud-<alias> MCP. It is provider-agnostic: the
+  cloud tools (list_inventory, set_active_target, session_status,
+  run_cli, list_allowed_commands) are neutral across GCP and AWS, and
+  every read is bounded by the MCP's command allowlist, deny floor, and
+  read-only pinned identity.
+
+  This playbook exists to impose discipline the raw capability lacks:
+
+    1. **Do not enter the cloud without a cloud-shaped signal.** Having
+       cloud tools is not a reason to use them. The gate turns you back
+       when the symptom is cluster-internal.
+    2. **Pin the target before you read.** Establish which project /
+       account and region you are looking at — preferably from the
+       cluster itself — and make it active, so reads land in the right
+       scope instead of an ambient default.
+    3. **Run the cheapest read that tests your hypothesis,** along the
+       axis the signal points to, then correlate the finding back to
+       the cluster symptom and timeline.
+
+  Use this as a sub-flow: walk it, get a citable answer (or a clean
+  "cloud ruled out"), then return to the parent investigation.
+
+# Entity tags so playbook_correlate ranks this for cloud-shaped queries.
+errors:
+  - permission-denied
+  - forbidden
+  - access-denied
+  - quota-exceeded
+  - throttled
+symptoms:
+  - dependency-unreachable
+  - connection-timeout
+  - iam-denied
+
+entrypoint: gate
+
+nodes:
+  gate:
+    description: |
+      Decide whether the cloud is even in scope before touching it.
+
+      A cloud-shaped signal is one of:
+        - an account id, project id, role ARN, or service-account
+          identity that surfaced in the evidence and looks involved;
+        - a cloud resource name (a load balancer, bucket, managed
+          database, VPC/subnet/security-group, NAT/gateway) named in an
+          error, event, or config;
+        - a cloud permission, quota, or throttling error
+          (PERMISSION_DENIED, AccessDenied, Forbidden, quota exceeded,
+          rate/throttle);
+        - the operator explicitly asked you to check the cloud.
+
+      If none of these is present, the symptom is cluster-internal — an
+      application bug, a Kubernetes misconfiguration, a bad image, an
+      OOM, a failing readiness probe — and you should NOT go looking in
+      the cloud. Having read-only cloud tools is not a reason to use
+      them. Name the signal you are acting on before proceeding.
+
+      Call step_complete with findings=[{key: "cloud_signal",
+      value: "<the concrete signal, or 'none'>"}].
+    expected_findings:
+      - cloud_signal
+    next:
+      - condition: "a concrete cloud-shaped signal is present, or the operator asked you to check the cloud — orient before reading"
+        goto: orient
+      - condition: "no cloud-shaped signal — the symptom is cluster-internal; do not search the cloud"
+        goto: terminal_no_signal
+
+  orient:
+    description: |
+      Pin the project/account and region BEFORE any cloud read, so the
+      read lands in the right scope rather than an ambient default.
+
+      Derive the coordinates from the cluster first — it usually knows
+      where it runs:
+        - The node the workload sits on carries the cloud account/project
+          and region: read the Node with triagent-k8s (get_resource) and
+          look at `spec.providerID` (encodes the cloud + account/project +
+          instance) and the `topology.kubernetes.io/region` /
+          `topology.kubernetes.io/zone` labels.
+        - The workload's ServiceAccount often carries a workload-identity
+          annotation naming the cloud identity
+          (`iam.gke.io/gcp-service-account` on GCP,
+          `eks.amazonaws.com/role-arn` on AWS).
+
+      Then reconcile against the configured cloud source:
+        - `session_status` reports the identity and the target currently
+          pinned.
+        - `list_inventory` lists the projects/accounts the source is
+          configured to reach, each with deployment tags.
+        - If the target matching your signal's account/project is not
+          already active, `set_active_target` to it (match by id, use the
+          tags to disambiguate).
+
+      Call step_complete with findings=[{key: "active_target",
+      value: "<account/project id + region you pinned>"}].
+    suggested_calls:
+      - tool: triagent-k8s/get_resource
+    expected_findings:
+      - active_target
+    next:
+      - condition: "the target matching the signal is active and you know the region — investigate"
+        goto: investigate
+      - condition: "no configured cloud target matches the signal's account/project (or no cloud source is wired) — cannot proceed"
+        goto: terminal_blocked
+
+  investigate:
+    description: |
+      Run the cheapest read that tests your hypothesis, along the axis
+      the signal points to. If unsure what is permitted, call
+      `list_allowed_commands` first; it returns exactly what `run_cli`
+      will accept.
+
+        - **Reachability** (a Pod cannot reach a dependency, timeouts):
+          inspect security groups / firewall rules, subnets, routes,
+          NAT/gateways, network ACLs.
+        - **Permissions** (denied / forbidden): read the IAM policy,
+          role, or binding for the identity involved; simulate the
+          action where the provider supports it.
+        - **Cluster config** (the managed cluster behaves oddly): read
+          the GKE/EKS cluster networking and node configuration.
+        - **Logs / audit** ("what changed right before this broke?"):
+          read cloud logs, and the change-audit trail (CloudTrail on
+          AWS, admin-activity logs on GCP) around the incident window.
+
+      Every call goes through `run_cli` and is read-only by
+      construction — do not attempt writes or secret reads; they are
+      denied at the harness and at the identity. Correlate whatever you
+      find back to the cluster symptom and the incident timeline: a
+      finding only matters if it explains or rules out the failure.
+
+      Call step_complete with findings=[{key: "cloud_finding",
+      value: "<resource + what you found + time>"}].
+    expected_findings:
+      - cloud_finding
+    next:
+      - condition: "a cloud finding explains or cleanly rules out the cluster symptom — done"
+        goto: terminal_done
+      - condition: "the read you need is outside the allowlist or the pinned identity cannot see it — cannot proceed"
+        goto: terminal_blocked
+
+  terminal_done:
+    description: "Cloud check complete. Surface the result to the parent investigation."
+    terminal_advice: |
+      Hand the result back to the parent investigation as a short,
+      citable bullet — the resource, the finding, and the time:
+
+        - `sg-0abc123` denies tcp/5432 from the node subnet — explains
+          the payment-api → RDS connection timeouts since 14:05Z.
+        - IAM: the workload's role lost `secretsmanager:GetSecretValue`
+          (CloudTrail `PutRolePolicy` at 13:58Z) — explains the
+          AccessDenied at startup.
+        - or: cloud ruled out — reachability, IAM, and the audit trail
+          for the window are clean; the cause is in the cluster.
+
+      This playbook does NOT call summarize — it is a sub-flow. The
+      parent investigation reaches summarize on its own.
+
+  terminal_no_signal:
+    description: "No cloud-shaped signal — stay in the cluster."
+    terminal_advice: |
+      Tell the operator explicitly: "No cloud signal surfaced (no
+      account/identity, cloud resource, or cloud permission error), so
+      I'm not searching the cloud — this looks cluster-internal."
+      Return to the parent investigation and continue there. Do not
+      re-enter this playbook until a concrete cloud signal appears.
+
+  terminal_blocked:
+    description: "Cannot complete the cloud check — return to parent with what you have."
+    terminal_advice: |
+      Name precisely why the check could not complete, then continue the
+      investigation in-cluster:
+
+        - **No configured target.** The signal points at an
+          account/project the deployment did not wire into its `cloud:`
+          sources (or no cloud source is configured at all). The
+          operator would need to add it; you cannot reach it.
+        - **Read not permitted.** The read you need is outside the
+          command allowlist, or the pinned read-only identity lacks the
+          permission. Do not try to widen either — say which command or
+          permission would be required and move on.

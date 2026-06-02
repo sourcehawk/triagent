@@ -3,60 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-
-// Section ids match the markdown filenames under /public/docs/. The
-// human label drives the left-rail rendering; the slug is the URL
-// query value the page persists (so deep links into /?view=docs&docs=mcp
-// land on the right page).
-type SectionID = "overview" | "investigations" | "watches" | "mcp" | "playbooks" | "wiki" | "repos" | "connections" | "profiles";
-
-const SECTIONS: { id: SectionID; label: string; subtitle: string }[] = [
-  {
-    id: "overview",
-    label: "Overview",
-    subtitle: "What Triagent is and what you can do with it",
-  },
-  {
-    id: "investigations",
-    label: "Investigate",
-    subtitle: "AI-driven cluster triage",
-  },
-  {
-    id: "watches",
-    label: "Watches",
-    subtitle: "Persistent eyes-on a source",
-  },
-  {
-    id: "mcp",
-    label: "MCP",
-    subtitle: "Tool servers the agent uses",
-  },
-  {
-    id: "playbooks",
-    label: "Playbooks",
-    subtitle: "Structured procedural knowledge",
-  },
-  {
-    id: "repos",
-    label: "Repos",
-    subtitle: "Linked GitHub projects + architecture summaries",
-  },
-  {
-    id: "wiki",
-    label: "Wiki",
-    subtitle: "Persistent know-how",
-  },
-  {
-    id: "connections",
-    label: "Connections",
-    subtitle: "Slack and incident.io integrations",
-  },
-  {
-    id: "profiles",
-    label: "Profiles",
-    subtitle: "Forking the default to fit your platform",
-  },
-];
+import { SECTIONS, type SectionID } from "@/lib/docs-sections";
 
 type Props = {
   // Section the operator picked from the docs sidebar. Driven by the

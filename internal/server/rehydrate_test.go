@@ -12,6 +12,7 @@ import (
 
 	"github.com/sourcehawk/triagent/internal/connections"
 	"github.com/sourcehawk/triagent/internal/preflight"
+	"github.com/sourcehawk/triagent/internal/profile"
 	"github.com/sourcehawk/triagent/internal/repos"
 	"github.com/sourcehawk/triagent/internal/sessions"
 )
@@ -32,6 +33,60 @@ func stubSession() func(sessions.Options, string) (investigationSession, error) 
 	return func(_ sessions.Options, _ string) (investigationSession, error) {
 		return fakeAutoSession{}, nil
 	}
+}
+
+func TestRehydrate_ThreadsLiveProfileForCloudWiring(t *testing.T) {
+	// A restored investigation comes back with a nil Profile (Restore does not
+	// repopulate it), so rehydrate must thread the launcher's live profile —
+	// which carries the cloud sources — into preflight. Otherwise cloudSources
+	// sees nothing and the cloud MCP is silently dropped from the regenerated
+	// mcp.json, so it never spawns on resume.
+	dir := t.TempDir()
+	mgr := NewManager(context.Background(), dir)
+	t.Cleanup(mgr.Shutdown)
+	live := &profile.Profile{
+		Cloud: []profile.CloudSource{{
+			Alias:         "camunda",
+			Provider:      "aws",
+			SourceProfile: "operator-test",
+			Accounts: []profile.CloudAccount{{
+				AccountID: "095352988152",
+				RoleARN:   "arn:aws:iam::095352988152:role/triagent-readonly",
+			}},
+		}},
+	}
+	var captured preflight.Options
+	a := &apiHandlers{
+		manager: mgr,
+		prof:    live,
+		preflightFn: func(opts preflight.Options) (*preflight.Result, error) {
+			captured = opts
+			return &preflight.Result{MCPConfigPath: filepath.Join(opts.SessionDir, "mcp.json")}, nil
+		},
+		sessionFn: stubSession(),
+	}
+	inv := &Investigation{
+		ID:              "id",
+		SessionDir:      dir,
+		Namespace:       "ns",
+		ClaudeSessionID: "sess",
+		LaunchCwd:       dir,
+		needsRehydrate:  true,
+		Profile:         nil, // as a restored session comes back
+	}
+	inv.ctx, inv.cancel = context.WithCancel(context.Background())
+
+	require.NoError(t, a.rehydrate(inv), "rehydrate")
+
+	require.NotNil(t, captured.Profile, "preflight must receive the live profile, not the nil restored one")
+	require.Len(t, captured.Profile.Cloud, 1, "cloud sources must reach preflight")
+	assert.Equal(t, "camunda", captured.Profile.Cloud[0].Alias)
+
+	// inv now carries the live profile so the DTO/status bar can derive cloud chips.
+	inv.mu.Lock()
+	defer inv.mu.Unlock()
+	require.NotNil(t, inv.Profile, "rehydrate should repopulate inv.Profile")
+	require.Len(t, inv.Profile.Cloud, 1)
 }
 
 func TestRehydrate_Success_ClearsNeedsRehydrate(t *testing.T) {

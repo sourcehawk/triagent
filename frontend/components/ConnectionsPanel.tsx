@@ -1,9 +1,21 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, ApiError, type ConnectionStatus } from "@/lib/api";
+import {
+  api,
+  ApiError,
+  type CloudConnection,
+  type ConnectionStatus,
+} from "@/lib/api";
 import { useDialog } from "@/lib/dialog";
-import { IncidentIoIcon, SlackIcon } from "./Icons";
+import {
+  AwsIcon,
+  CheckIcon,
+  CloudIcon,
+  GcpIcon,
+  IncidentIoIcon,
+  SlackIcon,
+} from "./Icons";
 import { Spinner } from "./Spinner";
 
 // ConnectionsPanel sits at the bottom of the sidenav next to
@@ -189,9 +201,142 @@ function ManageConnectionsModal({
             onChanged={onChanged}
           />
         </div>
+
+        <CloudConnectionsSection cloud={status?.cloud ?? []} />
       </div>
     </div>
   );
+}
+
+// CloudConnectionsSection renders the profile-configured cloud connections as
+// read-only pills: the assumed identity with a checkmark when the probe is
+// valid, the reauth hint when not. Cloud is configured in the profile, never
+// entered here — these pills carry no edit affordance. Omitted entirely when no
+// cloud sources are configured.
+function CloudConnectionsSection({ cloud }: { cloud: CloudConnection[] }) {
+  if (cloud.length === 0) return null;
+  return (
+    <div className="mt-4" data-testid="cloud-connections">
+      <div className="mb-2 flex items-center gap-2 text-xs uppercase tracking-wide text-zinc-500">
+        <CloudIcon className="h-3.5 w-3.5" />
+        cloud
+      </div>
+      <p className="mb-2 text-xs text-zinc-500">
+        Read-only identities pinned in the profile&rsquo;s{" "}
+        <code className="font-mono text-zinc-400">cloud:</code> block, not edited
+        here. See the Cloud providers docs for setup.
+      </p>
+      <div className="space-y-2">
+        {cloud.map((c) => (
+          <CloudPill key={c.alias} conn={c} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ProviderMark renders the cloud provider's brand icon, falling back to the
+// generic cloud glyph for an unrecognised provider. The provider name stays in
+// the title/aria-label so it is still announced and discoverable.
+function ProviderMark({ provider }: { provider: string }) {
+  const title = provider.toUpperCase();
+  const icon =
+    provider === "aws" ? (
+      <AwsIcon className="h-4 w-4" />
+    ) : provider === "gcp" ? (
+      <GcpIcon className="h-4 w-4" />
+    ) : (
+      <CloudIcon className="h-4 w-4 text-zinc-500" />
+    );
+  return (
+    <span title={title} aria-label={title} className="shrink-0">
+      {icon}
+    </span>
+  );
+}
+
+function CloudPill({ conn }: { conn: CloudConnection }) {
+  return (
+    <div
+      data-cloud-pill
+      className="rounded border border-zinc-800 bg-zinc-900/40 p-3"
+    >
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <ProviderMark provider={conn.provider} />
+          <span className="truncate text-xs font-medium text-zinc-200">
+            {conn.alias}
+          </span>
+        </div>
+        {conn.valid ? (
+          <span
+            className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-emerald-300/80"
+            title="identity valid"
+          >
+            <CheckIcon className="h-3.5 w-3.5" />
+            valid
+          </span>
+        ) : (
+          <span className="text-[10px] uppercase tracking-wide text-amber-300/80">
+            unavailable
+          </span>
+        )}
+      </div>
+      <CloudPillBody conn={conn} />
+      {!conn.valid && (
+        <div className="mt-1 text-xs text-amber-200/70">
+          {conn.hint ?? reauthHint(conn.provider)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// CloudPillBody renders the same two-line shape for both providers — the
+// principal over the reach it grants — with provider-specific content. GCP: the
+// impersonated service account over its allowlisted project count. AWS: the SSO
+// base profile over its account count. The reach line's full members are in its
+// hover title.
+function CloudPillBody({ conn }: { conn: CloudConnection }) {
+  const { principal, reach, reachTitle } =
+    conn.provider === "aws"
+      ? {
+          principal: conn.source_profile ? `base: ${conn.source_profile}` : "",
+          reach: countLabel(conn.accounts?.length ?? 0, "account"),
+          reachTitle: (conn.accounts ?? []).join(", "),
+        }
+      : {
+          principal: conn.assumed_identity ?? "",
+          // An empty projects allowlist means the identity reaches any project
+          // its IAM grants, not zero.
+          reach:
+            (conn.projects?.length ?? 0) === 0
+              ? "all projects"
+              : countLabel(conn.projects!.length, "project"),
+          reachTitle: (conn.projects ?? []).join(", "),
+        };
+  return (
+    <>
+      <div className="mt-1 truncate font-mono text-xs text-zinc-400">
+        {principal}
+      </div>
+      <div className="truncate text-[10px] text-zinc-500" title={reachTitle}>
+        {reach}
+      </div>
+    </>
+  );
+}
+
+function countLabel(n: number, noun: string): string {
+  return `${n} ${noun}${n === 1 ? "" : "s"}`;
+}
+
+// reauthHint is the operator's own re-login command for a stale cloud identity,
+// shown on an invalid pill when the probe did not supply a more specific hint.
+function reauthHint(provider: string): string {
+  if (provider === "gcp") return "Re-authenticate with: gcloud auth login";
+  if (provider === "aws") return "Re-authenticate with: aws sso login";
+  return "Re-authenticate through your own cloud login";
 }
 
 type ConnectionCardProps = {

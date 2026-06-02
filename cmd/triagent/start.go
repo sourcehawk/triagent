@@ -200,6 +200,7 @@ func warnLegacyUnnamespacedDirs(profileName string, paths profile.Paths) {
 		{"sessions-root", paths.SessionsRoot},
 		{"user-playbooks", paths.UserPlaybooksDir},
 		{"git-cache", paths.GitCacheDir},
+		{"cloud-cache", paths.CloudCacheDir},
 	}
 	for _, e := range entries {
 		if e.current == "" || !strings.Contains(e.current, seg) {
@@ -249,6 +250,7 @@ func runWeb(ctx context.Context, mcpBin string, paths profile.Paths, playbooksRe
 		DocsServerName:           docsServerName,
 		UserReposPath:            paths.UserReposFile,
 		GitCacheDir:              paths.GitCacheDir,
+		CloudCacheDir:            paths.CloudCacheDir,
 		UserPlaybooksDir:         paths.UserPlaybooksDir,
 		PluginPlaybooksDir:       joinSubpath(paths.UpstreamPlaybooksDir, prof.Defaults.PlaybooksPath),
 		PluginPlaybooksCloneRoot: paths.UpstreamPlaybooksDir,

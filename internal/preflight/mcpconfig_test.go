@@ -9,6 +9,9 @@ import (
 
 	"github.com/sourcehawk/triagent/internal/profile"
 	"github.com/sourcehawk/triagent/internal/repos"
+	"github.com/sourcehawk/triagent/pkg/mcp/cloud"
+	"github.com/sourcehawk/triagent/pkg/mcp/cloud/providers/aws"
+	"github.com/sourcehawk/triagent/pkg/mcp/cloud/providers/gcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -381,4 +384,139 @@ func TestWriteMCPConfig_KubeconfigInjectedIntoEveryServer(t *testing.T) {
 	for alias, srv := range cfg.MCPServers {
 		assert.Equal(t, "/tmp/kubeconfig", srv.Env["KUBECONFIG"], "server %q env KUBECONFIG", alias)
 	}
+}
+
+func TestWriteMCPConfig_NoCloudSources_OmitsCloudServer(t *testing.T) {
+	t.Parallel()
+	in := baseInputs(t)
+	path, err := writeMCPConfig(in)
+	require.NoError(t, err)
+	for alias := range readMCPConfig(t, path) {
+		assert.NotContains(t, alias, MCPAliasCloudPrefix,
+			"no cloud sources means no triagent-cloud-<alias> server")
+	}
+}
+
+func TestWriteMCPConfig_GCPCloudSource_RegistersServerWithImpersonationEnv(t *testing.T) {
+	t.Parallel()
+	in := baseInputs(t)
+	in.CloudSources = []profile.CloudSource{{
+		Alias:                "prod-gcp",
+		Provider:             "gcp",
+		AssumedIdentity:      "triage-ro@prod.iam.gserviceaccount.com",
+		Projects:             []profile.CloudProject{{ID: "prod-a", Tags: []string{"prod"}}},
+		CommandAllowlistPath: "/etc/triagent/gcp-allow.json",
+	}}
+	path, err := writeMCPConfig(in)
+	require.NoError(t, err)
+	servers := readMCPConfig(t, path)
+
+	alias := MCPAliasCloudPrefix + "prod-gcp"
+	srv, ok := servers[alias]
+	require.True(t, ok, "expected %s server", alias)
+
+	args, _ := srv["args"].([]any)
+	assert.Equal(t, []any{"serve", "--kind=cloud", "--provider=gcp"}, args)
+
+	env, _ := srv["env"].(map[string]any)
+	require.NotNil(t, env)
+	assert.Equal(t, "gcp", env[cloud.EnvProvider])
+	assert.Equal(t, "/etc/triagent/gcp-allow.json", env[cloud.EnvAllowlistPath])
+	// The pinned identity is uniform across providers.
+	assert.Equal(t, "triage-ro@prod.iam.gserviceaccount.com", env[cloud.EnvExpectedIdentity])
+	// gcp impersonates the assumed identity directly as its credential env.
+	assert.Equal(t, "triage-ro@prod.iam.gserviceaccount.com", env[gcp.EnvImpersonate])
+	// AWS-specific env must not leak onto a gcp source.
+	assert.NotContains(t, env, aws.EnvProfile)
+
+	// The configured projects (with tags) are JSON-encoded into the gcp env.
+	rawProjects, _ := env[cloud.EnvGCPProjects].(string)
+	require.NotEmpty(t, rawProjects, "gcp projects must be JSON-encoded into the env")
+	var projects []profile.CloudProject
+	require.NoError(t, json.Unmarshal([]byte(rawProjects), &projects))
+	require.Len(t, projects, 1)
+	assert.Equal(t, "prod-a", projects[0].ID)
+	assert.Equal(t, []string{"prod"}, projects[0].Tags)
+}
+
+func TestWriteMCPConfig_AWSCloudSource_RegistersServerWithAccountsAndExpectedRole(t *testing.T) {
+	t.Parallel()
+	in := baseInputs(t)
+	in.CloudSources = []profile.CloudSource{{
+		Alias:         "prod-aws",
+		Provider:      "aws",
+		SourceProfile: "sso-admin",
+		Accounts: []profile.CloudAccount{
+			{AccountID: "123456789012", RoleARN: "arn:aws:iam::123456789012:role/triage-ro"},
+		},
+		Scope: cloud.ScopeAllowlist{Regions: []string{"us-east-1"}},
+	}}
+	path, err := writeMCPConfig(in)
+	require.NoError(t, err)
+	servers := readMCPConfig(t, path)
+
+	alias := MCPAliasCloudPrefix + "prod-aws"
+	srv, ok := servers[alias]
+	require.True(t, ok, "expected %s server", alias)
+
+	args, _ := srv["args"].([]any)
+	assert.Equal(t, []any{"serve", "--kind=cloud", "--provider=aws"}, args)
+
+	env, _ := srv["env"].(map[string]any)
+	require.NotNil(t, env)
+	assert.Equal(t, "aws", env[cloud.EnvProvider])
+	// aws's expected identity is the default (first) account's role_arn, not a
+	// source-level assumed identity.
+	assert.Equal(t, "arn:aws:iam::123456789012:role/triage-ro", env[cloud.EnvExpectedIdentity])
+	// aws carries its accounts and source_profile; AWS_PROFILE is pinned per-exec
+	// from the active target, never as a static selector here.
+	assert.Equal(t, "sso-admin", env[cloud.EnvAWSSourceProfile])
+	assert.NotEmpty(t, env[cloud.EnvAWSAccounts])
+	assert.NotContains(t, env, aws.EnvProfile)
+	// gcp impersonation env must not leak onto an aws source.
+	assert.NotContains(t, env, gcp.EnvImpersonate)
+}
+
+func TestCloudSourceEnv_AWSAccounts_EmitsAccountsAndSourceProfile(t *testing.T) {
+	t.Parallel()
+	env, err := cloudSourceEnv(profile.CloudSource{
+		Alias:         "prod-aws",
+		Provider:      "aws",
+		SourceProfile: "sso-admin",
+		Accounts: []profile.CloudAccount{
+			{AccountID: "111111111111", RoleARN: "arn:aws:iam::111111111111:role/triage-ro"},
+			{AccountID: "222222222222", RoleARN: "arn:aws:iam::222222222222:role/triage-ro"},
+		},
+	}, "/cache/triagent-mcp/p/aws")
+	require.NoError(t, err)
+
+	assert.Equal(t, "sso-admin", env[cloud.EnvAWSSourceProfile])
+	// AWS sources point the subprocess at the triagent-owned config (not
+	// ~/.aws/config) and name the operator config to copy from.
+	assert.Equal(t, "/cache/triagent-mcp/p/aws/config", env[cloud.EnvAWSConfigFile])
+	assert.NotEmpty(t, env[cloud.EnvAWSSourceConfig], "operator source config must be named")
+	require.NotEmpty(t, env[cloud.EnvAWSAccounts], "accounts must be emitted as JSON")
+
+	var decoded []profile.CloudAccount
+	require.NoError(t, json.Unmarshal([]byte(env[cloud.EnvAWSAccounts]), &decoded))
+	require.Len(t, decoded, 2)
+	assert.Equal(t, "111111111111", decoded[0].AccountID)
+	assert.Equal(t, "arn:aws:iam::222222222222:role/triage-ro", decoded[1].RoleARN)
+
+	// The multi-account form pins AWS_PROFILE per-exec from the active target, so
+	// the subprocess credential env carries no static profile selector.
+	assert.NotContains(t, env, aws.EnvProfile)
+}
+
+func TestCloudSourceEnv_GCP_CarriesNoAWSAccountsEnv(t *testing.T) {
+	t.Parallel()
+	env, err := cloudSourceEnv(profile.CloudSource{
+		Alias:           "prod-gcp",
+		Provider:        "gcp",
+		AssumedIdentity: "ro@proj.iam.gserviceaccount.com",
+	}, "/cache/triagent-mcp/p/aws")
+	require.NoError(t, err)
+	assert.NotContains(t, env, cloud.EnvAWSAccounts)
+	assert.NotContains(t, env, cloud.EnvAWSSourceProfile)
+	assert.NotContains(t, env, cloud.EnvAWSConfigFile, "gcp sources never set AWS_CONFIG_FILE")
 }

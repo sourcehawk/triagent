@@ -89,6 +89,38 @@ export type ConnectionStatus = {
   slack: boolean;
   incidentio: boolean;
   slack_channel_prefix: string;
+  // cloud is the read-only list of profile-configured cloud connections,
+  // each probed at request time. Configured in the profile, never entered
+  // in the panel.
+  cloud?: CloudConnection[];
+};
+
+// CloudConnection is one read-only cloud source: the alias keying its
+// triagent-cloud-<alias> MCP and the request-time identity-probe result. valid
+// drives the checkmark; hint is the reauth advice shown when the probe failed.
+//
+// Each pill renders the same principal + reach shape, with provider-specific
+// content. gcp carries assumed_identity (the impersonated service account) and
+// projects (its scope allowlist). aws carries source_profile (the operator's SSO
+// base) and accounts (the account ids it spans).
+export type CloudConnection = {
+  alias: string;
+  provider: string;
+  assumed_identity?: string;
+  projects?: string[];
+  source_profile?: string;
+  accounts?: string[];
+  valid: boolean;
+  hint?: string;
+};
+
+// CloudMCP is one cloud-context MCP wired into a session: its wire alias
+// (triagent-cloud-<source alias>, matching mcp__<alias>__<tool> in tool names)
+// and the provider, so the status bar can brand and colour the chip. Derived
+// server-side from the profile's cloud sources, identical across sessions.
+export type CloudMCP = {
+  alias: string;
+  provider: string;
 };
 
 export type SlackChannel = {
@@ -447,6 +479,9 @@ export type Investigation = {
   slackMCPEnabled?: boolean;
   incidentioMCPEnabled?: boolean;
   linkedRepos?: LinkedRepo[];
+  // cloudMcps are the cloud-context MCP servers wired into this session,
+  // derived from the profile's cloud sources. Absent when none are configured.
+  cloudMcps?: CloudMCP[];
   createdAt: string;
   started: boolean;
   streaming: boolean;

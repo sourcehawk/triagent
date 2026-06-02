@@ -12,6 +12,8 @@ import (
 	"github.com/sourcehawk/triagent/internal/profile"
 	"github.com/sourcehawk/triagent/internal/promforward"
 	"github.com/sourcehawk/triagent/internal/repos"
+	"github.com/sourcehawk/triagent/pkg/mcp/cloud"
+	"github.com/sourcehawk/triagent/pkg/mcp/cloud/providers/gcp"
 )
 
 var envRefRe = regexp.MustCompile(`^\$\{env:([A-Za-z_][A-Za-z0-9_]*)\}$`)
@@ -47,6 +49,10 @@ const (
 	// MCPAliasGitPrefix is prepended to a repo's effective alias to form
 	// the per-repo MCP server alias (e.g. "triagent-git-zeebe").
 	MCPAliasGitPrefix = "triagent-git-"
+	// MCPAliasCloudPrefix is prepended to a cloud source's alias to form the
+	// per-source MCP server alias (e.g. "triagent-cloud-prod-gcp"), mirroring
+	// the per-repo git prefix.
+	MCPAliasCloudPrefix = "triagent-cloud-"
 )
 
 // Env-var names the launcher injects into each triagent-mcp subcommand. These
@@ -101,7 +107,11 @@ type mcpConfigInputs struct {
 	// and passed to triagent-mcp as --crds-file. TRIAGENT_MCP_CRDS_FILE env wins.
 	Profile *profile.Profile
 	LinkedRepos      []repos.LinkedRepo // each becomes a `triagent-git-<alias>` server entry
+	// CloudSources are the profile's read-only cloud connections; each becomes a
+	// `triagent-cloud-<alias>` server entry pinned to that source's identity.
+	CloudSources       []profile.CloudSource
 	GitCacheDir        string             // optional override for git repo cache root
+	CloudCacheDir      string             // per-profile dir for the triagent-owned AWS config (<dir>/config)
 	UserPlaybooksDir   string             // optional override-or-extend dir for strategies playbooks
 	PluginPlaybooksDir string             // launcher-managed clone of the upstream playbooks repo (overridable)
 	SystemPlaybooksDir string             // launcher-bundled meta-playbooks (locked, non-overridable)
@@ -167,6 +177,98 @@ func kubeEnv(in mcpConfigInputs) map[string]string {
 		out[EnvKubeconfig] = in.KubeconfigPath
 	}
 	return out
+}
+
+// cloudSourceEnv builds the subprocess env for one triagent-cloud-<alias>
+// server: the provider selector, the optional allowlist-override path, the
+// JSON-encoded scope the cloud package decodes, the pinned identity the probe
+// validates against, and the per-provider credential env the CLI authenticates
+// with.
+//
+// The pinned identity is uniform: TRIAGENT_CLOUD_EXPECTED_IDENTITY carries it
+// for both clouds, and the probe validates the resolved identity against it. The
+// credential env differs by mechanism: GCP impersonates the assumed identity
+// directly (CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT). AWS carries its accounts
+// and source_profile (TRIAGENT_CLOUD_AWS_ACCOUNTS, _SOURCE_PROFILE): the
+// subprocess generates an assume-role profile per account and pins AWS_PROFILE
+// per run_cli from the active target, so no static profile selector belongs in
+// this env. The env-name constants come from the provider packages, never raw
+// literals.
+func cloudSourceEnv(src profile.CloudSource, cloudCacheDir string) (map[string]string, error) {
+	env := map[string]string{
+		cloud.EnvProvider: src.Provider,
+	}
+	// The expected identity is provider-specific: gcp's impersonated service
+	// account, or aws's default (first) account's role_arn — the server validates
+	// each active aws account against its own role, and falls back to this default
+	// only before a target is chosen.
+	if src.Provider == "aws" {
+		if len(src.Accounts) > 0 {
+			env[cloud.EnvExpectedIdentity] = src.Accounts[0].RoleARN
+		}
+	} else {
+		env[cloud.EnvExpectedIdentity] = src.AssumedIdentity
+	}
+	if src.CommandAllowlistPath != "" {
+		env[cloud.EnvAllowlistPath] = src.CommandAllowlistPath
+	}
+	scopeRaw, err := json.Marshal(src.Scope)
+	if err != nil {
+		return nil, fmt.Errorf("cloud source %q: encode scope: %w", src.Alias, err)
+	}
+	env[cloud.EnvScope] = string(scopeRaw)
+
+	switch src.Provider {
+	case "gcp":
+		env[gcp.EnvImpersonate] = src.AssumedIdentity
+		if len(src.Projects) > 0 {
+			projectsRaw, err := json.Marshal(src.Projects)
+			if err != nil {
+				return nil, fmt.Errorf("cloud source %q: encode projects: %w", src.Alias, err)
+			}
+			env[cloud.EnvGCPProjects] = string(projectsRaw)
+		}
+	case "aws":
+		accountsRaw, err := json.Marshal(src.Accounts)
+		if err != nil {
+			return nil, fmt.Errorf("cloud source %q: encode accounts: %w", src.Alias, err)
+		}
+		env[cloud.EnvAWSAccounts] = string(accountsRaw)
+		env[cloud.EnvAWSSourceProfile] = src.SourceProfile
+		env[cloud.EnvAWSAlias] = src.Alias
+		// Point the subprocess at the triagent-owned config (the aws CLI reads
+		// it, the provider generates into it) and name the operator config to
+		// copy from, so ~/.aws/config is never written.
+		if target := awsManagedConfigPath(cloudCacheDir); target != "" {
+			env[cloud.EnvAWSConfigFile] = target
+			env[cloud.EnvAWSSourceConfig] = operatorAWSConfigPath()
+		}
+	}
+	return env, nil
+}
+
+// awsManagedConfigPath is the triagent-owned AWS config file for a profile:
+// <CloudCacheDir>/config. Empty when no cache dir is configured (the provider
+// then declines to generate rather than writing a surprising path).
+func awsManagedConfigPath(cloudCacheDir string) string {
+	if cloudCacheDir == "" {
+		return ""
+	}
+	return filepath.Join(cloudCacheDir, "config")
+}
+
+// operatorAWSConfigPath is the operator's own AWS config the managed file copies
+// from: $AWS_CONFIG_FILE when the operator set one in the launcher's env, else
+// $HOME/.aws/config.
+func operatorAWSConfigPath() string {
+	if v := os.Getenv(cloud.EnvAWSConfigFile); v != "" {
+		return v
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return ""
+	}
+	return filepath.Join(home, ".aws", "config")
 }
 
 // resolveKindsFile returns the --crds-file path to pass to triagent-mcp's k8s
@@ -311,6 +413,21 @@ func writeMCPConfig(in mcpConfigInputs) (string, error) {
 			"command": in.MCPBin,
 			"args":    []string{"serve", "--kind=git", "--repo", repo.Owner + "/" + repo.Name},
 			"env":     gitEnv,
+		}
+	}
+
+	for _, src := range in.CloudSources {
+		alias := MCPAliasCloudPrefix + src.Alias
+		cloudEnv, err := cloudSourceEnv(src, in.CloudCacheDir)
+		if err != nil {
+			return "", err
+		}
+		mergeEnv(cloudEnv, telemetryEnv(in, alias))
+		mergeEnv(cloudEnv, kubeEnv(in))
+		servers[alias] = map[string]any{
+			"command": in.MCPBin,
+			"args":    []string{"serve", "--kind=cloud", "--provider=" + src.Provider},
+			"env":     cloudEnv,
 		}
 	}
 

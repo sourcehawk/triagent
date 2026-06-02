@@ -15,6 +15,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronUp,
+  Cloud,
   CloudUpload,
   Copy,
   Download,
@@ -32,6 +33,7 @@ type Props = { className?: string };
 export const ArrowLeftIcon = ArrowLeft;
 export const ArrowRightIcon = ArrowRight;
 export const CheckIcon = Check;
+export const CloudIcon = Cloud;
 export const ChevronDownIcon = ChevronDown;
 export const ChevronLeftIcon = ChevronLeft;
 export const ChevronRightIcon = ChevronRight;
@@ -84,6 +86,62 @@ export function IncidentIoIcon({ className }: Props) {
       <rect width="24" height="24" rx="5" fill="#0F0F0F" />
       <circle cx="12" cy="7.5" r="1.6" fill="#FF5C28" />
       <rect x="10.4" y="10.5" width="3.2" height="8.5" rx="1.2" fill="#FF5C28" />
+    </svg>
+  );
+}
+
+// AwsIcon is a brand-suggestive AWS mark: the orange "smile" arrow that
+// anchors the AWS wordmark. AWS doesn't redistribute its full logo as an
+// inline asset, so this renders the recognisable smile-and-arrow alone, in
+// AWS orange. Colours are baked in; callers don't override fill.
+export function AwsIcon({ className }: Props) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden>
+      <path
+        d="M5 13.5c4 2.4 10 2.4 14 0"
+        fill="none"
+        stroke="#FF9900"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+      <path
+        d="M15.6 11.7l3.4 1.3-1.3 3.3"
+        fill="none"
+        stroke="#FF9900"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+// GcpIcon is a brand-suggestive Google Cloud mark: a cloud silhouette filled
+// with Google's four-colour sweep (blue, red, yellow, green). Approximates the
+// Google Cloud identity at sidebar size without redistributing the official
+// asset. Colours are baked in; callers don't override fill.
+export function GcpIcon({ className }: Props) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden>
+      <defs>
+        <linearGradient
+          id="gcpMark"
+          x1="3"
+          y1="12"
+          x2="21"
+          y2="12"
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop offset="0" stopColor="#4285F4" />
+          <stop offset="0.4" stopColor="#EA4335" />
+          <stop offset="0.7" stopColor="#FBBC05" />
+          <stop offset="1" stopColor="#34A853" />
+        </linearGradient>
+      </defs>
+      <path
+        d="M6.8 17.5a3.6 3.6 0 0 1 .3-7.1 5 5 0 0 1 9.6-1.2 3.6 3.6 0 0 1 .1 8.3z"
+        fill="url(#gcpMark)"
+      />
     </svg>
   );
 }

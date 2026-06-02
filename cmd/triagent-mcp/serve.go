@@ -2,13 +2,19 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
 
+	"github.com/charmbracelet/log"
 	"github.com/sourcehawk/triagent/pkg/mcp/agentoperator"
+	"github.com/sourcehawk/triagent/pkg/mcp/cloud"
+	"github.com/sourcehawk/triagent/pkg/mcp/cloud/providers"
+	"github.com/sourcehawk/triagent/pkg/mcp/cloud/providers/aws"
+	"github.com/sourcehawk/triagent/pkg/mcp/cloud/providers/gcp"
 	"github.com/sourcehawk/triagent/pkg/mcp/git"
 	"github.com/sourcehawk/triagent/pkg/mcp/incidentio"
 	"github.com/sourcehawk/triagent/pkg/mcp/k8s"
@@ -21,28 +27,27 @@ import (
 	"github.com/sourcehawk/triagent/pkg/mcp/strategies"
 	"github.com/sourcehawk/triagent/pkg/mcp/teleport"
 	"github.com/sourcehawk/triagent/pkg/mcp/wiki"
-	"github.com/charmbracelet/log"
 	"github.com/spf13/cobra"
 )
 
 // Environment variable names. Flags override env when both are set.
 const (
-	envKubeconfig       = "TRIAGENT_MCP_KUBECONFIG"
-	envCRDsFile         = "TRIAGENT_MCP_CRDS_FILE"
-	envCrossplaneGroups = "TRIAGENT_MCP_CROSSPLANE_GROUPS"
-	envSessionDir                  = "TRIAGENT_MCP_SESSION_DIR"
-	envUserPlaybooksDir             = "TRIAGENT_MCP_USER_PLAYBOOKS_DIR"
-	envPluginPlaybooksDir           = "TRIAGENT_MCP_PLUGIN_PLAYBOOKS_DIR"
-	envSystemPlaybooksDir           = "TRIAGENT_MCP_SYSTEM_PLAYBOOKS_DIR"
-	envStrategiesSubagentModel      = "TRIAGENT_MCP_STRATEGIES_SUBAGENT_MODEL"
-	envMCPConfigPath                = "TRIAGENT_MCP_CONFIG_PATH"
-	envGitRepo               = "TRIAGENT_MCP_GIT_REPO"
-	envGitCacheDir           = "TRIAGENT_MCP_GIT_CACHE_DIR"
-	envGitClaudeBinary       = "TRIAGENT_MCP_GIT_CLAUDE_BINARY"
-	envGitFilterPrereleases  = "TRIAGENT_MCP_GIT_FILTER_PRERELEASES"
-	envWikiServePath         = "TRIAGENT_MCP_WIKI_PATH"
-	envWikiServeProposalsPath = "TRIAGENT_MCP_WIKI_PROPOSALS_PATH"
-	envWikiServeClaudeBinary = "TRIAGENT_MCP_WIKI_CLAUDE_BINARY"
+	envKubeconfig              = "TRIAGENT_MCP_KUBECONFIG"
+	envCRDsFile                = "TRIAGENT_MCP_CRDS_FILE"
+	envCrossplaneGroups        = "TRIAGENT_MCP_CROSSPLANE_GROUPS"
+	envSessionDir              = "TRIAGENT_MCP_SESSION_DIR"
+	envUserPlaybooksDir        = "TRIAGENT_MCP_USER_PLAYBOOKS_DIR"
+	envPluginPlaybooksDir      = "TRIAGENT_MCP_PLUGIN_PLAYBOOKS_DIR"
+	envSystemPlaybooksDir      = "TRIAGENT_MCP_SYSTEM_PLAYBOOKS_DIR"
+	envStrategiesSubagentModel = "TRIAGENT_MCP_STRATEGIES_SUBAGENT_MODEL"
+	envMCPConfigPath           = "TRIAGENT_MCP_CONFIG_PATH"
+	envGitRepo                 = "TRIAGENT_MCP_GIT_REPO"
+	envGitCacheDir             = "TRIAGENT_MCP_GIT_CACHE_DIR"
+	envGitClaudeBinary         = "TRIAGENT_MCP_GIT_CLAUDE_BINARY"
+	envGitFilterPrereleases    = "TRIAGENT_MCP_GIT_FILTER_PRERELEASES"
+	envWikiServePath           = "TRIAGENT_MCP_WIKI_PATH"
+	envWikiServeProposalsPath  = "TRIAGENT_MCP_WIKI_PROPOSALS_PATH"
+	envWikiServeClaudeBinary   = "TRIAGENT_MCP_WIKI_CLAUDE_BINARY"
 
 	envSessionsProposalsPath = "TRIAGENT_MCP_SESSIONS_PROPOSALS_PATH"
 	envSessionsClaudeBinary  = "TRIAGENT_MCP_SESSIONS_CLAUDE_BINARY"
@@ -71,10 +76,10 @@ type serveFlags struct {
 	systemPlaybooksDir string
 
 	// git flags
-	gitRepo               string
-	gitCacheDir           string
-	gitClaudeBinary       string
-	gitFilterPrereleases  bool
+	gitRepo              string
+	gitCacheDir          string
+	gitClaudeBinary      string
+	gitFilterPrereleases bool
 
 	// wiki flags
 	wikiPath          string
@@ -95,6 +100,9 @@ type serveFlags struct {
 	promURL    string
 	promBearer string
 	promBasic  string
+
+	// cloud flags
+	cloudProvider string
 }
 
 func serveCmd() *cobra.Command {
@@ -104,14 +112,14 @@ func serveCmd() *cobra.Command {
 		Short: "Run one of the triagent-mcp MCP servers over stdio",
 		Long: "Run one of the triagent-mcp MCP servers over stdio.\n\n" +
 			"Select the server via --kind. Supported kinds:\n" +
-			"  k8s, teleport, strategies, git, wiki, slack, incidentio, sessions, meta, agent-operator, signal-ingest, parallel, prom",
+			"  k8s, teleport, strategies, git, wiki, slack, incidentio, sessions, meta, agent-operator, signal-ingest, parallel, prom, cloud",
 		Hidden: true,
 		Args:   cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runServe(cmd.Context(), resolveFlags(f))
 		},
 	}
-	cmd.Flags().StringVar(&f.kind, "kind", "", "which MCP server to run: k8s, teleport, strategies, git, wiki, slack, incidentio, sessions, meta, agent-operator, signal-ingest, parallel, or prom (required)")
+	cmd.Flags().StringVar(&f.kind, "kind", "", "which MCP server to run: k8s, teleport, strategies, git, wiki, slack, incidentio, sessions, meta, agent-operator, signal-ingest, parallel, prom, or cloud (required)")
 
 	// k8s flags
 	cmd.Flags().StringVar(&f.kubeconfig, "kubeconfig", "", "path to kubeconfig (defaults to $"+envKubeconfig+", then $KUBECONFIG, then ~/.kube/config) [kind=k8s]")
@@ -149,6 +157,9 @@ func serveCmd() *cobra.Command {
 	cmd.Flags().StringVar(&f.promURL, "prom-url", "", "Prometheus base URL (defaults to $"+envPromURL+") [kind=prom]")
 	cmd.Flags().StringVar(&f.promBearer, "prom-bearer", "", "Authorization: Bearer token for Prometheus (defaults to $"+envPromBearer+") [kind=prom]")
 	cmd.Flags().StringVar(&f.promBasic, "prom-basic", "", "Basic auth credentials user:pass for Prometheus (defaults to $"+envPromBasic+") [kind=prom]")
+
+	// cloud flags
+	cmd.Flags().StringVar(&f.cloudProvider, "provider", "", "cloud provider to serve: gcp or aws; required (defaults to $"+cloud.EnvProvider+") [kind=cloud]")
 
 	return cmd
 }
@@ -215,6 +226,9 @@ func resolveFlags(f *serveFlags) serveFlags {
 	if out.promBasic == "" {
 		out.promBasic = os.Getenv(envPromBasic)
 	}
+	if out.cloudProvider == "" {
+		out.cloudProvider = os.Getenv(cloud.EnvProvider)
+	}
 	// Bool env override: only consider when the operator hasn't passed
 	// the flag explicitly. Cobra preserves the flag default (true) when
 	// unset, so we can't distinguish "operator passed --filter-prereleases=true"
@@ -263,10 +277,12 @@ func runServe(ctx context.Context, f serveFlags) error {
 		return runParallel(ctx, f)
 	case "prom":
 		return runProm(ctx, f)
+	case "cloud":
+		return runCloud(ctx, f)
 	case "":
-		return fmt.Errorf("--kind is required (one of: k8s, teleport, strategies, git, wiki, slack, incidentio, sessions, meta, agent-operator, signal-ingest, parallel, prom)")
+		return fmt.Errorf("--kind is required (one of: k8s, teleport, strategies, git, wiki, slack, incidentio, sessions, meta, agent-operator, signal-ingest, parallel, prom, cloud)")
 	default:
-		return fmt.Errorf("unknown --kind %q (want one of: k8s, teleport, strategies, git, wiki, slack, incidentio, sessions, meta, agent-operator, signal-ingest, parallel, prom)", f.kind)
+		return fmt.Errorf("unknown --kind %q (want one of: k8s, teleport, strategies, git, wiki, slack, incidentio, sessions, meta, agent-operator, signal-ingest, parallel, prom, cloud)", f.kind)
 	}
 }
 
@@ -421,6 +437,115 @@ func runProm(ctx context.Context, f serveFlags) error {
 		"resolver", resolverURL,
 	)
 	return srv.Run(ctx)
+}
+
+// runCloud wires the read-only cloud-context MCP. --provider selects the
+// concrete backend; New plugs it in behind cloud.Provider. The launcher passes
+// the allowlist override path, target scope, and pinned identity through the
+// subprocess env (cloud.EnvAllowlistPath, cloud.EnvScope,
+// cloud.EnvExpectedIdentity), never argv. An aws source carries its accounts,
+// source_profile, and alias (cloud.EnvAWSAccounts, _SOURCE_PROFILE, _ALIAS); New
+// generates the per-account assume-role profiles and surfaces the accounts as the
+// agent's selectable targets (a single-account source is a one-entry list).
+func runCloud(ctx context.Context, f serveFlags) error {
+	if f.cloudProvider == "" {
+		return fmt.Errorf("--provider is required (gcp or aws) (set --provider or $%s)", cloud.EnvProvider)
+	}
+	scope, err := parseCloudScope(os.Getenv(cloud.EnvScope))
+	if err != nil {
+		return fmt.Errorf("build cloud mcp server: %w", err)
+	}
+	accounts, err := parseAWSAccounts(os.Getenv(cloud.EnvAWSAccounts))
+	if err != nil {
+		return fmt.Errorf("build cloud mcp server: %w", err)
+	}
+	gcpProjects, err := parseGCPProjects(os.Getenv(cloud.EnvGCPProjects))
+	if err != nil {
+		return fmt.Errorf("build cloud mcp server: %w", err)
+	}
+	provider, err := providers.New(f.cloudProvider, providers.Options{
+		AWSAlias:         os.Getenv(cloud.EnvAWSAlias),
+		AWSSourceProfile: os.Getenv(cloud.EnvAWSSourceProfile),
+		AWSAccounts:      accounts,
+		GCPProjects:      gcpProjects,
+		AWSConfigTarget:  os.Getenv(cloud.EnvAWSConfigFile),
+		AWSConfigSource:  os.Getenv(cloud.EnvAWSSourceConfig),
+	})
+	if err != nil {
+		return err
+	}
+	srv, err := cloud.New(cloud.Options{
+		Provider:         provider,
+		AllowlistPath:    os.Getenv(cloud.EnvAllowlistPath),
+		Scope:            scope,
+		ExpectedIdentity: os.Getenv(cloud.EnvExpectedIdentity),
+	})
+	if err != nil {
+		return fmt.Errorf("build cloud mcp server: %w", err)
+	}
+	log.Info("mcp serve --kind=cloud starting", "provider", f.cloudProvider)
+	return srv.Run(ctx)
+}
+
+// parseCloudScope decodes the JSON-encoded target scope the launcher froze into
+// a cloud.ScopeAllowlist. An empty value yields an empty scope, which leaves the
+// target axes unconstrained. A malformed value is an error that aborts startup:
+// failing closed, since a misconfigured scope must never silently widen run_cli
+// by dropping the deployment's restrictions.
+func parseCloudScope(raw string) (cloud.ScopeAllowlist, error) {
+	var scope cloud.ScopeAllowlist
+	if raw == "" {
+		return scope, nil
+	}
+	if err := json.Unmarshal([]byte(raw), &scope); err != nil {
+		return cloud.ScopeAllowlist{}, fmt.Errorf("malformed cloud scope in $%s: %w", cloud.EnvScope, err)
+	}
+	return scope, nil
+}
+
+// parseAWSAccounts decodes the JSON-encoded aws multi-account set the launcher
+// froze into the aws provider's account list. An empty value yields nil, the
+// single-account / single-identity form. A malformed value is an error that
+// aborts startup: failing closed, since a misconfigured accounts list must never
+// silently drop accounts the agent should be able to select.
+func parseAWSAccounts(raw string) ([]aws.Account, error) {
+	if raw == "" {
+		return nil, nil
+	}
+	var wire []struct {
+		AccountID string   `json:"account_id"`
+		RoleARN   string   `json:"role_arn"`
+		Tags      []string `json:"tags"`
+	}
+	if err := json.Unmarshal([]byte(raw), &wire); err != nil {
+		return nil, fmt.Errorf("malformed cloud aws accounts in $%s: %w", cloud.EnvAWSAccounts, err)
+	}
+	accounts := make([]aws.Account, 0, len(wire))
+	for _, w := range wire {
+		accounts = append(accounts, aws.Account{ID: w.AccountID, RoleARN: w.RoleARN, Tags: w.Tags})
+	}
+	return accounts, nil
+}
+
+// parseGCPProjects decodes the JSON-encoded gcp project set the launcher froze
+// into []gcp.Project. Empty yields nil (the unconstrained form). A malformed
+// value aborts startup, failing closed like parseAWSAccounts.
+func parseGCPProjects(raw string) ([]gcp.Project, error) {
+	if raw == "" {
+		return nil, nil
+	}
+	var wire []struct {
+		ID   string   `json:"id"`
+		Tags []string `json:"tags"`
+	}
+	if err := json.Unmarshal([]byte(raw), &wire); err != nil {
+		return nil, fmt.Errorf("malformed cloud gcp projects in $%s: %w", cloud.EnvGCPProjects, err)
+	}
+	projects := make([]gcp.Project, 0, len(wire))
+	for _, w := range wire {
+		projects = append(projects, gcp.Project{ID: w.ID, Tags: w.Tags})
+	}
+	return projects, nil
 }
 
 func runGit(ctx context.Context, f serveFlags) error {

@@ -1,0 +1,46 @@
+{
+  "commands": [
+    { "path": "sts get-caller-identity", "description": "identity: resolve the active caller ARN/account (whoami; inventory single-account fallback)" },
+
+    { "path": "organizations list-accounts", "description": "inventory: list the accounts the pinned identity can see across the organization" },
+    { "path": "organizations describe-organization", "description": "inventory: describe the organization the caller belongs to" },
+
+    { "path": "ec2 describe-instances", "description": "inventory: list EC2 instances and their state/placement" },
+    { "path": "ec2 describe-vpcs", "description": "reachability: list VPCs the workload network sits in" },
+    { "path": "ec2 describe-subnets", "description": "reachability: list subnets and their AZ/route association" },
+    { "path": "ec2 describe-security-groups", "description": "reachability: inspect security-group ingress/egress rules" },
+    { "path": "ec2 describe-network-interfaces", "description": "reachability: map ENIs to instances/security groups" },
+    { "path": "ec2 describe-route-tables", "description": "reachability: inspect route tables and their associations" },
+    { "path": "ec2 describe-nat-gateways", "description": "reachability: locate NAT gateways for egress paths" },
+    { "path": "ec2 describe-internet-gateways", "description": "reachability: locate internet gateways for ingress/egress" },
+    { "path": "ec2 describe-network-acls", "description": "reachability: inspect subnet-level network ACL rules" },
+    { "path": "ec2 describe-vpc-peering-connections", "description": "reachability: inspect cross-VPC peering paths" },
+    { "path": "ec2 describe-vpc-endpoints", "description": "reachability: inspect private-service VPC endpoints" },
+
+    { "path": "iam get-role", "description": "permissions: read a single IAM role and its trust policy" },
+    { "path": "iam list-roles", "description": "permissions: enumerate IAM roles in the account" },
+    { "path": "iam list-attached-role-policies", "description": "permissions: list managed policies attached to a role" },
+    { "path": "iam list-role-policies", "description": "permissions: list inline policy names on a role" },
+    { "path": "iam get-role-policy", "description": "permissions: read an inline role policy document" },
+    { "path": "iam get-policy", "description": "permissions: read a managed policy's metadata" },
+    { "path": "iam get-policy-version", "description": "permissions: read a managed policy version document" },
+    { "path": "iam list-policies", "description": "permissions: enumerate managed policies" },
+    { "path": "iam simulate-principal-policy", "description": "permissions: simulate whether a principal is allowed an action (read-only evaluation)" },
+
+    { "path": "eks describe-cluster", "description": "cluster: read EKS cluster networking and config" },
+    { "path": "eks list-clusters", "description": "cluster: enumerate EKS clusters in the account/region" },
+    { "path": "eks describe-nodegroup", "description": "cluster: read an EKS managed nodegroup's config" },
+    { "path": "eks list-nodegroups", "description": "cluster: enumerate EKS nodegroups for a cluster" },
+    { "path": "eks list-fargate-profiles", "description": "cluster: enumerate EKS Fargate profiles for a cluster" },
+    { "path": "eks describe-fargate-profile", "description": "cluster: read an EKS Fargate profile's config" },
+
+    { "path": "logs describe-log-groups", "description": "logs: enumerate CloudWatch log groups" },
+    { "path": "logs describe-log-streams", "description": "logs: enumerate log streams within a group" },
+    { "path": "logs filter-log-events", "description": "logs: read CloudWatch log events filtered by pattern/time" },
+    { "path": "logs get-log-events", "description": "logs: read raw CloudWatch log events from a stream" },
+
+    { "path": "cloudtrail lookup-events", "description": "audit: read recent management-event history from CloudTrail" },
+    { "path": "cloudtrail describe-trails", "description": "audit: enumerate configured CloudTrail trails" },
+    { "path": "cloudtrail get-trail-status", "description": "audit: read whether a CloudTrail trail is actively logging" }
+  ]
+}

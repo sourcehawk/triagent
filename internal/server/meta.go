@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/sourcehawk/triagent/pkg/mcp/cloud"
 	"github.com/sourcehawk/triagent/pkg/mcp/git"
 	"github.com/sourcehawk/triagent/pkg/mcp/incidentio"
 	"github.com/sourcehawk/triagent/pkg/mcp/k8s"
@@ -107,6 +108,7 @@ func toolCatalog() []MetaTool {
 	specs = append(specs, parallel.ToolSpecs()...)
 	specs = append(specs, prom.ToolSpecs()...)
 	specs = append(specs, teleport.ToolSpecs()...)
+	specs = append(specs, cloud.ToolSpecs()...)
 	out := make([]MetaTool, 0, len(specs))
 	for _, s := range specs {
 		ins := make([]MetaToolInput, 0, len(s.Inputs))

@@ -18,6 +18,7 @@ These skills live in the `feature-dev-workflow` plugin (`github.com/sourcehawk/f
 ## Operational rules
 
 - **TDD is the standard.** Failing test → watch it fail for the right reason → implement. One commit per task.
+- **Tests assert with `testify`.** Use `github.com/stretchr/testify/assert` for checks the test should keep running past, and `require` for preconditions a failure must stop at (a non-nil error before a dereference, setup that must succeed). Bare `t.Fatal` / `t.Errorf` is the rare exception, not the default.
 - **Before claiming done: `make test` + `make lint`; if `frontend/` touched, also `cd frontend && npm run typecheck`.** CI gates all three; local is the cheapest place to catch failures. Race-clean is non-negotiable.
 - **Commit conventions:** `feat(<area>): ...`, `fix(<area>): ...`, `refactor(<area>): ...`, `test(<area>): ...`, `chore(<area>): ...`. Area mirrors the module path.
 - **Never `--no-verify`, never `git add -A` / `git add .`.** Stage by name; pre-commit hooks exist for a reason.

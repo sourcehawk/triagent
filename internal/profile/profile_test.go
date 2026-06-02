@@ -237,6 +237,221 @@ func TestValidateMissingTeleportFields(t *testing.T) {
 	}
 }
 
+func validCloudBase() *profile.Profile {
+	return &profile.Profile{
+		Name:      "x",
+		Auth:      profile.Auth{Kind: "kubeconfig"},
+		Playbooks: profile.Playbooks{Entrypoint: "a", Closing: "b"},
+	}
+}
+
+func TestValidateCloudSourcesOK(t *testing.T) {
+	p := validCloudBase()
+	p.Cloud = []profile.CloudSource{
+		{Alias: "prod-gcp", Provider: "gcp", AssumedIdentity: "ro@proj.iam.gserviceaccount.com"},
+		awsAccountsBase(),
+	}
+	assert.NoError(t, p.Validate(), "a valid multi-source cloud profile must validate clean")
+}
+
+func TestValidateCloudDuplicateAlias(t *testing.T) {
+	p := validCloudBase()
+	p.Cloud = []profile.CloudSource{
+		{Alias: "dup", Provider: "gcp", AssumedIdentity: "ro@proj.iam.gserviceaccount.com"},
+		{Alias: "dup", Provider: "aws", SourceProfile: "sso", Accounts: []profile.CloudAccount{{AccountID: "1", RoleARN: "arn:aws:iam::1:role/ro"}}},
+	}
+	err := p.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "duplicate")
+	assert.Contains(t, err.Error(), "dup")
+}
+
+func TestValidateCloudEmptyAlias(t *testing.T) {
+	p := validCloudBase()
+	p.Cloud = []profile.CloudSource{
+		{Provider: "gcp", AssumedIdentity: "ro@proj.iam.gserviceaccount.com"},
+	}
+	err := p.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "alias")
+}
+
+func TestValidateCloudUnknownProvider(t *testing.T) {
+	p := validCloudBase()
+	p.Cloud = []profile.CloudSource{
+		{Alias: "x", Provider: "azure", AssumedIdentity: "whatever"},
+	}
+	err := p.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "provider")
+	assert.Contains(t, err.Error(), "azure")
+}
+
+func TestValidateCloudMissingIdentity(t *testing.T) {
+	p := validCloudBase()
+	p.Cloud = []profile.CloudSource{
+		{Alias: "x", Provider: "gcp"},
+	}
+	err := p.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "assumed_identity")
+}
+
+func TestValidateCloudAWSMissingAccounts(t *testing.T) {
+	p := validCloudBase()
+	p.Cloud = []profile.CloudSource{
+		{Alias: "x", Provider: "aws", SourceProfile: "sso"},
+	}
+	err := p.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "accounts")
+}
+
+func TestValidateCloudGCPProjectsOK(t *testing.T) {
+	p := validCloudBase()
+	p.Cloud = []profile.CloudSource{
+		{Alias: "prod-gcp", Provider: "gcp", AssumedIdentity: "ro@p.iam.gserviceaccount.com", Projects: []profile.CloudProject{
+			{ID: "prod-a", Tags: []string{"prod"}},
+			{ID: "prod-b"},
+		}},
+	}
+	assert.NoError(t, p.Validate(), "a gcp source with valid projects must validate clean")
+}
+
+func TestValidateCloudGCPProjectDuplicateID(t *testing.T) {
+	p := validCloudBase()
+	p.Cloud = []profile.CloudSource{
+		{Alias: "x", Provider: "gcp", AssumedIdentity: "ro@p.iam.gserviceaccount.com", Projects: []profile.CloudProject{
+			{ID: "dup"}, {ID: "dup"},
+		}},
+	}
+	err := p.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "projects")
+	assert.Contains(t, err.Error(), "duplicate")
+}
+
+func TestValidateCloudGCPRejectsAWSFields(t *testing.T) {
+	p := validCloudBase()
+	p.Cloud = []profile.CloudSource{
+		{Alias: "x", Provider: "gcp", AssumedIdentity: "ro@p.iam.gserviceaccount.com", SourceProfile: "sso"},
+	}
+	err := p.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "aws-only")
+}
+
+func TestValidateCloudAWSRejectsProjects(t *testing.T) {
+	p := validCloudBase()
+	src := awsAccountsBase()
+	src.Projects = []profile.CloudProject{{ID: "prod-a"}}
+	p.Cloud = []profile.CloudSource{src}
+	err := p.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "projects")
+	assert.Contains(t, err.Error(), "gcp-only")
+}
+
+func TestValidateCloudAWSRejectsAssumedIdentity(t *testing.T) {
+	p := validCloudBase()
+	src := awsAccountsBase()
+	src.AssumedIdentity = "arn:aws:iam::111111111111:role/triage-readonly"
+	p.Cloud = []profile.CloudSource{src}
+	err := p.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "assumed_identity")
+	assert.Contains(t, err.Error(), "aws")
+}
+
+const awsAccountsYAML = `
+name: example
+description: test profile
+auth:
+  kind: kubeconfig
+playbooks:
+  entrypoint: a
+  closing: b
+cloud:
+  - alias: prod-aws
+    provider: aws
+    source_profile: sso-admin
+    accounts:
+      - {account_id: "111111111111", role_arn: "arn:aws:iam::111111111111:role/triage-readonly"}
+      - {account_id: "222222222222", role_arn: "arn:aws:iam::222222222222:role/triage-readonly"}
+`
+
+func TestCloudSourceAWSAccounts(t *testing.T) {
+	p, err := profile.Parse(strings.NewReader(awsAccountsYAML))
+	require.NoError(t, err)
+	require.NoError(t, p.Validate())
+	require.Len(t, p.Cloud[0].Accounts, 2)
+	assert.Equal(t, "sso-admin", p.Cloud[0].SourceProfile)
+	assert.Equal(t, "111111111111", p.Cloud[0].Accounts[0].AccountID)
+	assert.Equal(t, "arn:aws:iam::222222222222:role/triage-readonly", p.Cloud[0].Accounts[1].RoleARN)
+}
+
+// awsAccountsBase is a valid multi-account aws source the negative-case tests
+// each break in exactly one way.
+func awsAccountsBase() profile.CloudSource {
+	return profile.CloudSource{
+		Alias:         "prod-aws",
+		Provider:      "aws",
+		SourceProfile: "sso-admin",
+		Accounts: []profile.CloudAccount{
+			{AccountID: "111111111111", RoleARN: "arn:aws:iam::111111111111:role/triage-readonly"},
+			{AccountID: "222222222222", RoleARN: "arn:aws:iam::222222222222:role/triage-readonly"},
+		},
+	}
+}
+
+func TestValidateCloudAWSAccountsOK(t *testing.T) {
+	p := validCloudBase()
+	p.Cloud = []profile.CloudSource{awsAccountsBase()}
+	assert.NoError(t, p.Validate(), "an aws source with source_profile + unique accounts must validate clean")
+}
+
+func TestValidateCloudAWSAccountsRequireSourceProfile(t *testing.T) {
+	p := validCloudBase()
+	src := awsAccountsBase()
+	src.SourceProfile = ""
+	p.Cloud = []profile.CloudSource{src}
+	err := p.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "source_profile")
+}
+
+func TestValidateCloudAWSAccountsDuplicateID(t *testing.T) {
+	p := validCloudBase()
+	src := awsAccountsBase()
+	src.Accounts[1].AccountID = src.Accounts[0].AccountID
+	p.Cloud = []profile.CloudSource{src}
+	err := p.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "account_id")
+	assert.Contains(t, err.Error(), "duplicate")
+}
+
+func TestValidateCloudAWSAccountsDuplicateRoleARN(t *testing.T) {
+	p := validCloudBase()
+	src := awsAccountsBase()
+	src.Accounts[1].RoleARN = src.Accounts[0].RoleARN
+	p.Cloud = []profile.CloudSource{src}
+	err := p.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "role_arn")
+	assert.Contains(t, err.Error(), "duplicate")
+}
+
+func TestValidateCloudAWSAccountsEmptyFields(t *testing.T) {
+	p := validCloudBase()
+	src := awsAccountsBase()
+	src.Accounts[0].AccountID = ""
+	p.Cloud = []profile.CloudSource{src}
+	err := p.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "account_id")
+}
+
 func TestDefaultProfilePromptsPopulated(t *testing.T) {
 	p, err := profile.LoadEmbedded("default")
 	if err != nil {
@@ -520,6 +735,47 @@ kinds_file: kinds.json
 	}
 }
 
+func TestLoadPath_CommandAllowlistPathAbsoluteFromRelativeRef(t *testing.T) {
+	// command_allowlist_path is documented as relative to profile.yaml, but the
+	// cloud MCP subprocess os.ReadFiles it against a session-scoped cwd. Load
+	// must absolutize a relative override so the injected env points at the file
+	// regardless of the child's cwd; an absolute override passes through.
+	root := t.TempDir()
+	profDir := filepath.Join(root, "test-profile", "camunda")
+	require.NoError(t, os.MkdirAll(profDir, 0o755))
+	yaml := `name: camunda
+base: default
+auth:
+  kind: kubeconfig
+playbooks:
+  entrypoint: investigation
+  closing: capture_offer
+cloud:
+  - alias: prod-gcp
+    provider: gcp
+    assumed_identity: ro@proj.iam.gserviceaccount.com
+    command_allowlist_path: allow/gcp.json
+  - alias: prod-aws
+    provider: aws
+    source_profile: sso-admin
+    accounts:
+      - {account_id: "111122223333", role_arn: "arn:aws:iam::111122223333:role/ro"}
+    command_allowlist_path: /etc/triagent/aws-allow.json
+`
+	require.NoError(t, os.WriteFile(filepath.Join(profDir, "profile.yaml"), []byte(yaml), 0o600))
+
+	t.Chdir(root)
+	p, err := profile.Load("test-profile/camunda/profile.yaml")
+	require.NoError(t, err)
+	require.Len(t, p.Cloud, 2)
+
+	assert.Equal(t, filepath.Join(profDir, "allow", "gcp.json"), p.Cloud[0].CommandAllowlistPath,
+		"a relative command_allowlist_path resolves against the profile dir")
+	assert.True(t, filepath.IsAbs(p.Cloud[0].CommandAllowlistPath))
+	assert.Equal(t, "/etc/triagent/aws-allow.json", p.Cloud[1].CommandAllowlistPath,
+		"an absolute command_allowlist_path passes through unchanged")
+}
+
 func TestLoadPath_KindsFileMissingErrors(t *testing.T) {
 	// Declaring a kinds_file that doesn't exist on disk is a hard error,
 	// not a silent skip — operators should know their override didn't
@@ -661,4 +917,54 @@ func TestProfile_ApplyDefaults_PreservesExplicitModels(t *testing.T) {
 	p.ApplyDefaults()
 	assert.Equal(t, "x", p.Models.Investigation)
 	assert.Equal(t, "y", p.Models.Subagent)
+}
+
+func TestProfile_ParsesCloudBlock(t *testing.T) {
+	t.Parallel()
+	src := `
+name: example
+description: test profile
+auth:
+  kind: kubeconfig
+cloud:
+  - alias: prod-gcp
+    provider: gcp
+    assumed_identity: triage-ro@prod.iam.gserviceaccount.com
+    projects:
+      - {id: prod-a, tags: [prod, payments]}
+      - {id: prod-b}
+    command_allowlist_path: /etc/triagent/gcp-allow.json
+  - alias: prod-aws
+    provider: aws
+    source_profile: sso-admin
+    accounts:
+      - {account_id: "123456789012", role_arn: "arn:aws:iam::123456789012:role/triage-ro", tags: [prod, analytics]}
+    scope:
+      regions:
+        - us-east-1
+`
+	p, err := profile.Parse(strings.NewReader(src))
+	require.NoError(t, err)
+	require.Len(t, p.Cloud, 2)
+
+	gcp := p.Cloud[0]
+	assert.Equal(t, "prod-gcp", gcp.Alias)
+	assert.Equal(t, "gcp", gcp.Provider)
+	assert.Equal(t, "triage-ro@prod.iam.gserviceaccount.com", gcp.AssumedIdentity)
+	require.Len(t, gcp.Projects, 2)
+	assert.Equal(t, "prod-a", gcp.Projects[0].ID)
+	assert.Equal(t, []string{"prod", "payments"}, gcp.Projects[0].Tags)
+	assert.Equal(t, "prod-b", gcp.Projects[1].ID)
+	assert.Empty(t, gcp.Projects[1].Tags)
+	assert.Equal(t, "/etc/triagent/gcp-allow.json", gcp.CommandAllowlistPath)
+
+	aws := p.Cloud[1]
+	assert.Equal(t, "prod-aws", aws.Alias)
+	assert.Equal(t, "aws", aws.Provider)
+	assert.Empty(t, aws.AssumedIdentity, "aws has no source-level assumed identity")
+	assert.Equal(t, "sso-admin", aws.SourceProfile)
+	require.Len(t, aws.Accounts, 1)
+	assert.Equal(t, "123456789012", aws.Accounts[0].AccountID)
+	assert.Equal(t, []string{"prod", "analytics"}, aws.Accounts[0].Tags)
+	assert.Equal(t, []string{"us-east-1"}, aws.Scope.Regions)
 }

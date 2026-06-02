@@ -2,6 +2,7 @@ package preflight
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -12,7 +13,11 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 
+	"github.com/sourcehawk/triagent/internal/profile"
 	"github.com/sourcehawk/triagent/pkg/auth"
+	"github.com/sourcehawk/triagent/pkg/mcp/cloud"
+	"github.com/sourcehawk/triagent/pkg/mcp/cloud/providers"
+	"github.com/sourcehawk/triagent/pkg/mcp/cloud/providers/aws"
 )
 
 // fakeProvider lets the preflight gate be tested without a real tsh session.
@@ -223,4 +228,116 @@ func TestRun_EmptyNamespaceAuthenticatedWritesConfig(t *testing.T) {
 	assert.NotEmpty(t, res.MCPConfigPath, "MCP config should still be written for scope-unknown sessions")
 	_, statErr := os.Stat(res.MCPConfigPath)
 	assert.NoError(t, statErr, "MCPConfigPath should reference an existing file")
+}
+
+// A failed cloud probe degrades the source but never fails the session: the
+// session still starts, and the source is marked unavailable in the Result
+// with the probe's hint attached. This is the cloud-source-scoped soft-degrade
+// path; the k8s block-on-failure behaviour is unchanged.
+func TestRun_CloudProbeFailureDegradesNotBlocks(t *testing.T) {
+	t.Parallel()
+	prof := &profile.Profile{
+		Cloud: []profile.CloudSource{
+			{Alias: "prod-gcp", Provider: "gcp", AssumedIdentity: "ro@p.iam.gserviceaccount.com"},
+			{Alias: "prod-aws", Provider: "aws", SourceProfile: "sso", Accounts: []profile.CloudAccount{{AccountID: "1", RoleARN: "arn:aws:iam::1:role/ro"}}},
+		},
+	}
+	res, err := Run(Options{
+		Provider:      fakeProvider{authenticated: true},
+		SessionDir:    t.TempDir(),
+		MCPBinaryPath: "/tmp/triagent-mcp",
+		Profile:       prof,
+		CloudProbe: func(_ context.Context, src profile.CloudSource) cloud.IdentityStatus {
+			if src.Alias == "prod-gcp" {
+				return cloud.IdentityStatus{Provider: "gcp", AssumedIdentity: src.AssumedIdentity, Valid: true}
+			}
+			return cloud.IdentityStatus{Provider: "aws", AssumedIdentity: src.AssumedIdentity, Valid: false, Hint: "run: aws sso login"}
+		},
+	})
+	require.NoError(t, err, "a failed cloud probe must not fail the session")
+	require.Len(t, res.CloudSources, 2)
+
+	byAlias := map[string]CloudSourceStatus{}
+	for _, s := range res.CloudSources {
+		byAlias[s.Alias] = s
+	}
+	assert.True(t, byAlias["prod-gcp"].Valid, "valid source must be available")
+	assert.False(t, byAlias["prod-aws"].Valid, "failed probe must mark the source unavailable")
+	assert.Equal(t, "run: aws sso login", byAlias["prod-aws"].Hint)
+
+	// The degraded source must NOT be wired as an MCP server, while the valid
+	// one is: a failed probe disables the source, it doesn't merely report it.
+	servers := readMCPServers(t, res.MCPConfigPath)
+	assert.Contains(t, servers, MCPAliasCloudPrefix+"prod-gcp",
+		"valid source must be registered as an MCP server")
+	assert.NotContains(t, servers, MCPAliasCloudPrefix+"prod-aws",
+		"degraded source must be absent from the written MCP config")
+}
+
+// readMCPServers loads the written mcp.json and returns its mcpServers map.
+func readMCPServers(t *testing.T, path string) map[string]any {
+	t.Helper()
+	body, err := os.ReadFile(path)
+	require.NoError(t, err)
+	var cfg struct {
+		MCPServers map[string]any `json:"mcpServers"`
+	}
+	require.NoError(t, json.Unmarshal(body, &cfg))
+	return cfg.MCPServers
+}
+
+// A provider construction error (e.g. the CLI binary missing) degrades the
+// source exactly like a failed probe — it is never a session-fatal error.
+func TestRun_CloudProviderConstructionErrorDegrades(t *testing.T) {
+	t.Parallel()
+	prof := &profile.Profile{
+		Cloud: []profile.CloudSource{
+			{Alias: "no-cli", Provider: "gcp", AssumedIdentity: "ro@p.iam.gserviceaccount.com"},
+		},
+	}
+	// The default real prober runs through providers.New, which errors when
+	// gcloud is absent; assert the session still starts and the source is
+	// marked unavailable with a hint, whatever the host environment.
+	res, err := Run(Options{
+		Provider:      fakeProvider{authenticated: true},
+		SessionDir:    t.TempDir(),
+		MCPBinaryPath: "/tmp/triagent-mcp",
+		Profile:       prof,
+	})
+	require.NoError(t, err, "a provider construction error must not fail the session")
+	require.Len(t, res.CloudSources, 1)
+	assert.Equal(t, "no-cli", res.CloudSources[0].Alias)
+}
+
+// TestCloudProbeSource_ThreadsAWSMultiAccountFields pins that the source mapping
+// shared by the preflight gate and the connections panel carries the aws
+// multi-account fields. Dropping them probes a multi-account source with an
+// empty AWS_PROFILE, which would show a valid source as unavailable.
+func TestCloudProbeSource_ThreadsAWSMultiAccountFields(t *testing.T) {
+	// Not parallel: sets AWS_CONFIG_FILE so the copied operator-config path is
+	// deterministic.
+	t.Setenv("AWS_CONFIG_FILE", "/op/aws/config")
+	src := profile.CloudSource{
+		Alias:         "prod-aws",
+		Provider:      "aws",
+		SourceProfile: "sso-base",
+		Accounts: []profile.CloudAccount{
+			{AccountID: "111111111111", RoleARN: "arn:aws:iam::111111111111:role/triage-ro"},
+			{AccountID: "222222222222", RoleARN: "arn:aws:iam::222222222222:role/triage-ro"},
+		},
+	}
+
+	got := cloudProbeSource(src, "/cache/triagent-mcp/p/aws")
+
+	assert.Equal(t, providers.Source{
+		Provider:      "aws",
+		Alias:         "prod-aws",
+		SourceProfile: "sso-base",
+		Accounts: []aws.Account{
+			{ID: "111111111111", RoleARN: "arn:aws:iam::111111111111:role/triage-ro"},
+			{ID: "222222222222", RoleARN: "arn:aws:iam::222222222222:role/triage-ro"},
+		},
+		ConfigTarget: "/cache/triagent-mcp/p/aws/config",
+		ConfigSource: "/op/aws/config",
+	}, got)
 }
