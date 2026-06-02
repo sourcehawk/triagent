@@ -153,7 +153,7 @@ The operator authenticates normally, for example:
 aws sso login
 ```
 
-An AWS role lives in exactly one account, so a source names a list of `accounts` — one `{account_id, role_arn}` per account the agent may reach — plus the operator's SSO base as `source_profile`. A single-account source is simply a one-entry list; there is no separate single-account shape. You do not pre-create an `~/.aws/config` profile per account: triagent generates one read-only assume-role profile per entry at session start, layering each account's `role_arn` over `source_profile`.
+An AWS role lives in exactly one account, so a source names a list of `accounts` — one `{account_id, role_arn}` per account the agent may reach — plus the operator's SSO base as `source_profile`. A single-account source is simply a one-entry list; there is no separate single-account shape. You do not pre-create an assume-role profile per account: triagent generates one read-only assume-role profile per entry at session start, layering each account's `role_arn` over `source_profile`. It writes these into its own per-profile config, never your `~/.aws/config` (see below).
 
 ```yaml
 cloud:
@@ -277,7 +277,7 @@ cloud:
       - {account_id: "333333333333", role_arn: "arn:aws:iam::333333333333:role/triage-readonly"}
 ```
 
-Triagent writes the generated profiles into a managed block in your `~/.aws/config` (or `$AWS_CONFIG_FILE`) delimited by `# BEGIN triagent-cloud-<alias>` / `# END triagent-cloud-<alias>` markers. The block is rewritten idempotently and never touches profiles you authored yourself or another alias's block; triagent stores no credential, the AWS CLI performs the assume-role from your SSO base.
+Triagent never edits your `~/.aws/config`. It generates a triagent-owned config under `${XDG_CACHE_HOME}/triagent-mcp/<profile>/aws/config`: a copy of your `~/.aws/config` (so `source_profile` resolves) followed by the generated assume-role profiles, pointed at the cloud MCP with `AWS_CONFIG_FILE`. The file is per deployment profile and rewritten idempotently; your own config is only ever read. triagent stores no credential, the AWS CLI performs the assume-role from your SSO base. (Older versions wrote a managed block into `~/.aws/config` directly; the launcher strips any such leftover blocks on start.)
 
 Give every account's role the same read-only permission policy. The trust policy needs care across accounts: each role's `Principal` must be the identity your `source_profile` authenticates as, which for cross-account reach is a *different* account than the role lives in. Point all of them at that one SSO identity (the IAM Identity Center example above); do not copy the single-account `:root` principal into each account, or a role will only trust callers from its own account and the assume-role fails. The same SSO base assuming a read-only role in each account is what lets one login span the set.
 
