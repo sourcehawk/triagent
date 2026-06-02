@@ -41,9 +41,10 @@ type cloudConnection struct {
 	Provider string `json:"provider"`
 	// Each pill renders the same two-line shape — a principal and the reach it
 	// grants — with provider-specific content. gcp: AssumedIdentity (the
-	// impersonated service account) over Projects (the scope.projects allowlist;
-	// empty means unconstrained). aws: SourceProfile (the operator's SSO base)
-	// over Accounts (the account ids the agent may select among).
+	// impersonated service account) over Projects (the source's `projects:`
+	// selectable set; empty means the agent selects among live-listed projects).
+	// aws: SourceProfile (the operator's SSO base) over Accounts (the account
+	// ids the agent may select among).
 	AssumedIdentity string   `json:"assumed_identity,omitempty"`
 	Projects        []string `json:"projects,omitempty"`
 	SourceProfile   string   `json:"source_profile,omitempty"`

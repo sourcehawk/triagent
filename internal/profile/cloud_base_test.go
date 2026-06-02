@@ -29,7 +29,12 @@ func TestApplyBase_InheritsCloudWhenOverrideOmits(t *testing.T) {
 func TestApplyBase_OverrideCloudWins(t *testing.T) {
 	t.Parallel()
 	override := &Profile{
-		Cloud: []CloudSource{{Alias: "child-aws", Provider: "aws", AssumedIdentity: "arn:aws:iam::1:role/ro"}},
+		Cloud: []CloudSource{{
+			Alias:         "child-aws",
+			Provider:      "aws",
+			SourceProfile: "sso",
+			Accounts:      []CloudAccount{{AccountID: "1", RoleARN: "arn:aws:iam::1:role/ro"}},
+		}},
 	}
 	base := &Profile{
 		Cloud: []CloudSource{{Alias: "base-gcp", Provider: "gcp"}},
