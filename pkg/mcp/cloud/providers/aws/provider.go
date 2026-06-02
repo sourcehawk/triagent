@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 
@@ -63,6 +64,12 @@ type Options struct {
 	Alias         string
 	SourceProfile string
 	Accounts      []Account
+	// ConfigTargetPath is the triagent-owned AWS config New generates (the cloud
+	// MCP reads it via AWS_CONFIG_FILE). Required when Accounts is non-empty.
+	ConfigTargetPath string
+	// ConfigSourcePath is the operator's AWS config copied into the target so
+	// source_profile resolves. Defaults to $HOME/.aws/config when empty.
+	ConfigSourcePath string
 }
 
 // Provider is the AWS realization of cloud.Provider. binary is resolved once at
@@ -84,10 +91,12 @@ type Provider struct {
 // cannot reinterpret it against a different working directory.
 //
 // When opts carries accounts, New generates the per-account assume-role profiles
-// into ~/.aws/config (or $AWS_CONFIG_FILE) before returning, so the profiles
-// exist for both the serve subprocess and any launcher-side probe that runs the
-// CLI under AWS_PROFILE. Generation is idempotent: repeated construction (serve
-// and launcher both build the provider) replaces the alias's managed block.
+// into the triagent-owned ConfigTargetPath (a copy of the operator's config plus
+// the managed blocks) before returning, so the profiles exist for both the serve
+// subprocess and any launcher-side probe that runs the CLI under AWS_PROFILE. It
+// never edits the operator's ~/.aws/config. Generation is idempotent: repeated
+// construction (serve and launcher both build the provider) replaces the alias's
+// managed block.
 func New(opts ...Options) (*Provider, error) {
 	bin, err := exec.LookPath("aws")
 	if err != nil && !errors.Is(err, exec.ErrDot) {
@@ -113,15 +122,30 @@ func newWithBinary(binary string, opts ...Options) (*Provider, error) {
 		o = opts[0]
 	}
 	if len(o.Accounts) > 0 {
-		cfg := awsConfigPath()
-		if cfg == "" {
-			return nil, fmt.Errorf("aws: cannot resolve ~/.aws/config (no HOME and no AWS_CONFIG_FILE) to generate account profiles")
+		if o.ConfigTargetPath == "" {
+			return nil, fmt.Errorf("aws: ConfigTargetPath is required to generate account profiles")
 		}
-		if err := writeManagedProfiles(cfg, o.Alias, o.SourceProfile, o.Accounts); err != nil {
+		source := o.ConfigSourcePath
+		if source == "" {
+			source = defaultOperatorConfigPath()
+		}
+		if err := writeManagedProfiles(o.ConfigTargetPath, source, o.Alias, o.SourceProfile, o.Accounts); err != nil {
 			return nil, fmt.Errorf("aws: generate account profiles: %w", err)
 		}
 	}
 	return &Provider{binary: binary, allowlist: &list, alias: o.Alias, accounts: o.Accounts}, nil
+}
+
+// defaultOperatorConfigPath is the operator's standard AWS config location, used
+// as the copy source when ConfigSourcePath is unset. It is $HOME/.aws/config,
+// not $AWS_CONFIG_FILE — under the launcher, AWS_CONFIG_FILE points at the
+// generated target, so reading it as the source would be circular.
+func defaultOperatorConfigPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return ""
+	}
+	return filepath.Join(home, ".aws", "config")
 }
 
 // Name reports the provider identifier.

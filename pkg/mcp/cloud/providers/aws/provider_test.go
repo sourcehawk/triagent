@@ -242,13 +242,19 @@ func TestExpectedIdentityReturnsAccountRoleARN(t *testing.T) {
 	assert.False(t, ok, "an account outside the set yields no expected identity")
 }
 
-// providerWithAccounts builds an aws provider with a generated-profile config
-// pointed at a temp AWS config file so construction's writeManagedProfiles call
-// does not touch the developer's ~/.aws/config.
+// providerWithAccounts builds an aws provider whose generated-profile config is
+// written to a temp target from an empty temp source, so construction's
+// writeManagedProfiles call never touches the developer's ~/.aws/config.
 func providerWithAccounts(t *testing.T, alias string, accs []Account) *Provider {
 	t.Helper()
-	t.Setenv("AWS_CONFIG_FILE", filepath.Join(t.TempDir(), "config"))
-	p, err := newWithBinary("/usr/bin/aws", Options{Alias: alias, SourceProfile: "sso-admin", Accounts: accs})
+	dir := t.TempDir()
+	p, err := newWithBinary("/usr/bin/aws", Options{
+		Alias:            alias,
+		SourceProfile:    "sso-admin",
+		Accounts:         accs,
+		ConfigTargetPath: filepath.Join(dir, "aws", "config"),
+		ConfigSourcePath: filepath.Join(dir, "operator-config"),
+	})
 	require.NoError(t, err)
 	return p
 }
