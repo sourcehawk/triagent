@@ -93,7 +93,11 @@ func (a *apiHandlers) rehydrate(inv *Investigation) error {
 		TelemetryURL:   a.telemetryURL,
 		TraceID:        inv.ID,
 		TelemetryToken: a.telemetryToken,
-		Profile:        inv.Profile,
+		// The live launcher profile, not inv.Profile: a restored session comes
+		// back with a nil Profile, and rehydrate re-derives wiring from current
+		// launcher state anyway. The profile carries the cloud sources, so using
+		// the nil one drops the cloud MCP from the regenerated mcp.json.
+		Profile: a.prof,
 		// Prom config is persisted in metadata.json and restored via
 		// loadInvestigation — pass it through so the rehydrated MCP config
 		// includes the correct prom server entry.
@@ -114,6 +118,7 @@ func (a *apiHandlers) rehydrate(inv *Investigation) error {
 	ioEnabled := ioTok != ""
 
 	inv.mu.Lock()
+	inv.Profile = a.prof // restore the invariant fresh sessions hold (see opts.Profile above)
 	inv.MCPConfigPath = res.MCPConfigPath
 	inv.DocsPrefix = res.DocsPrefix
 	if res.KubeconfigPath != "" {
@@ -135,7 +140,7 @@ func (a *apiHandlers) rehydrate(inv *Investigation) error {
 		LinkedRepos:            linked,
 		LaunchCwd:              inv.LaunchCwd,
 		KubeconfigPath:         inv.KubeconfigPath,
-		Profile:                inv.Profile,
+		Profile:                a.prof,
 	}
 	priorID := inv.ClaudeSessionID
 	inv.mu.Unlock()
