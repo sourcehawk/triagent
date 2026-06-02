@@ -15,7 +15,6 @@ import (
 	"github.com/sourcehawk/triagent/internal/preflight"
 	"github.com/sourcehawk/triagent/internal/profile"
 	"github.com/sourcehawk/triagent/internal/server"
-	"github.com/sourcehawk/triagent/pkg/mcp/cloud/providers/aws"
 	"github.com/sourcehawk/triagent/system"
 	"github.com/spf13/cobra"
 )
@@ -87,15 +86,6 @@ func runStart(cmd *cobra.Command, f *startFlags) error {
 		return fmt.Errorf("resolve profile paths: %w", err)
 	}
 	warnLegacyUnnamespacedDirs(prof.Name, paths)
-
-	// One-time cleanup: older versions wrote triagent's assume-role profiles
-	// into the operator's ~/.aws/config in place. triagent now generates a
-	// separate owned config, so strip any blocks left in the operator's file.
-	if changed, err := aws.StripManagedBlocksFromConfig(operatorAWSConfigPath()); err != nil {
-		log.Warn("could not clean legacy triagent blocks from ~/.aws/config", "err", err)
-	} else if changed {
-		log.Info("removed legacy triagent-managed blocks from your ~/.aws/config (now generated separately)")
-	}
 
 	p, err := newAuthProvider(prof.Auth)
 	if err != nil {
@@ -198,20 +188,6 @@ func runStart(cmd *cobra.Command, f *startFlags) error {
 // them once so the operator can `mv` or `rm` deliberately. Profiles
 // whose paths don't bake in the profile-name segment skip the
 // check — they opted out of the namespacing.
-// operatorAWSConfigPath is the operator's own AWS config the one-time migration
-// cleans and the provider later copies from: $AWS_CONFIG_FILE when the operator
-// set one, else $HOME/.aws/config.
-func operatorAWSConfigPath() string {
-	if v := os.Getenv("AWS_CONFIG_FILE"); v != "" {
-		return v
-	}
-	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
-		return ""
-	}
-	return filepath.Join(home, ".aws", "config")
-}
-
 func warnLegacyUnnamespacedDirs(profileName string, paths profile.Paths) {
 	if profileName == "" {
 		return

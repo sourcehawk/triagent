@@ -85,10 +85,10 @@ func TestWriteManagedProfilesCopiesOperatorConfig(t *testing.T) {
 	assert.Contains(t, got, "sso_start_url = https://example.awsapps.com/start")
 }
 
-// TestWriteManagedProfilesStripsStaleManagedBlocks proves an operator config
-// that still carries an old in-place triagent block (from the pre-owned-file
-// era) does not get that block duplicated into the target copy.
-func TestWriteManagedProfilesStripsStaleManagedBlocks(t *testing.T) {
+// TestWriteManagedProfilesStripsManagedBlocksFromSourceCopy proves that if the
+// operator config happens to contain a triagent-cloud block, the copy does not
+// carry it above the sentinel (which would duplicate the managed region).
+func TestWriteManagedProfilesStripsManagedBlocksFromSourceCopy(t *testing.T) {
 	dir := t.TempDir()
 	src := writeSource(t, dir, "[profile operator-test]\nregion = eu-west-1\n\n"+
 		"# BEGIN triagent-cloud-old\n[profile triagent-cloud-old-1]\nrole_arn = arn:old\nsource_profile = operator-test\n# END triagent-cloud-old\n")
@@ -97,7 +97,7 @@ func TestWriteManagedProfilesStripsStaleManagedBlocks(t *testing.T) {
 		[]Account{{ID: "095352988152", RoleARN: "arn:aws:iam::095352988152:role/triagent-readonly"}}))
 
 	got := readFile(t, target)
-	assert.NotContains(t, got, "triagent-cloud-old", "stale managed block from the operator copy must be stripped")
+	assert.NotContains(t, got, "triagent-cloud-old", "a managed block in the source must not be carried into the copy")
 	assert.Contains(t, got, "[profile triagent-cloud-aws-camunda-095352988152]")
 	assert.Contains(t, got, "[profile operator-test]")
 }

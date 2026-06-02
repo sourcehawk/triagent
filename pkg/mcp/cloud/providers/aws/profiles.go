@@ -109,8 +109,10 @@ func managedRegion(content string) string {
 }
 
 // stripManagedBlocks removes every # BEGIN/# END triagent-cloud-* region from
-// content, so a copy of the operator config never carries triagent's own blocks
-// (e.g. ones an older in-place version wrote into ~/.aws/config).
+// content, so the operator-config copy never carries a managed block into the
+// region above the sentinel — which would duplicate the managed region below it.
+// Operator configs normally have none; this keeps the generated file clean if
+// one is present.
 func stripManagedBlocks(content string) string {
 	lines := strings.Split(content, "\n")
 	out := make([]string, 0, len(lines))

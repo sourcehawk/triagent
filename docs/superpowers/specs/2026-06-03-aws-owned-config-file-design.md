@@ -29,10 +29,6 @@ Copying the whole operator config makes the target self-contained, so `source_pr
 - `mcpconfig` sets `AWS_CONFIG_FILE=<target>` (so the aws CLI the MCP runs reads it) and a new `TRIAGENT_CLOUD_AWS_SOURCE_CONFIG=<operator config>` (the provider copies from it) on the cloud subprocess; the serve command reads them into `Options`.
 - `providers.Options`/`Source` carry the two paths so `ProbeSource` threads them on the launcher side.
 
-### Migration
-
-On launcher start, strip any `# BEGIN/END triagent-cloud-*` blocks triagent previously wrote into the operator's `~/.aws/config`, cleaning up cruft (including orphaned alias blocks) from the old in-place approach.
-
 ### Freshness
 
 The copy is a snapshot taken at generation time (launcher start / probe). SSO *re-login* is picked up (shared token cache); operator config *edits* need a relaunch. This matches today's behavior.
