@@ -222,14 +222,9 @@ function CloudConnectionsSection({ cloud }: { cloud: CloudConnection[] }) {
         cloud
       </div>
       <p className="mb-2 text-xs text-zinc-500">
-        Read-only cloud identities pinned in the deployment profile&rsquo;s{" "}
-        <code className="font-mono text-zinc-400">cloud:</code> block, not
-        entered here. The service-account impersonation (GCP) or assume-role
-        profile (AWS) is configured there; see the Cloud providers docs page for
-        setup. Fix a stale credential through your own cloud login (
-        <code className="font-mono text-zinc-400">gcloud auth login</code>,{" "}
-        <code className="font-mono text-zinc-400">aws sso login</code>) before
-        starting a session.
+        Read-only identities pinned in the profile&rsquo;s{" "}
+        <code className="font-mono text-zinc-400">cloud:</code> block, not edited
+        here. See the Cloud providers docs for setup.
       </p>
       <div className="space-y-2">
         {cloud.map((c) => (
@@ -288,8 +283,10 @@ function CloudPill({ conn }: { conn: CloudConnection }) {
         )}
       </div>
       <CloudPillBody conn={conn} />
-      {!conn.valid && conn.hint && (
-        <div className="mt-1 text-xs text-amber-200/70">{conn.hint}</div>
+      {!conn.valid && (
+        <div className="mt-1 text-xs text-amber-200/70">
+          {conn.hint ?? reauthHint(conn.provider)}
+        </div>
       )}
     </div>
   );
@@ -332,6 +329,14 @@ function CloudPillBody({ conn }: { conn: CloudConnection }) {
 
 function countLabel(n: number, noun: string): string {
   return `${n} ${noun}${n === 1 ? "" : "s"}`;
+}
+
+// reauthHint is the operator's own re-login command for a stale cloud identity,
+// shown on an invalid pill when the probe did not supply a more specific hint.
+function reauthHint(provider: string): string {
+  if (provider === "gcp") return "Re-authenticate with: gcloud auth login";
+  if (provider === "aws") return "Re-authenticate with: aws sso login";
+  return "Re-authenticate through your own cloud login";
 }
 
 type ConnectionCardProps = {
