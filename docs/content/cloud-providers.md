@@ -48,19 +48,33 @@ gcloud auth login
 
 The deployment grants the operator `roles/iam.serviceAccountTokenCreator` on a read-only service account. This is a one-time admin step, and the price of not storing a secret: the operator's own login plus the impersonated service account gives a clean audit trail (human plus role).
 
-That binding lets the operator *act as* the service account; it is separate from what the service account itself may *read*. The service account needs read-only access on each project in the source's scope. The minimal set of predefined roles covering the default tool surface (inventory, reachability, IAM read, GKE, logs, audit):
+That binding lets the operator *act as* the service account; it is separate from what the service account itself may *read*. Create the account once, then grant it read-only access on each project in the source's scope.
+
+The account lives in a host project: the one encoded in its email, `…@<host-project>.iam.gserviceaccount.com`. The host project owns the account resource and is not necessarily a project the agent reads. The projects the agent reads are the ones you bind roles on, which can be the host project, a different set, or both.
 
 ```sh
+# Create the read-only service account once, in a host project of your choice.
+# Here the host project is `prod`, giving triage-readonly@prod.iam.gserviceaccount.com.
+gcloud iam service-accounts create triage-readonly \
+  --project=prod \
+  --display-name="Triagent read-only cloud context"
+
 SA=triage-readonly@prod.iam.gserviceaccount.com
-for role in \
-  roles/browser \
-  roles/compute.viewer \
-  roles/container.viewer \
-  roles/iam.securityReviewer \
-  roles/logging.viewer \
-  roles/monitoring.viewer; do
-  gcloud projects add-iam-policy-binding prod-platform \
-    --member="serviceAccount:$SA" --role="$role"
+
+# Grant the minimal read-only roles covering the default tool surface
+# (inventory, reachability, IAM read, GKE, logs, audit) on EACH project in the
+# source's scope. These target projects are independent of the host project above.
+for project in prod-platform prod-data; do
+  for role in \
+    roles/browser \
+    roles/compute.viewer \
+    roles/container.viewer \
+    roles/iam.securityReviewer \
+    roles/logging.viewer \
+    roles/monitoring.viewer; do
+    gcloud projects add-iam-policy-binding "$project" \
+      --member="serviceAccount:$SA" --role="$role"
+  done
 done
 ```
 
