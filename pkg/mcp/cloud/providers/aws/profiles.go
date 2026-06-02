@@ -76,6 +76,13 @@ func writeManagedProfiles(configPath, alias, sourceProfile string, accounts []Ac
 		return fmt.Errorf("aws: read config %s: %w", configPath, err)
 	}
 	merged := replaceBlock(string(existing), begin, end, block.String())
+	// Fail closed: never land content the aws CLI cannot parse. A single stray
+	// line breaks every profile in the file (including the operator's own base
+	// credentials), so refuse rather than write — surfacing the offending line
+	// instead of a downstream "sts get-caller-identity failed".
+	if bad := firstInvalidConfigLine(merged); bad != "" {
+		return fmt.Errorf("aws: refusing to write %s: line %q is not valid config (expected a [section], comment, or key=value); fix it and retry", configPath, bad)
+	}
 	return atomicWrite(configPath, []byte(merged))
 }
 
@@ -123,6 +130,26 @@ func replaceBlock(content, begin, end, block string) string {
 	tail := content[tailStart:]
 	tail = strings.TrimPrefix(tail, "\n")
 	return content[:bIdx] + block + tail
+}
+
+// firstInvalidConfigLine returns the first structurally-invalid line in an
+// ~/.aws/config body, or "" when every line is valid. Used to fail closed
+// before writing: the aws CLI rejects the whole file if any line is not blank,
+// a comment, a [section] header, or a key=value (which also covers the indented
+// sub-keys AWS uses for nested settings).
+func firstInvalidConfigLine(content string) string {
+	for _, ln := range strings.Split(content, "\n") {
+		t := strings.TrimSpace(ln)
+		switch {
+		case t == "":
+		case strings.HasPrefix(t, "#"), strings.HasPrefix(t, ";"):
+		case strings.HasPrefix(t, "[") && strings.HasSuffix(t, "]"):
+		case strings.Contains(t, "="):
+		default:
+			return t
+		}
+	}
+	return ""
 }
 
 // atomicWrite writes body to dst via a sibling tmp file then renames it into

@@ -92,6 +92,28 @@ func TestWriteManagedProfilesTwoAliases(t *testing.T) {
 	assert.Equal(t, 1, strings.Count(got, "# BEGIN triagent-cloud-staging-aws"))
 }
 
+// TestWriteManagedProfilesRefusesUnparseableConfig pins the fail-closed
+// guarantee: triagent never lands content in ~/.aws/config that the aws CLI
+// cannot parse. A single stray fragment outside any managed block (the
+// corruption seen in the field) breaks every profile in the file, including the
+// operator's own base credentials, so the write is refused and the file is left
+// byte-for-byte untouched.
+func TestWriteManagedProfilesRefusesUnparseableConfig(t *testing.T) {
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "config")
+	original := "[profile operator-test]\nregion = eu-west-1\n\n-test\n"
+	require.NoError(t, os.WriteFile(cfg, []byte(original), 0o600))
+
+	err := writeManagedProfiles(cfg, "aws-camunda", "operator-test",
+		[]Account{{ID: "095352988152", RoleARN: "arn:aws:iam::095352988152:role/r"}})
+	require.Error(t, err, "must refuse to write when the merged result is unparseable")
+	assert.Contains(t, err.Error(), "-test", "error should name the offending line")
+
+	b, err := os.ReadFile(cfg)
+	require.NoError(t, err)
+	assert.Equal(t, original, string(b), "config must be untouched when the write is refused")
+}
+
 // TestWriteManagedProfilesConcurrentAliasesSurvive pins that concurrent
 // generation for different aliases into the same config file does not drop a
 // block: the read-modify-write is serialized, so every alias's managed section
