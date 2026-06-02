@@ -231,6 +231,35 @@ Scope the `Principal` down from the account root where you can. With AWS IAM Ide
 
 Here `555500000000` is the account your SSO login resolves into, which need not be the account the role lives in. That distinction is what makes multi-account work, below. For cross-account trust, harden it further with a `Condition` rather than relying on the principal ARN alone: an `sts:ExternalId` agreed between the accounts, or an `aws:PrincipalOrgID` restricting the trust to your organization, narrows who may assume the role beyond naming the permission set. If you would rather not curate the permission policy, the AWS-managed `ReadOnlyAccess` policy is the broader, simpler alternative. Action names are current as of writing; verify against AWS's service-authorization reference, which evolves.
 
+Save the permission policy as `permission-policy.json` and your chosen trust policy as `trust-policy.json`, then create the role, attach the read-only permissions, and confirm you can assume it:
+
+```sh
+ROLE=triage-readonly
+ACCOUNT=123456789012
+
+# Create the role with its trust policy (who may assume it).
+aws iam create-role \
+  --role-name "$ROLE" \
+  --assume-role-policy-document file://trust-policy.json
+
+# Attach the least-privilege read-only permissions inline.
+aws iam put-role-policy \
+  --role-name "$ROLE" \
+  --policy-name TriageReadOnly \
+  --policy-document file://permission-policy.json
+# Or, instead of the inline policy, attach the AWS-managed alternative:
+# aws iam attach-role-policy --role-name "$ROLE" \
+#   --policy-arn arn:aws:iam::aws:policy/ReadOnlyAccess
+
+# Verify your SSO base can assume it: prints the assumed-role ARN, not an error.
+aws sts assume-role \
+  --role-arn "arn:aws:iam::$ACCOUNT:role/$ROLE" \
+  --role-session-name triage-verify \
+  --query AssumedRoleUser.Arn --output text
+```
+
+For several accounts, repeat the create-and-attach per account, each role trusting the same SSO identity (see [Spanning several AWS accounts](#spanning-several-aws-accounts)).
+
 The whoami probe resolves the active caller with `aws sts get-caller-identity`. It reports valid when the caller is an assumed-role ARN whose underlying role matches the active account's `role_arn`. A plain user or root ARN means the assume-role pin did not take effect and base credentials leaked through, so the source degrades.
 
 ### Spanning several AWS accounts
