@@ -175,7 +175,7 @@ cd frontend && npm run typecheck   # frontend types
 `make build` rebuilds the embedded frontend bundle and both binaries. For the UI dev loop (no Go rebuild for frontend changes):
 
 ```sh
-go run . start                       # terminal 1
+go run ./cmd/triagent start          # terminal 1
 cd frontend && npm run dev           # terminal 2, proxies /api/* to :8080
 ```
 
