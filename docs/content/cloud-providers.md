@@ -82,7 +82,7 @@ gcloud auth login
 
 The deployment grants the operator `roles/iam.serviceAccountTokenCreator` on a read-only service account. This is a one-time admin step, and the price of not storing a secret: the operator's own login plus the impersonated service account gives a clean audit trail (human plus role).
 
-That binding lets the operator *act as* the service account; it is separate from what the service account itself may *read*. Create the account once, then grant it read-only access on each project in the source's scope.
+That binding lets the operator *act as* the service account; it is separate from what the service account itself may *read*. Create the account, grant yourself impersonation on it, then grant it read-only access on each project in the source's scope.
 
 The account lives in a host project: the one encoded in its email, `…@<host-project>.iam.gserviceaccount.com`. The host project owns the account resource and is not necessarily a project the agent reads. The projects the agent reads are the ones you bind roles on, which can be the host project, a different set, or both.
 
@@ -94,10 +94,22 @@ gcloud iam service-accounts create triage-readonly \
   --display-name="Triagent read-only cloud context"
 
 SA=triage-readonly@prod.iam.gserviceaccount.com
+OPERATOR=you@example.com   # the human who runs Triagent
+
+# Let the operator impersonate the account. This binding is ON THE SERVICE
+# ACCOUNT resource (note: `iam service-accounts add-iam-policy-binding`, not
+# `projects ...`), and is what `gcloud auth login` plus the pin below exercise.
+# Without it, impersonation fails with PERMISSION_DENIED on
+# iam.serviceAccounts.getAccessToken. Needs serviceAccountAdmin/owner to run.
+gcloud iam service-accounts add-iam-policy-binding "$SA" \
+  --member="user:$OPERATOR" \
+  --role="roles/iam.serviceAccountTokenCreator"
 
 # Grant the minimal read-only roles covering the default tool surface
 # (inventory, reachability, IAM read, GKE, logs, audit) on EACH project in the
-# source's scope. These target projects are independent of the host project above.
+# source's scope. These bindings are ON EACH PROJECT (`projects ...`), not on
+# the service account, and the target projects are independent of the host
+# project above.
 for project in prod-platform prod-data; do
   for role in \
     roles/browser \
@@ -110,6 +122,9 @@ for project in prod-platform prod-data; do
       --member="serviceAccount:$SA" --role="$role"
   done
 done
+
+# Verify the operator can impersonate the account: prints a token, not an error.
+gcloud auth print-access-token --impersonate-service-account="$SA"
 ```
 
 `roles/browser` lists and reads projects, `compute.viewer` and `container.viewer` cover networking and GKE, `iam.securityReviewer` reads IAM policies and service accounts, and the logging and monitoring viewers cover the logs and audit axes. If you would rather not curate, the single basic role `roles/viewer` is read-only across all of these and is the simpler, broader alternative. Role names are current as of writing; verify against GCP's IAM reference, which evolves.
