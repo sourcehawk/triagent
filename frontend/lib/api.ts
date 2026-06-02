@@ -114,6 +114,15 @@ export type CloudConnection = {
   hint?: string;
 };
 
+// CloudMCP is one cloud-context MCP wired into a session: its wire alias
+// (triagent-cloud-<source alias>, matching mcp__<alias>__<tool> in tool names)
+// and the provider, so the status bar can brand and colour the chip. Derived
+// server-side from the profile's cloud sources, identical across sessions.
+export type CloudMCP = {
+  alias: string;
+  provider: string;
+};
+
 export type SlackChannel = {
   id: string;
   name: string;
@@ -470,6 +479,9 @@ export type Investigation = {
   slackMCPEnabled?: boolean;
   incidentioMCPEnabled?: boolean;
   linkedRepos?: LinkedRepo[];
+  // cloudMcps are the cloud-context MCP servers wired into this session,
+  // derived from the profile's cloud sources. Absent when none are configured.
+  cloudMcps?: CloudMCP[];
   createdAt: string;
   started: boolean;
   streaming: boolean;

@@ -4,7 +4,7 @@
 
 import type { Investigation, MCPCallStats, MCPProbeResult, ToolEntry } from "./api";
 
-export type MCPCategory = "core" | "metrics" | "docs" | "git" | "wiki" | "slack" | "incidentio";
+export type MCPCategory = "core" | "metrics" | "docs" | "git" | "wiki" | "slack" | "incidentio" | "cloud";
 
 export type ActiveMCP = {
   alias: string; // wire alias (matches mcp__<alias>__<tool> in tool names)
@@ -92,6 +92,14 @@ export function activeMCPs(inv: Investigation): ActiveMCP[] {
     });
   }
 
+  for (const c of inv.cloudMcps ?? []) {
+    out.push({
+      alias: c.alias,
+      category: "cloud",
+      description: `Read-only ${c.provider.toUpperCase()} cloud context — list_inventory, run_cli (allowlisted reads), set_active_target, session_status.`,
+    });
+  }
+
   return out;
 }
 
@@ -114,6 +122,8 @@ export function chipClasses(c: MCPCategory): string {
       return "border-pink-500/70 bg-pink-500/20 text-pink-300";
     case "incidentio":
       return "border-rose-900/60 bg-rose-950/40 text-rose-300";
+    case "cloud":
+      return "border-orange-900/60 bg-orange-950/40 text-orange-300";
   }
 }
 
