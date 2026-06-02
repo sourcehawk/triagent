@@ -98,7 +98,7 @@ export function MCPStatusBar({ investigation }: Props) {
           )}
         </span>
       </div>
-      <div className="flex max-h-24 flex-wrap gap-1 overflow-y-auto pr-1">
+      <div className="flex max-h-32 flex-wrap gap-1 overflow-y-auto pr-1">
         {mcps.map((m) => {
           const stats = health[m.alias];
           const probe = probes[m.alias];
