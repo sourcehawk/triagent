@@ -15,6 +15,7 @@ import (
 	"github.com/sourcehawk/triagent/internal/auto"
 	"github.com/sourcehawk/triagent/internal/claude"
 	"github.com/sourcehawk/triagent/internal/editor"
+	"github.com/sourcehawk/triagent/internal/preflight"
 	"github.com/sourcehawk/triagent/internal/profile"
 	"github.com/sourcehawk/triagent/internal/promforward"
 	"github.com/sourcehawk/triagent/internal/repos"
@@ -272,6 +273,15 @@ type autoBackendish interface {
 	SessionID() string
 }
 
+// CloudMCP is one cloud-context MCP wired into a session, keyed by its wire
+// alias (triagent-cloud-<source alias>, the form the status bar's health/probe
+// maps use) and tagged with its provider so the frontend can brand the chip.
+// Derived from the profile's cloud sources, which are global to the deployment.
+type CloudMCP struct {
+	Alias    string `json:"alias"`
+	Provider string `json:"provider"`
+}
+
 // InvestigationDTO is the JSON shape returned by /api/investigations and
 // /api/preflight. Snapshotted under the lock so reads are race-free.
 type InvestigationDTO struct {
@@ -289,6 +299,10 @@ type InvestigationDTO struct {
 	SlackMCPEnabled      bool               `json:"slackMCPEnabled,omitempty"`
 	IncidentioMCPEnabled bool               `json:"incidentioMCPEnabled,omitempty"`
 	LinkedRepos          []repos.LinkedRepo `json:"linkedRepos,omitempty"`
+	// CloudMCPs are the cloud-context MCP servers wired into this session,
+	// derived from the profile's cloud sources. Empty when no cloud sources are
+	// configured, or when the session carries no profile (e.g. an import).
+	CloudMCPs []CloudMCP `json:"cloudMcps,omitempty"`
 	CreatedAt       time.Time          `json:"createdAt"`
 	Started         bool               `json:"started"`
 	Streaming       bool               `json:"streaming"`
@@ -384,6 +398,7 @@ func (i *Investigation) Snapshot() InvestigationDTO {
 		SlackMCPEnabled:      i.SlackMCPEnabled,
 		IncidentioMCPEnabled: i.IncidentioMCPEnabled,
 		LinkedRepos:          i.LinkedRepos,
+		CloudMCPs:            cloudMCPsForProfile(i.Profile),
 		CreatedAt:       i.CreatedAt,
 		Started:         i.started,
 		Streaming:       i.streaming,
@@ -423,6 +438,24 @@ func (i *Investigation) Snapshot() InvestigationDTO {
 		Usage:   snapshotUsage(i.totalUsage),
 		CostUSD: i.totalCostUSD,
 	}
+}
+
+// cloudMCPsForProfile derives a session's cloud-context MCP wiring from its
+// profile's cloud sources. Each source attaches a triagent-cloud-<alias> server
+// to every investigation, so the set is identical for every session under one
+// profile. Returns nil for a profile without cloud sources, or no profile.
+func cloudMCPsForProfile(p *profile.Profile) []CloudMCP {
+	if p == nil || len(p.Cloud) == 0 {
+		return nil
+	}
+	out := make([]CloudMCP, 0, len(p.Cloud))
+	for _, src := range p.Cloud {
+		out = append(out, CloudMCP{
+			Alias:    preflight.MCPAliasCloudPrefix + src.Alias,
+			Provider: src.Provider,
+		})
+	}
+	return out
 }
 
 // IsArchived reports whether the investigation has been archived.
