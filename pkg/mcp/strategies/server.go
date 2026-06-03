@@ -32,6 +32,7 @@ import (
 //   - UserPlaybooksDir is an optional directory the launcher writes
 //     operator-customised playbooks to; entries there override or
 //     extend the plugin set (but cannot touch the system set).
+//
 // DispatchModels is the dispatch-relevant subset of profile.Models, threaded
 // in by the launcher. Defined here (not imported from internal/profile) to
 // keep the MCP package layering clean.
@@ -273,6 +274,12 @@ type DispatchedResult struct {
 	TimedOut   bool   `json:"timed_out,omitempty"`
 	ExitCode   int    `json:"exit_code,omitempty"`
 	StderrTail string `json:"stderr_tail,omitempty"`
+	// ProposalOutcome is the verified terminal a proposal dispatch reached:
+	// "submitted" (called *_proposal_draft), "declined" (called
+	// decline_proposal), or "none" (ended without a terminal even after the
+	// force-retries). Empty for non-proposal dispatches. The master reads
+	// this so a missing proposal cannot be confabulated as a success.
+	ProposalOutcome string `json:"proposal_outcome,omitempty"`
 }
 
 type walkPlaybookOut struct {
@@ -288,15 +295,22 @@ func (s *Server) walkPlaybook(ctx context.Context, req *mcp.CallToolRequest, in 
 		return errorResult(fmt.Sprintf("unknown playbook_id %q; call list_playbooks for valid ids", in.PlaybookID)), walkPlaybookOut{}, nil
 	}
 	if pb.Dispatch == DispatchSubagent {
-		res, err := s.runDispatch(ctx, pb, in.ParentSessionID, in.Notes, in.OperatorRefinement)
+		res, outcome, err := s.runDispatch(ctx, pb, in.ParentSessionID, in.Notes, in.OperatorRefinement)
 		if err != nil {
 			return errorResult(fmt.Sprintf("dispatch %q: %v", pb.ID, err)), walkPlaybookOut{}, nil
 		}
+		summary := res.Summary
+		if outcome == "none" {
+			// Make the missing proposal impossible to read as success, even
+			// for a master that ignores the structured ProposalOutcome.
+			summary = "NO PROPOSAL WAS SUBMITTED — the sub-agent ended without calling a terminal tool (a *_proposal_draft or decline_proposal). Do not report this as a successful proposal.\n\n" + summary
+		}
 		return nil, walkPlaybookOut{Dispatched: &DispatchedResult{
-			Summary:    res.Summary,
-			TimedOut:   res.TimedOut,
-			ExitCode:   res.ExitCode,
-			StderrTail: res.StderrTail,
+			Summary:         summary,
+			TimedOut:        res.TimedOut,
+			ExitCode:        res.ExitCode,
+			StderrTail:      res.StderrTail,
+			ProposalOutcome: outcome,
 		}}, nil
 	}
 	// cluster_id is required only for investigation-type playbooks (they

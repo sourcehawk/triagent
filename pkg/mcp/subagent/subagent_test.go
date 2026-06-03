@@ -338,3 +338,83 @@ func TestPostNestedToolUse_ForwardsBareToolName(t *testing.T) {
 		"ToolName must be the bare MCP tool name; the chat-side ProposalCard match is by exact name")
 	require.Equal(t, map[string]any{"slug": "x"}, ev.Input)
 }
+
+// TestRelaySubEvents_TracksRequiredTerminalTools verifies the dispatch
+// verification primitive: relaySubEvents reports which required terminal
+// tools the sub-agent called with a SUCCESSFUL (non-error) result, by
+// correlating tool_use ids with their tool_result blocks. A tool that
+// errored doesn't count as a completed terminal.
+func TestRelaySubEvents_TracksRequiredTerminalTools(t *testing.T) {
+	t.Parallel()
+	const submit = "mcp__triagent-strategies__playbook_proposal_draft"
+	const decline = "mcp__triagent-strategies__decline_proposal"
+	required := map[string]struct{}{submit: {}, decline: {}}
+
+	cases := []struct {
+		name   string
+		stream string
+		want   map[string]bool // tool -> successfully called
+	}{
+		{
+			name: "successful terminal call counts",
+			stream: line(map[string]any{"type": "assistant", "message": msg(toolUse(submit, "tu1"))}) +
+				line(map[string]any{"type": "user", "message": msg(toolResult("tu1", false))}),
+			want: map[string]bool{submit: true},
+		},
+		{
+			name: "errored terminal call does not count",
+			stream: line(map[string]any{"type": "assistant", "message": msg(toolUse(submit, "tu1"))}) +
+				line(map[string]any{"type": "user", "message": msg(toolResult("tu1", true))}),
+			want: map[string]bool{},
+		},
+		{
+			name: "decline terminal counts",
+			stream: line(map[string]any{"type": "assistant", "message": msg(toolUse(decline, "tu9"))}) +
+				line(map[string]any{"type": "user", "message": msg(toolResult("tu9", false))}),
+			want: map[string]bool{decline: true},
+		},
+		{
+			name:   "non-terminal tool is ignored",
+			stream: line(map[string]any{"type": "assistant", "message": msg(toolUse("Bash", "tu2"))}) + line(map[string]any{"type": "user", "message": msg(toolResult("tu2", false))}),
+			want:   map[string]bool{},
+		},
+		{
+			name:   "no terminal call leaves the set empty",
+			stream: line(map[string]any{"type": "assistant", "message": msg(textBlock("just talking"))}),
+			want:   map[string]bool{},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			res, err := relaySubEvents(strings.NewReader(tc.stream), "", required)
+			require.NoError(t, err)
+			for tool, wantCalled := range tc.want {
+				require.Equal(t, wantCalled, res.terminalsCalled[tool], "terminal %q", tool)
+			}
+			// Nothing outside the wanted set is marked called.
+			for tool, got := range res.terminalsCalled {
+				if got && !tc.want[tool] {
+					t.Errorf("unexpected terminal marked called: %q", tool)
+				}
+			}
+		})
+	}
+}
+
+func line(v map[string]any) string {
+	b, _ := json.Marshal(v)
+	return string(b) + "\n"
+}
+func msg(blocks ...map[string]any) map[string]any {
+	return map[string]any{"content": blocks}
+}
+func toolUse(name, id string) map[string]any {
+	return map[string]any{"type": "tool_use", "name": name, "id": id}
+}
+func toolResult(toolUseID string, isError bool) map[string]any {
+	return map[string]any{"type": "tool_result", "tool_use_id": toolUseID, "is_error": isError}
+}
+func textBlock(text string) map[string]any {
+	return map[string]any{"type": "text", "text": text}
+}

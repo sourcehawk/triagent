@@ -22,6 +22,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -82,6 +83,13 @@ type Options struct {
 	// do their work. Empty (default) keeps the isolation behaviour for
 	// existing callers (git, wiki helper sub-agents, citation runner).
 	MCPConfigPath string
+	// RequiredTerminalTools is the set of wire tool names that count as a
+	// valid terminal for this run. When non-empty, Run records which of
+	// them the sub-agent invoked with a successful result on
+	// Result.TerminalToolsCalled, so a caller (the strategies dispatch
+	// path) can tell a sub-agent that actually finished from one that quit
+	// without reaching a terminal. Empty (default) disables the tracking.
+	RequiredTerminalTools []string
 }
 
 // Result is the structured outcome of one Run call.
@@ -91,6 +99,10 @@ type Result struct {
 	ExitCode   int    `json:"exit_code,omitempty"`
 	TimedOut   bool   `json:"timed_out,omitempty"`
 	StderrTail string `json:"stderr_tail,omitempty"`
+	// TerminalToolsCalled lists the RequiredTerminalTools the sub-agent
+	// invoked with a non-error result, in sorted order. Empty when none
+	// fired or when no terminal set was requested.
+	TerminalToolsCalled []string `json:"terminal_tools_called,omitempty"`
 	// SessionID is the claude conversation id extracted from the first
 	// stream-json system event. Callers thread it back as
 	// Options.ResumeSessionID on subsequent runs to keep the same
@@ -162,16 +174,17 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		stderrCh <- string(b)
 	}()
 
-	finalText, sessionID, parseErr := relaySubEvents(stdout, opts.ParentToolID)
+	relay, parseErr := relaySubEvents(stdout, opts.ParentToolID, terminalSet(opts.RequiredTerminalTools))
 
 	waitErr := cmd.Wait()
 	stderrTail := trimTo(<-stderrCh, 800)
 
 	res := Result{
-		Summary:    finalText,
-		PromptSent: opts.Prompt,
-		StderrTail: stderrTail,
-		SessionID:  sessionID,
+		Summary:             relay.finalText,
+		PromptSent:          opts.Prompt,
+		StderrTail:          stderrTail,
+		SessionID:           relay.sessionID,
+		TerminalToolsCalled: sortedCalled(relay.terminalsCalled),
 	}
 	if cmd.ProcessState != nil {
 		res.ExitCode = cmd.ProcessState.ExitCode()
@@ -188,13 +201,56 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	return res, nil
 }
 
+// relayResult is what relaySubEvents returns: the aggregated final text, the
+// captured session id, and which of the requested terminal tools the sub-agent
+// invoked successfully.
+type relayResult struct {
+	finalText       string
+	sessionID       string
+	terminalsCalled map[string]bool
+}
+
+// terminalSet builds a lookup set from the wire tool names, or nil when none
+// are requested.
+func terminalSet(tools []string) map[string]struct{} {
+	if len(tools) == 0 {
+		return nil
+	}
+	out := make(map[string]struct{}, len(tools))
+	for _, t := range tools {
+		out[t] = struct{}{}
+	}
+	return out
+}
+
+// sortedCalled flattens the called-terminals set to a sorted slice for a
+// stable Result.TerminalToolsCalled.
+func sortedCalled(called map[string]bool) []string {
+	if len(called) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(called))
+	for name, ok := range called {
+		if ok {
+			out = append(out, name)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	sort.Strings(out)
+	return out
+}
+
 // relaySubEvents reads stream-json lines from claude's stdout and forwards
 // each event as a nested telemetry pair (start+end) attributed to
 // parentToolID. Returns the final assistant/result text aggregated across
-// `result` and `assistant` events, plus the session_id from the first
-// system event (used by callers to thread session resumption across
-// retries).
-func relaySubEvents(r io.Reader, parentToolID string) (string, string, error) {
+// `result` and `assistant` events, the session_id from the first system event
+// (used by callers to thread session resumption across retries), and — for any
+// tool in `required` — whether the sub-agent invoked it with a non-error
+// result (a completed terminal), by correlating tool_use ids with their
+// tool_result blocks.
+func relaySubEvents(r io.Reader, parentToolID string, required map[string]struct{}) (relayResult, error) {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
 	parser := newStatusMarkerParser(parentToolID, func(parentID, msg string, _ time.Time) {
@@ -202,6 +258,11 @@ func relaySubEvents(r io.Reader, parentToolID string) (string, string, error) {
 	})
 	var finalText strings.Builder
 	var sessionID string
+	// pendingTerminalIDs maps a required terminal tool's tool_use id to its
+	// name, set when the tool_use is seen and consumed when its tool_result
+	// arrives. terminalsCalled records the successful ones.
+	pendingTerminalIDs := map[string]string{}
+	terminalsCalled := map[string]bool{}
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		if len(line) == 0 {
@@ -239,6 +300,9 @@ func relaySubEvents(r io.Reader, parentToolID string) (string, string, error) {
 			for _, block := range ev.Message.Content {
 				if block.Type == "tool_use" {
 					postNestedToolUse(parentToolID, block)
+					if _, ok := required[block.Name]; ok && block.ID != "" {
+						pendingTerminalIDs[block.ID] = block.Name
+					}
 				}
 			}
 		case "user":
@@ -247,6 +311,9 @@ func relaySubEvents(r io.Reader, parentToolID string) (string, string, error) {
 			for _, block := range ev.Message.Content {
 				if block.Type == "tool_result" {
 					postNestedToolResult(parentToolID, block)
+					if name, ok := pendingTerminalIDs[block.ToolUseID]; ok && !block.IsError {
+						terminalsCalled[name] = true
+					}
 				}
 			}
 		case "result":
@@ -262,9 +329,9 @@ func relaySubEvents(r io.Reader, parentToolID string) (string, string, error) {
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return finalText.String(), sessionID, err
+		return relayResult{finalText: finalText.String(), sessionID: sessionID, terminalsCalled: terminalsCalled}, err
 	}
-	return strings.TrimSpace(finalText.String()), sessionID, nil
+	return relayResult{finalText: strings.TrimSpace(finalText.String()), sessionID: sessionID, terminalsCalled: terminalsCalled}, nil
 }
 
 // streamEvent is the bare-minimum decoder of claude --output-format

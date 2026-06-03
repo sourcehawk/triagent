@@ -62,9 +62,55 @@ func dispatchProposalToolFor(playbookID string) string {
 	}
 }
 
-// runDispatch executes a dispatch-mode playbook as one sub-agent run and
-// returns a Result the caller can stuff into walkPlaybookOut.Dispatched.
-func (s *Server) runDispatch(ctx context.Context, pb *Playbook, parentSessionID, notes, operatorRefinement string) (subagent.Result, error) {
+// maxForceDispatchRetries bounds how many times runDispatch resumes a
+// proposal sub-agent that ended without reaching a terminal, forcing it to
+// call playbook_proposal_draft / propose_wiki_draft or decline_proposal.
+const maxForceDispatchRetries = 2
+
+// dispatchTerminalToolsFor returns the wire tool names that count as a valid
+// terminal for a proposal flow — submit first, decline second — or nil for a
+// non-proposal dispatch (no verification). The order is load-bearing:
+// classifyProposalOutcome reads index 0 as the submit tool.
+func dispatchTerminalToolsFor(playbookID string) []string {
+	switch playbookID {
+	case "playbook_proposal":
+		return []string{"mcp__triagent-strategies__playbook_proposal_draft", "mcp__triagent-strategies__decline_proposal"}
+	case "wiki_proposal":
+		return []string{"mcp__triagent-wiki__propose_wiki_draft", "mcp__triagent-strategies__decline_proposal"}
+	default:
+		return nil
+	}
+}
+
+// classifyProposalOutcome maps the terminals the sub-agent actually called to
+// submitted | declined | none. terminals is [submit, decline] from
+// dispatchTerminalToolsFor.
+func classifyProposalOutcome(terminals, called []string) string {
+	calledSet := make(map[string]struct{}, len(called))
+	for _, c := range called {
+		calledSet[c] = struct{}{}
+	}
+	if _, ok := calledSet[terminals[0]]; ok {
+		return "submitted"
+	}
+	if _, ok := calledSet[terminals[1]]; ok {
+		return "declined"
+	}
+	return "none"
+}
+
+// forceTerminalPrompt is the follow-up sent when a proposal sub-agent ends
+// without a terminal — a short, unambiguous instruction to finish properly.
+func forceTerminalPrompt(playbookID string) string {
+	return fmt.Sprintf("You ended your last turn without reaching a terminal. You MUST now call either `%s` to submit the draft you prepared, or `decline_proposal` with a one-line reason if you are deliberately not proposing. Call the tool now — do not reply with prose.", dispatchProposalToolFor(playbookID))
+}
+
+// runDispatch executes a dispatch-mode playbook as a sub-agent run. For a
+// proposal flow it verifies a terminal tool actually fired and, if not,
+// resumes the same conversation to force one (bounded by
+// maxForceDispatchRetries). Returns the final Result, the classified proposal
+// outcome ("" for non-proposal dispatches), and any error.
+func (s *Server) runDispatch(ctx context.Context, pb *Playbook, parentSessionID, notes, operatorRefinement string) (subagent.Result, string, error) {
 	var (
 		findings map[string]any
 		summary  string
@@ -90,14 +136,37 @@ func (s *Server) runDispatch(ctx context.Context, pb *Playbook, parentSessionID,
 		ProposalTool:       dispatchProposalToolFor(pb.ID),
 	})
 	if s.subAgentRunner == nil {
-		return subagent.Result{}, fmt.Errorf("dispatch %q: subagent runner not configured", pb.ID)
+		return subagent.Result{}, "", fmt.Errorf("dispatch %q: subagent runner not configured", pb.ID)
 	}
-	return s.subAgentRunner(ctx, subagent.Options{
-		AllowedTools:  dispatchAllowedToolsFor(pb.ID),
-		Prompt:        prompt,
-		Model:         s.models.Subagent,
-		MCPConfigPath: s.mcpConfigPath,
-		ParentToolID:  telemetry.CurrentToolID(ctx),
-		Timeout:       dispatchTimeoutFor(pb.ID),
-	})
+	terminals := dispatchTerminalToolsFor(pb.ID)
+	baseOpts := subagent.Options{
+		AllowedTools:          dispatchAllowedToolsFor(pb.ID),
+		Prompt:                prompt,
+		Model:                 s.models.Subagent,
+		MCPConfigPath:         s.mcpConfigPath,
+		ParentToolID:          telemetry.CurrentToolID(ctx),
+		Timeout:               dispatchTimeoutFor(pb.ID),
+		RequiredTerminalTools: terminals,
+	}
+	res, err := s.subAgentRunner(ctx, baseOpts)
+	if err != nil {
+		return res, "", err
+	}
+	// Non-proposal dispatches aren't verified — preserve prior behaviour.
+	if len(terminals) == 0 {
+		return res, "", nil
+	}
+	// Resume-and-force when the sub-agent ended without a terminal. A
+	// timed-out run is surfaced as-is, not retried (the cap fired mid-work).
+	forcing := forceTerminalPrompt(pb.ID)
+	for attempt := 0; attempt < maxForceDispatchRetries && len(res.TerminalToolsCalled) == 0 && !res.TimedOut; attempt++ {
+		retryOpts := baseOpts
+		retryOpts.Prompt = forcing
+		retryOpts.ResumeSessionID = res.SessionID
+		res, err = s.subAgentRunner(ctx, retryOpts)
+		if err != nil {
+			return res, "", err
+		}
+	}
+	return res, classifyProposalOutcome(terminals, res.TerminalToolsCalled), nil
 }
