@@ -35,9 +35,11 @@ test.describe("nested sub-agent proposal surfacing", () => {
     await waitForAssistantText(page, "guided proposal sub-agents");
 
     // Exactly two inline cards — wiki and playbook — even though both were
-    // drafted inside the dispatch sub-agent.
+    // drafted inside the dispatch sub-agent. The sub-agent also made a
+    // validation-failed playbook draft (proposal_id:""); that must NOT render
+    // as an empty card, so the playbook card count is exactly one.
     await waitForProposalCards(page, 2);
     await expect(proposalCardOfKind(page, "wiki")).toBeVisible();
-    await expect(proposalCardOfKind(page, "playbook")).toBeVisible();
+    await expect(proposalCardOfKind(page, "playbook")).toHaveCount(1);
   });
 });
