@@ -63,11 +63,14 @@ the token falls out of the address bar. The launcher stays alive in the terminal
 
 ### One investigation, end-to-end
 
-1. **Pick a cluster.** The launcher queries the configured provider (kubeconfig by default, Teleport when the profile
-   selects it) for the operator's reachable clusters, then calls the provider's `Login` to obtain a kubeconfig context.
-2. **Preflight.** Confirms the cluster is reachable and RBAC permits read access, then writes a per-session `mcp.json`
-   describing which triagent-mcp servers to spawn. The agent narrows down the namespace at runtime via the k8s tools;
-   it isn't fixed at preflight.
+1. **Provide a starting point.** An investigation needs at least one input: a cluster, an incident URL, a Slack thread,
+   or free-form notes. Picking a cluster is optional. When one is picked, the launcher queries the configured provider
+   (kubeconfig by default, Teleport when the profile selects it) for the operator's reachable clusters and calls the
+   provider's `Login` to obtain a kubeconfig context. With no cluster up front, the agent infers one from the remaining
+   inputs and calls `switch_context` at runtime.
+2. **Preflight.** When a cluster was picked, confirms it is reachable and RBAC permits read access. Either way it writes
+   a per-session `mcp.json` describing which triagent-mcp servers to spawn. The agent narrows down the namespace at
+   runtime via the k8s tools; it isn't fixed at preflight.
 3. **Spawn the agent.** Claude is launched with that `mcp.json` plus a system prompt that points the agent at the
    `investigation` playbook. The agent is told nothing product-specific in prose; the playbooks carry the procedural
    knowledge.
