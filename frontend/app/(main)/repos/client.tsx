@@ -8,15 +8,15 @@ import {
   type LinkedRepo,
   type RepoSummaryStatus,
 } from "@/lib/api";
-import { GitHubIcon, WarningIcon } from "@/components/Icons";
-import { Spinner } from "@/components/Spinner";
+import { GitHubIcon, WarningIcon } from "@/components/shared/Icons";
+import { Spinner } from "@/components/shared/Spinner";
 import { notifyReposChanged, onReposChanged } from "@/lib/repos-events";
 import { useDialog } from "@/lib/dialog";
 import {
   repoKey,
   useRepoSummaryStatus,
   useRepoSummaryStore,
-} from "@/components/RepoSummaryStateProvider";
+} from "@/components/repos/RepoSummaryStateProvider";
 
 // ReposIndexClient is the top-level /repos page: a flat list of every
 // linked repo (defaults first, then user-added) with its summary

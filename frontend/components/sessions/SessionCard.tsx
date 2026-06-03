@@ -3,7 +3,7 @@
 import Link from "next/link";
 import type { SessionCard as SessionCardData, SyncStatePR } from "@/lib/api";
 import { relativeTime } from "@/lib/relative-time";
-import { ExternalLinkIcon } from "../Icons";
+import { ExternalLinkIcon } from "@/components/shared/Icons";
 
 export function SessionCard({ card }: { card: SessionCardData }) {
   // PR badge data flows from the per-card SyncState.pr sub-object —

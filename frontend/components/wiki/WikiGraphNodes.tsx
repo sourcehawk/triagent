@@ -5,7 +5,7 @@ import {
   ChevronDownIcon,
   ChevronUpIcon,
   ExternalLinkIcon,
-} from "@/components/Icons";
+} from "@/components/shared/Icons";
 
 // ── Shared sizes — must match the dagre layout hints in WikiGraph.tsx ────────
 

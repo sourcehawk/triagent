@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { api, ApiError, type SessionDoc as SessionDocData } from "@/lib/api";
-import { Markdown } from "../Markdown";
-import { Spinner } from "../Spinner";
+import { Markdown } from "@/components/shared/Markdown";
+import { Spinner } from "@/components/shared/Spinner";
 
 export function SessionDoc() {
   const pathname = usePathname() ?? "";

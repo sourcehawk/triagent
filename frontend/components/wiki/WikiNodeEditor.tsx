@@ -7,7 +7,7 @@
 // because wiki nodes have different schemas than playbook nodes.
 
 import type { WikiBacklink } from "@/lib/wiki-api";
-import { ChevronRightIcon } from "@/components/Icons";
+import { ChevronRightIcon } from "@/components/shared/Icons";
 
 // IncidentDraft mirrors the shape held in WikiEditor's draft store.
 // Kept as a duplicate type here (rather than imported from the editor)

@@ -6,12 +6,12 @@ import { wikiApi, ApiError } from "@/lib/wiki-api";
 import type { WikiStats, WikiEntryHit } from "@/lib/wiki-api";
 import { api, type Investigation } from "@/lib/api";
 import { labelFor } from "@/lib/sidebar-label";
-import { Spinner } from "@/components/Spinner";
+import { Spinner } from "@/components/shared/Spinner";
 import { WikiStats as WikiStatsStrip } from "./WikiStats";
 import { WikiSearch, type WikiFilters, emptyFilters } from "./WikiSearch";
 import { EntryList } from "./EntryList";
 import { WikiUpstreamHeader } from "./WikiUpstreamHeader";
-import { Paginator } from "@/components/Paginator";
+import { Paginator } from "@/components/shared/Paginator";
 
 // Page size for the entry list. Matches the other home-page rails
 // (sessions, upstream) so the operator sees a consistent cadence

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api, type ConnectionStatus } from "@/lib/api";
-import { SlackChannelPicker } from "@/components/SlackChannelPicker";
+import { SlackChannelPicker } from "@/components/shared/SlackChannelPicker";
 import type { InputProps } from "./types";
 import { interpolateHint } from "./types";
 

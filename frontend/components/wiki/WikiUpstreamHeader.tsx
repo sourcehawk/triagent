@@ -7,7 +7,7 @@ import {
   ExternalLinkIcon,
   GitHubIcon,
   SyncIcon,
-} from "@/components/Icons";
+} from "@/components/shared/Icons";
 
 type SyncState =
   | { kind: "idle" }

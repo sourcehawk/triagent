@@ -3,7 +3,7 @@
 import { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { InvestigationForm, type FormSubmission } from "@/components/InvestigationForm";
+import { InvestigationForm, type FormSubmission } from "@/components/investigations/InvestigationForm";
 import { api, ApiError } from "@/lib/api";
 
 // Step-state for the *new investigation* flow at /investigations/new. Once

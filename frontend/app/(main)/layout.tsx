@@ -2,13 +2,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { AppShell } from "@/components/AppShell";
-import { NewPlaybookModal } from "@/components/NewPlaybookModal";
-import { NewTypeModal } from "@/components/NewTypeModal";
+import { AppShell } from "@/components/layout/AppShell";
+import { NewPlaybookModal } from "@/components/playbooks/NewPlaybookModal";
+import { NewTypeModal } from "@/components/playbooks/NewTypeModal";
 import { NewWikiEntryModal } from "@/components/wiki/NewWikiEntryModal";
-import { RepoSummaryStateProvider } from "@/components/RepoSummaryStateProvider";
-import { CodefixPRStateProvider } from "@/components/CodefixPRStateProvider";
-import { WikiProposalNotifier } from "@/components/WikiProposalNotifier";
+import { RepoSummaryStateProvider } from "@/components/repos/RepoSummaryStateProvider";
+import { CodefixPRStateProvider } from "@/components/codefix/CodefixPRStateProvider";
+import { WikiProposalNotifier } from "@/components/wiki/WikiProposalNotifier";
 import { StreamProvider } from "@/lib/stream";
 import { api } from "@/lib/api";
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { DocsView } from "@/components/DocsView";
+import { DocsView } from "@/components/docs/DocsView";
 import { SECTION_IDS, type SectionID } from "@/lib/docs-sections";
 
 const VALID_SECTIONS = new Set<SectionID>(SECTION_IDS);

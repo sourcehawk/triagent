@@ -2,8 +2,8 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
-import { PlaybookList } from "@/components/PlaybookList";
-import { PlaybookEditor } from "@/components/PlaybookEditor";
+import { PlaybookList } from "@/components/playbooks/PlaybookList";
+import { PlaybookEditor } from "@/components/playbooks/PlaybookEditor";
 import { PLAYBOOK_TYPES_CHANGED } from "../layout";
 
 export default function PlaybooksPage() {

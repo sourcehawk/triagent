@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { WatchForm } from "@/components/WatchForm";
+import { WatchForm } from "@/components/watches/WatchForm";
 import { watchesAPI, type Watch } from "@/lib/api";
 
 // See note in ../client.tsx: useParams() returns the build-time

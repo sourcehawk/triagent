@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { MCPCatalogView } from "@/components/MCPCatalogView";
+import { MCPCatalogView } from "@/components/mcp/MCPCatalogView";
 
 export default function MCPPage() {
   return (

@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import { InvestigationPageClient } from "./client";
-import { Spinner } from "@/components/Spinner";
+import { Spinner } from "@/components/shared/Spinner";
 
 // Next.js requires useSearchParams (used in InvestigationPageClient) to be
 // wrapped in a Suspense boundary for output: "export" static builds.

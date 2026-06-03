@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { WatchForm } from "@/components/WatchForm";
+import { WatchForm } from "@/components/watches/WatchForm";
 import { watchesAPI } from "@/lib/api";
 
 export default function NewWatchPage() {

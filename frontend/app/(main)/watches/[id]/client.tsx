@@ -5,11 +5,11 @@ import { usePathname } from "next/navigation";
 import { watchesAPI, type Watch, type SignalRecord, type ItemRecord } from "@/lib/api";
 import { useDialog } from "@/lib/dialog";
 import { useStream } from "@/lib/stream";
-import { WatchDetailHeader } from "@/components/WatchDetailHeader";
-import { WatchSignalsPanel } from "@/components/WatchSignalsPanel";
-import { WatchItemsPanel } from "@/components/WatchItemsPanel";
-import { WatchQueueStrip } from "@/components/WatchQueueStrip";
-import { WatchIngestRunsPanel } from "@/components/WatchIngestRunsPanel";
+import { WatchDetailHeader } from "@/components/watches/WatchDetailHeader";
+import { WatchSignalsPanel } from "@/components/watches/WatchSignalsPanel";
+import { WatchItemsPanel } from "@/components/watches/WatchItemsPanel";
+import { WatchQueueStrip } from "@/components/watches/WatchQueueStrip";
+import { WatchIngestRunsPanel } from "@/components/watches/WatchIngestRunsPanel";
 
 // Static export rewrites every /watches/<id>/ path to the same shell
 // (generateStaticParams returns the "_" placeholder), so useParams() is

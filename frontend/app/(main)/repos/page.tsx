@@ -3,7 +3,7 @@
 import { Suspense, useEffect } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ReposIndexClient } from "./client";
-import { RepoArchitectureView } from "@/components/RepoArchitectureView";
+import { RepoArchitectureView } from "@/components/repos/RepoArchitectureView";
 
 export default function ReposPage() {
   return (

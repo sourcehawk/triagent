@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { SessionWorkspace } from "@/components/SessionWorkspace";
-import { Spinner } from "@/components/Spinner";
-import { ArrowLeftIcon } from "@/components/Icons";
+import { SessionWorkspace } from "@/components/investigations/SessionWorkspace";
+import { Spinner } from "@/components/shared/Spinner";
+import { ArrowLeftIcon } from "@/components/shared/Icons";
 import { api, ApiError, type Investigation } from "@/lib/api";
 
 type LoadState =

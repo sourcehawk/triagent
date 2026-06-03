@@ -9,8 +9,8 @@ import {
   type EditorSources,
   type Investigation,
 } from "@/lib/api";
-import { Spinner } from "@/components/Spinner";
-import { SlackChannelPicker } from "@/components/SlackChannelPicker";
+import { Spinner } from "@/components/shared/Spinner";
+import { SlackChannelPicker } from "@/components/shared/SlackChannelPicker";
 import { sinceISOFromCreatedUnix } from "@/lib/slackChannels";
 
 // NewWikiEntryModal kicks off a wiki entry the operator wants the agent
