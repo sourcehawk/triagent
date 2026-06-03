@@ -6,7 +6,6 @@ import (
 	"sort"
 	"strings"
 
-	authteleport "github.com/sourcehawk/triagent/pkg/auth/teleport"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"k8s.io/client-go/tools/clientcmd"
 )
@@ -33,19 +32,11 @@ type ListClustersOutput struct {
 	Items []ClusterInfo `json:"items"`
 }
 
-// authRequiredMessage is the error returned when the operator's Teleport
-// session is missing or expired. The proxy + connector come from the auth/teleport
-// package so this message stays in sync with the actual `tsh login` invocation.
-var authRequiredMessage = fmt.Sprintf(
-	"Teleport session expired or missing — run `tsh login --proxy=%s --auth=%s` in your terminal, then retry.",
-	authteleport.DefaultProxyAddr, authteleport.DefaultAuthConnector,
-)
-
 // listClusters enumerates Teleport-reachable Kubernetes clusters. Auth failures
 // surface a clear message telling the operator which `tsh login` to run.
 func (s *Server) listClusters(ctx context.Context, _ *mcp.CallToolRequest, in ListClustersInput) (*mcp.CallToolResult, ListClustersOutput, error) {
 	if !s.provider.IsAuthenticated() {
-		return errorResult(authRequiredMessage), ListClustersOutput{}, nil
+		return errorResult(s.provider.ReauthAdvice()), ListClustersOutput{}, nil
 	}
 	clusters, err := s.provider.ListClusters(ctx)
 	if err != nil {

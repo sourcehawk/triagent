@@ -29,11 +29,24 @@ func TestAllowedTools_AlwaysIncludesCoreServers(t *testing.T) {
 		preflight.MCPAliasStrategies,
 		preflight.MCPAliasMeta,
 		preflight.MCPAliasParallel,
-		preflight.MCPAliasTeleport,
 		preflight.MCPAliasWiki,
 	} {
 		require.Contains(t, got, "mcp__"+alias+"__*", "missing core server alias %s", alias)
 	}
+}
+
+func TestAllowedTools_TeleportGatedOnAuthKind(t *testing.T) {
+	t.Parallel()
+	teleportGlob := "mcp__" + preflight.MCPAliasTeleport + "__*"
+	// mcpconfig.go only wires the teleport MCP for a teleport deployment;
+	// the allowlist must match so a kubeconfig deployment carries no glob
+	// for tools that never exist.
+	require.Contains(t,
+		allowedTools(&profile.Profile{Auth: profile.Auth{Kind: "teleport"}}, nil, false, false),
+		teleportGlob, "teleport deployment should allowlist the teleport MCP")
+	require.NotContains(t,
+		allowedTools(&profile.Profile{Auth: profile.Auth{Kind: "kubeconfig"}}, nil, false, false),
+		teleportGlob, "kubeconfig deployment must not allowlist the teleport MCP")
 }
 
 func TestAllowedTools_IncludesExtraMCPs(t *testing.T) {
@@ -61,20 +74,40 @@ func TestRenderSystemPromptAddendum_NoProfileHintAppendsNothingExtra(t *testing.
 	assert.Equal(t, systemPromptAddendum, got)
 }
 
-func TestSystemPromptAddendum_NamesTeleportAuthSequence(t *testing.T) {
+func TestK8sAuthGuidance_TeleportDeploymentNamesTeleportSequence(t *testing.T) {
 	t.Parallel()
 	// Front-loading the auth sequence into the system prompt steers the
 	// agent to do it proactively instead of failing the first k8s call
-	// and reacting. Verify the three tool names are spelled exactly so a
-	// refactor of any one of them surfaces the hint as out-of-date.
+	// and reacting. Verify the tool names are spelled exactly so a refactor
+	// of any one of them surfaces the hint as out-of-date.
+	got := k8sAuthGuidance(&profile.Profile{Auth: profile.Auth{Kind: "teleport"}})
 	for _, want := range []string{
 		"triagent-teleport.list_clusters",
 		"triagent-teleport.login",
 		"triagent-k8s.switch_context",
 		"KubeContext",
 	} {
-		assert.Contains(t, systemPromptAddendum, want,
-			"addendum should mention %q so the agent knows the auth recipe up front", want)
+		assert.Contains(t, got, want,
+			"teleport-deployment guidance should mention %q so the agent knows the auth recipe up front", want)
+	}
+}
+
+func TestK8sAuthGuidance_KubeconfigDeploymentNamesContextSequenceNotTeleport(t *testing.T) {
+	t.Parallel()
+	// A kubeconfig deployment has no Teleport MCP — the contexts already
+	// live in the kubeconfig. Steering the agent at list_clusters/login
+	// there sends it after tools that don't exist (the original bug).
+	for _, prof := range []*profile.Profile{
+		{Auth: profile.Auth{Kind: "kubeconfig"}},
+		nil,
+	} {
+		got := k8sAuthGuidance(prof)
+		assert.Contains(t, got, "triagent-k8s.list_contexts",
+			"kubeconfig guidance should steer at list_contexts")
+		assert.Contains(t, got, "triagent-k8s.switch_context",
+			"kubeconfig guidance should steer at switch_context")
+		assert.NotContains(t, got, "triagent-teleport",
+			"kubeconfig guidance must not mention the Teleport MCP")
 	}
 }
 

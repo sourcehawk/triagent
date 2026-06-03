@@ -264,7 +264,9 @@ func TestListResourceKinds_NoActiveContext_ReturnsHelpfulError(t *testing.T) {
 	require.NotEmpty(t, res.Content)
 	tc := res.Content[0].(*mcp.TextContent)
 	assert.Contains(t, tc.Text, "no active kubernetes context")
-	assert.Contains(t, tc.Text, "triagent-teleport.list_clusters")
+	// Lead with the k8s-native path so a kubeconfig deployment (no Teleport
+	// MCP) is steered at tools that actually exist.
+	assert.Contains(t, tc.Text, "triagent-k8s.list_contexts")
 	assert.Contains(t, tc.Text, "triagent-k8s.switch_context")
 }
 

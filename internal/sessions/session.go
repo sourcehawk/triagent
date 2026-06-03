@@ -99,9 +99,27 @@ func (o Options) alertPayloadFields() map[string]string {
 // codefix) the agent rationalises why it isn't creating a todo list and
 // leaks "Walker continues to track progress; skipping TodoWrite…" into
 // the operator's chat. This addendum pre-empts that rationalisation.
-const systemPromptAddendum = `The triagent-strategies walker is your task tracker. You do not have TodoWrite or any other Claude Code planning tool — they are not in your --allowedTools whitelist. Do not reference them in your replies. When a step's terminal_advice lists follow-on steps (e.g. "run wiki, then playbook, then codefix"), execute them in order without announcing the decision to skip a planning tool.
+const systemPromptAddendum = `The triagent-strategies walker is your task tracker. You do not have TodoWrite or any other Claude Code planning tool — they are not in your --allowedTools whitelist. Do not reference them in your replies. When a step's terminal_advice lists follow-on steps (e.g. "run wiki, then playbook, then codefix"), execute them in order without announcing the decision to skip a planning tool.`
 
-Kubernetes auth: triagent-k8s tools require an active context. Before your FIRST triagent-k8s.* call this session — including list_resource_kinds, get_resource, list_resources, get_logs, list_events — establish a context: call triagent-teleport.list_clusters (filter by the alert's cluster name), pick the matching entry, then call triagent-teleport.login if CurrentlyLoggedIn is false, and finally triagent-k8s.switch_context with the KubeContext value the list_clusters response gave you. Do this proactively; do not let the first k8s call fail and then react. After that initial setup any triagent-k8s call works until you switch_context to another cluster.`
+// k8sAuthTeleportGuidance steers a Teleport deployment: clusters are
+// provisioned on demand via the triagent-teleport MCP, which is only wired
+// when the profile's auth.kind is "teleport".
+const k8sAuthTeleportGuidance = `Kubernetes auth: triagent-k8s tools require an active context. Before your FIRST triagent-k8s.* call this session — including list_resource_kinds, get_resource, list_resources, get_logs, list_events — establish a context: call triagent-teleport.list_clusters (filter by the alert's cluster name), pick the matching entry, then call triagent-teleport.login if CurrentlyLoggedIn is false, and finally triagent-k8s.switch_context with the KubeContext value the list_clusters response gave you. Do this proactively; do not let the first k8s call fail and then react. After that initial setup any triagent-k8s call works until you switch_context to another cluster.`
+
+// k8sAuthKubeconfigGuidance steers a kubeconfig deployment: the contexts
+// already live in the kubeconfig, so there is no Teleport step — naming the
+// Teleport MCP here would send the agent after tools that aren't wired.
+const k8sAuthKubeconfigGuidance = `Kubernetes auth: triagent-k8s tools require an active context. Before your FIRST triagent-k8s.* call this session — including list_resource_kinds, get_resource, list_resources, get_logs, list_events — bind one: call triagent-k8s.list_contexts, pick the context matching the alert's cluster, and call triagent-k8s.switch_context with its name. Do this proactively; do not let the first k8s call fail and then react. After that initial setup any triagent-k8s call works until you switch_context to another cluster.`
+
+// k8sAuthGuidance returns the auth recipe that matches the deployment's
+// auth.kind. Anything that is not an explicit teleport profile gets the
+// kubeconfig recipe, since that is the path whose tools are wired.
+func k8sAuthGuidance(prof *profile.Profile) string {
+	if prof != nil && prof.Auth.Kind == "teleport" {
+		return k8sAuthTeleportGuidance
+	}
+	return k8sAuthKubeconfigGuidance
+}
 
 // renderSystemPromptAddendum appends namespace hints from the profile to the
 // base addendum. Empty / no-match cases return the base unchanged. The
@@ -134,7 +152,7 @@ func New(opts Options) (*Session, error) {
 		claude.SessionOpts{
 			Cwd:                opts.LaunchCwd,
 			Env:                opts.childEnv(),
-			AppendSystemPrompt: renderSystemPromptAddendum(systemPromptAddendum, namespaceCfg, opts.alertPayloadFields()),
+			AppendSystemPrompt: renderSystemPromptAddendum(systemPromptAddendum+"\n\n"+k8sAuthGuidance(opts.Profile), namespaceCfg, opts.alertPayloadFields()),
 			Model:              investigationModel,
 		},
 	)
@@ -205,13 +223,17 @@ func allowedTools(prof *profile.Profile, linkedRepos []repos.LinkedRepo, slackAv
 		"mcp__" + preflight.MCPAliasStrategies + "__*",
 		"mcp__" + preflight.MCPAliasMeta + "__*",
 		"mcp__" + preflight.MCPAliasParallel + "__*",
-		// triagent-teleport is wired unconditionally by mcpconfig.go;
 		// triagent-wiki is wired whenever WikiPath/WikiProposalsPath are
-		// set, which is the standard launcher configuration. Including
-		// both here silences the per-call approval prompts. Tools from
-		// non-wired MCPs simply won't be reachable at execution time.
-		"mcp__" + preflight.MCPAliasTeleport + "__*",
+		// set, which is the standard launcher configuration. Including it
+		// here silences the per-call approval prompts. Tools from non-wired
+		// MCPs simply won't be reachable at execution time.
 		"mcp__" + preflight.MCPAliasWiki + "__*",
+	}
+	// triagent-teleport is wired only for a teleport deployment (mcpconfig.go
+	// gates it on auth.kind); allowlist it on the same condition so a
+	// kubeconfig deployment doesn't carry a glob for tools that never exist.
+	if prof != nil && prof.Auth.Kind == "teleport" {
+		out = append(out, "mcp__"+preflight.MCPAliasTeleport+"__*")
 	}
 	if prof != nil {
 		for _, m := range prof.ExtraMCPs {

@@ -81,6 +81,9 @@ const (
 
 	EnvParallelUpstreams = "TRIAGENT_MCP_PARALLEL_UPSTREAMS"
 
+	EnvTeleportProxy         = "TRIAGENT_MCP_TELEPORT_PROXY"
+	EnvTeleportAuthConnector = "TRIAGENT_MCP_TELEPORT_AUTH_CONNECTOR"
+
 	EnvKubeconfig = "KUBECONFIG"
 
 	EnvTelemetryURL        = "TRIAGENT_MCP_TELEMETRY_URL"
@@ -376,13 +379,28 @@ func writeMCPConfig(in mcpConfigInputs) (string, error) {
 		},
 	}
 
-	teleportEnv := map[string]string{}
-	mergeEnv(teleportEnv, telemetryEnv(in, MCPAliasTeleport))
-	mergeEnv(teleportEnv, kubeEnv(in))
-	servers[MCPAliasTeleport] = map[string]any{
-		"command": in.MCPBin,
-		"args":    []string{"serve", "--kind=teleport"},
-		"env":     teleportEnv,
+	// Teleport tooling (list_clusters, login) only makes sense for a
+	// teleport deployment. On a kubeconfig deployment those tools have
+	// nothing to act on, and exposing them lures the agent into a tsh
+	// login loop instead of reaching for the k8s MCP's switch_context.
+	if in.Profile != nil && in.Profile.Auth.Kind == "teleport" {
+		teleportEnv := map[string]string{}
+		mergeEnv(teleportEnv, telemetryEnv(in, MCPAliasTeleport))
+		mergeEnv(teleportEnv, kubeEnv(in))
+		// Thread the deployment's connection parameters so the subprocess
+		// builds a provider that logs in against the right proxy/connector
+		// instead of the SDK's empty defaults.
+		if proxy := in.Profile.Auth.Teleport.Proxy; proxy != "" {
+			teleportEnv[EnvTeleportProxy] = proxy
+		}
+		if connector := in.Profile.Auth.Teleport.AuthConnector; connector != "" {
+			teleportEnv[EnvTeleportAuthConnector] = connector
+		}
+		servers[MCPAliasTeleport] = map[string]any{
+			"command": in.MCPBin,
+			"args":    []string{"serve", "--kind=teleport"},
+			"env":     teleportEnv,
+		}
 	}
 
 	if in.WikiPath != "" && in.WikiProposalsPath != "" {

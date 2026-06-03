@@ -20,7 +20,14 @@ type Options struct {
 	// already have a context provisioned; login writes new contexts into
 	// it (via the SDK).
 	KubeconfigPath string
-	// Provider is injectable for tests. nil means use authteleport.NewProvider().
+	// Proxy and AuthConnector are the deployment's Teleport connection
+	// parameters, sourced from the profile's auth.teleport block. They
+	// drive both the `tsh login` the SDK runs and the re-auth advice the
+	// tools surface; left empty the SDK falls back to its compiled defaults.
+	Proxy         string
+	AuthConnector string
+	// Provider is injectable for tests. nil means build one from Proxy /
+	// AuthConnector via authteleport.NewProvider().
 	Provider TeleportProvider
 }
 
@@ -30,6 +37,10 @@ type TeleportProvider interface {
 	IsAuthenticated() bool
 	ListClusters(ctx context.Context) ([]auth.Cluster, error)
 	Login(ctx context.Context, cluster string) (*auth.LoginResult, error)
+	// ReauthAdvice renders the user-facing `tsh login` instruction with the
+	// deployment's configured proxy/connector. Sourcing the auth-required
+	// message from here keeps it in sync with the actual login command.
+	ReauthAdvice() string
 }
 
 // Server holds the configured MCP server.
@@ -46,7 +57,17 @@ func New(opts Options) (*Server, error) {
 	}
 	provider := opts.Provider
 	if provider == nil {
-		provider = authteleport.NewProvider(authteleport.Config{})
+		// NewProvider returns auth.Provider; ReauthAdvice is an optional
+		// interface the Teleport adapter always satisfies. Assert it so the
+		// auth-required message can render the configured proxy/connector.
+		built, ok := authteleport.NewProvider(authteleport.Config{
+			Proxy:         opts.Proxy,
+			AuthConnector: opts.AuthConnector,
+		}).(TeleportProvider)
+		if !ok {
+			return nil, fmt.Errorf("teleport auth provider does not implement ReauthAdvice")
+		}
+		provider = built
 	}
 	impl := mcp.NewServer(&mcp.Implementation{
 		Name:    "triagent-mcp-teleport",

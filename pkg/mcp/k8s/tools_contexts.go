@@ -92,7 +92,7 @@ func (t *ToolKit) getCurrentContext(_ context.Context, _ *mcp.CallToolRequest, _
 // --- switch_context --------------------------------------------------------
 
 type SwitchContextInput struct {
-	Name string `json:"name" jsonschema:"Kubeconfig context to bind to. Use triagent-teleport.login to provision a context for a Teleport-managed cluster first."`
+	Name string `json:"name" jsonschema:"Kubeconfig context to bind to — one of the names from list_contexts. For a Teleport-managed cluster, run triagent-teleport.login first to provision the context."`
 }
 
 type SwitchContextOutput struct {
