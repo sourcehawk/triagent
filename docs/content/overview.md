@@ -3,9 +3,9 @@
 Agentic Incident Investigation, driven from your browser.
 
 Triagent is a localhost web app that pairs the Claude reasoning agent with read-only Kubernetes access, an extensible
-MCP catalog (Prometheus, Slack, GitHub, incident.io, your own), a guided playbook walker, and a persistent wiki, all
-bound to a single cluster's namespace per session. You run `triagent start`, it opens a browser, you hand it the
-symptom, and it drives a focused diagnosis you can paste into a ticket when it's done.
+MCP catalog (Prometheus, Slack, GitHub, incident.io, read-only GCP/AWS context, your own), a guided playbook walker,
+and a persistent wiki, all scoped to a single cluster per session. You run `triagent start`, it opens a browser, you
+hand it the symptom, and it drives a focused diagnosis you can paste into a ticket when it's done.
 
 ## The problem it solves
 
@@ -60,7 +60,8 @@ New failure shape on Tuesday → playbook PR on Wednesday → every operator has
 
 ## What's in the box
 
-Four surfaces, each with a dedicated section in these docs.
+Four operator-facing surfaces, each with a dedicated section in these docs: **Investigations**, **Watches**,
+**Playbooks**, and **Wiki**. Underneath them sits the **MCP tool catalog** every surface is built on.
 
 ### [Investigations](/docs/investigations)
 
@@ -88,14 +89,6 @@ full investigation, so the launcher reaches you before the pager does. Each
 signal carries a back-reference to the watch and items that produced it;
 manual start is a click for the ones the agent flagged as `unclear`.
 
-### [MCP servers](/docs/mcp)
-
-A tool catalog the agent reads like a map, and the same map an operator reads when authoring a playbook. Exposed as
-curated tools rather than a raw shell, so the agent never gets to run arbitrary commands. The catalog grows as we wire
-in new sources (Kubernetes, Prometheus, the playbook walker, linked git repos, the wiki, Slack, incident.io, …); rather
-than enumerate it here, browse the live list at [**/mcp**](/mcp). The catalog reflects exactly what the launcher
-loaded for this build.
-
 ### [Playbooks](/docs/playbooks)
 
 Procedural knowledge as data. Each playbook is a YAML graph that encodes one failure shape's triage path: read step
@@ -111,7 +104,15 @@ real git repo, indexed for the agent to consult during triage. Link density comp
 canonical entity names, the better the agent's "have we seen this before?" recall gets. Procedure belongs in playbooks;
 facts belong in the wiki.
 
-## Alpha Release
+### [The MCP tool catalog](/docs/mcp)
+
+The layer beneath all four surfaces. A tool catalog the agent reads like a map, and the same map an operator reads when
+authoring a playbook. Exposed as curated tools rather than a raw shell, so the agent never gets to run arbitrary
+commands. The catalog grows as we wire in new sources (Kubernetes, Prometheus, the playbook walker, linked git repos,
+the wiki, Slack, incident.io, …); rather than enumerate it here, browse the live list at [**/mcp**](/mcp). The catalog
+reflects exactly what the launcher loaded for this build.
+
+## Alpha release
 
 This is alpha. Expect rough edges, breaking config changes between versions, and the occasional walker dead-end. Some
 things are stable enough to plan around:
@@ -135,6 +136,9 @@ on file. Each integration has its own page:
 
 - **[Slack and incident.io](/docs/connections)** — credentials stored in `~/.config/triagent/credentials.json` (mode
   0600), validated against the upstream before saving.
+- **[Cloud providers](/docs/cloud-providers)** — read-only GCP or AWS context (reachability, IAM, GKE/EKS config,
+  logs, audit) so a Kubernetes thread can follow down into the cloud layer. Pinned to a read-only identity in the
+  profile, never entered in the UI.
 - **[GitHub repositories](/docs/repos)** — linked over SSH for clone, `gh` CLI for the *Push as PR* flows. Defaults
   ship via the profile's `linked_repos`; personal repos persist per-machine.
 - **[Profiles](/docs/profiles)** — the deployment-specific config bundle that wires upstream repos for playbooks /

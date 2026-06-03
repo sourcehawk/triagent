@@ -26,10 +26,10 @@ It can also watch for trouble on its own. Point it at Slack channels or GitHub i
 
 Four surfaces, each documented in depth on the [docs site](https://sourcehawk.github.io/triagent/):
 
-- **[Investigations](https://sourcehawk.github.io/triagent/docs/investigations/)**: the live triage view. Hand the assistant a symptom and some context (cluster, Slack thread, incident.io link, notes), watch it work through the diagnosis step by step, and ship the summary as markdown.
-- **[Playbooks](https://sourcehawk.github.io/triagent/docs/playbooks/)**: the step-by-step troubleshooting procedures the assistant follows, defined as YAML. Write and edit them right in the browser, with an AI assistant helping.
-- **[Wiki](https://sourcehawk.github.io/triagent/docs/wiki/)**: the team's lasting knowledge base of failure patterns and prior fixes, which the assistant can search.
-- **[Watches](https://sourcehawk.github.io/triagent/docs/watches/)**: rules that turn Slack messages, GitHub issues, or alerts into proposed investigations on their own.
+- **[Investigations](https://sourcehawk.github.io/triagent/investigations/)**: the live triage view. Hand the assistant a symptom and some context (cluster, Slack thread, incident.io link, notes), watch it work through the diagnosis step by step, and ship the summary as markdown.
+- **[Playbooks](https://sourcehawk.github.io/triagent/playbooks/)**: the step-by-step troubleshooting procedures the assistant follows, defined as YAML. Write and edit them right in the browser, with an AI assistant helping.
+- **[Wiki](https://sourcehawk.github.io/triagent/wiki/)**: the team's lasting knowledge base of failure patterns and prior fixes, which the assistant can search.
+- **[Watches](https://sourcehawk.github.io/triagent/watches/)**: rules that turn Slack messages, GitHub issues, or alerts into proposed investigations on their own.
 
 <table>
 <tr>
@@ -117,9 +117,9 @@ This boots a localhost HTTP server, prints its URL with a per-launch token, and 
 
 In the browser:
 
-1. **Pick a cluster**: directly from kubeconfig, or via Teleport.
+1. **Pick a cluster** from the dropdown (sourced from your kubeconfig by default; Teleport if your profile uses it).
 2. **Log in** if prompted (SSO/2FA prompts go to the launcher terminal).
-3. **Enter the namespace** and optional notes, Slack channel, or incident URL.
+3. **Add context** (all optional): a sentence on the symptom, a Slack channel, or an incident URL. The assistant narrows down the namespace itself.
 4. **Investigate**: the assistant works through the playbook, uses its tools, and writes a summary you can copy or push upstream as a PR (once you've wired an upstream repo; see below).
 
 ### A few useful commands
