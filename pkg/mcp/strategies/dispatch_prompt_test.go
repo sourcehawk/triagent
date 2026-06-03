@@ -29,6 +29,35 @@ func TestBuildDispatchPrompt_IncludesPlaybookNodesInOrder(t *testing.T) {
 	assert.True(t, strings.Contains(prompt, "the summary"))
 }
 
+func TestBuildDispatchPrompt_NamesTerminalToolWhenSet(t *testing.T) {
+	t.Parallel()
+	pb := &Playbook{ID: "playbook_proposal", Entrypoint: "a", Nodes: map[string]Node{
+		"a": {ID: "a", Description: "draft a playbook"},
+	}}
+	prompt := BuildDispatchPrompt(DispatchInputs{
+		Playbook:     pb,
+		ProposalTool: "playbook_proposal_draft",
+	})
+	// The terminal instruction must name the submit tool and forbid ending
+	// with only a prose summary or a file write — the exact divergence that
+	// produced a confabulated "drafted" with no actual proposal.
+	assert.Contains(t, prompt, "playbook_proposal_draft",
+		"finishing instruction must name the proposal tool the flow has to call")
+	low := strings.ToLower(prompt)
+	assert.Contains(t, low, "summary", "must warn that a prose summary is not a submission")
+	assert.Contains(t, low, "must", "finishing instruction is mandatory, not advisory")
+}
+
+func TestBuildDispatchPrompt_NoTerminalSectionWhenToolUnset(t *testing.T) {
+	t.Parallel()
+	pb := &Playbook{ID: "pb", Entrypoint: "a", Nodes: map[string]Node{
+		"a": {ID: "a", Description: "step"},
+	}}
+	prompt := BuildDispatchPrompt(DispatchInputs{Playbook: pb})
+	assert.NotContains(t, prompt, "## Finishing",
+		"non-proposal dispatches get no mandatory-terminal section")
+}
+
 func TestBuildDispatchPrompt_AppendsRefinementWhenPresent(t *testing.T) {
 	t.Parallel()
 	pb := &Playbook{ID: "pb", Entrypoint: "a", Nodes: map[string]Node{

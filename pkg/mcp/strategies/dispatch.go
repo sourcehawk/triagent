@@ -15,9 +15,9 @@ import (
 func dispatchAllowedToolsFor(playbookID string) string {
 	switch playbookID {
 	case "wiki_proposal":
-		return "mcp__triagent-wiki__propose_wiki_draft,mcp__triagent-wiki__wiki_get,mcp__triagent-wiki__wiki_list_entities,mcp__triagent-wiki__wiki_search"
+		return "mcp__triagent-wiki__propose_wiki_draft,mcp__triagent-strategies__decline_proposal,mcp__triagent-wiki__wiki_get,mcp__triagent-wiki__wiki_list_entities,mcp__triagent-wiki__wiki_search"
 	case "playbook_proposal":
-		return "mcp__triagent-strategies__playbook_proposal_draft,mcp__triagent-strategies__list_playbooks,mcp__triagent-strategies__list_proposals,mcp__triagent-strategies__get_playbook_raw,mcp__triagent-strategies__playbook_correlate,mcp__triagent-strategies__validate_playbook"
+		return "mcp__triagent-strategies__playbook_proposal_draft,mcp__triagent-strategies__decline_proposal,mcp__triagent-strategies__list_playbooks,mcp__triagent-strategies__list_proposals,mcp__triagent-strategies__get_playbook_raw,mcp__triagent-strategies__playbook_correlate,mcp__triagent-strategies__validate_playbook"
 	default:
 		// Unknown dispatch-mode playbooks get no MCP tools beyond what
 		// claude's built-ins provide. Operator can extend the table when
@@ -40,9 +40,25 @@ func dispatchAllowedToolsFor(playbookID string) string {
 func dispatchTimeoutFor(playbookID string) time.Duration {
 	switch playbookID {
 	case "playbook_proposal", "wiki_proposal":
-		return 10 * time.Minute
+		return 15 * time.Minute
 	default:
 		return 0
+	}
+}
+
+// dispatchProposalToolFor returns the tool a proposal flow MUST call to
+// actually submit its draft, or "" for non-proposal dispatches. Drives the
+// mandatory finishing instruction in the dispatch prompt and (paired) the
+// subagent terminal-tool verification — the agent invokes it by its bare
+// name, so that's what the prompt names.
+func dispatchProposalToolFor(playbookID string) string {
+	switch playbookID {
+	case "playbook_proposal":
+		return "playbook_proposal_draft"
+	case "wiki_proposal":
+		return "propose_wiki_draft"
+	default:
+		return ""
 	}
 }
 
@@ -71,6 +87,7 @@ func (s *Server) runDispatch(ctx context.Context, pb *Playbook, parentSessionID,
 		Summary:            summary,
 		OperatorRefinement: operatorRefinement,
 		Proposals:          proposals,
+		ProposalTool:       dispatchProposalToolFor(pb.ID),
 	})
 	if s.subAgentRunner == nil {
 		return subagent.Result{}, fmt.Errorf("dispatch %q: subagent runner not configured", pb.ID)

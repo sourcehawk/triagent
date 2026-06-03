@@ -8,11 +8,40 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// Handlers backing the four playbook-proposal tools registered in
-// server.go. Kept separate from the existing walker handlers so the
-// proposal surface is easy to find and audit; the agent reaches them
-// via the playbook_proposal meta-playbook rather than calling them
-// directly.
+// Handlers backing the playbook-proposal tools registered in server.go.
+// Kept separate from the existing walker handlers so the proposal surface
+// is easy to find and audit; the agent reaches them via the
+// playbook_proposal meta-playbook rather than calling them directly.
+
+// ── decline_proposal ────────────────────────────────────────────────────────
+
+// declineProposalIn is the input for the decline_proposal terminal marker.
+type declineProposalIn struct {
+	Reason string `json:"reason" jsonschema:"One line on why this dispatch is deliberately NOT submitting a proposal (e.g. 'investigation was routine — below the novelty bar'). Required."`
+}
+
+// declineProposalOut acknowledges a deliberate no-proposal terminal.
+type declineProposalOut struct {
+	Acknowledged bool   `json:"acknowledged"`
+	Message      string `json:"message"`
+}
+
+// declineProposal is the explicit terminal a proposal-flow sub-agent calls
+// when it decides NOT to propose. It exists so the dispatcher can tell a
+// deliberate "below the bar" decline from a confabulated submission: exactly
+// one of the two terminal tools (propose / decline) must fire, and a prose
+// summary is neither. The handler just records the reason; its value is being
+// a verifiable tool call.
+func (s *Server) declineProposal(_ context.Context, _ *mcp.CallToolRequest, in declineProposalIn) (*mcp.CallToolResult, declineProposalOut, error) {
+	reason := strings.TrimSpace(in.Reason)
+	if reason == "" {
+		return errorResult("reason is required — state in one line why no proposal is being submitted"), declineProposalOut{}, nil
+	}
+	return nil, declineProposalOut{
+		Acknowledged: true,
+		Message:      "Recorded: no proposal submitted — " + reason,
+	}, nil
+}
 
 // ── playbook_schema ─────────────────────────────────────────────────────────
 

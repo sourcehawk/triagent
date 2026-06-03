@@ -21,6 +21,13 @@ type DispatchInputs struct {
 	// the operator's note) without depending on the master agent to have
 	// remembered to forward them in Notes. Empty → section omitted.
 	Proposals []ProposalSummary
+	// ProposalTool is the tool this flow MUST call to actually submit its
+	// draft (e.g. playbook_proposal_draft / propose_wiki_draft). When set,
+	// BuildDispatchPrompt appends a mandatory finishing instruction: the
+	// sub-agent must end by calling it (or decline_proposal), never with a
+	// prose summary or a file write. Empty → no finishing section (non-
+	// proposal dispatches). Pairs with subagent terminal-tool verification.
+	ProposalTool string
 }
 
 // BuildDispatchPrompt assembles the single-turn prompt the sub-agent receives.
@@ -76,6 +83,17 @@ func BuildDispatchPrompt(in DispatchInputs) string {
 		b.WriteString("## Operator refinement\n\nHonour this refinement over the playbook's defaults:\n\n> ")
 		b.WriteString(strings.TrimSpace(in.OperatorRefinement))
 		b.WriteString("\n\n")
+	}
+	if tool := strings.TrimSpace(in.ProposalTool); tool != "" {
+		fmt.Fprintf(&b, `## Finishing — required
+
+You MUST end this task by reaching one terminal, as a real tool call:
+
+- **To submit your draft:** call `+"`%s`"+` and confirm it returns a `+"`proposal_id`"+`. The launcher only learns of a proposal when that tool actually returns one — a prose summary describing the draft, or writing the draft to a file, is NOT a submission and the operator will never see it.
+- **To deliberately not propose** (the work is below the bar): call `+"`decline_proposal`"+` with a one-line reason.
+
+Do not end the task any other way. If you find yourself about to write a final summary without having called one of these tools, stop and call the tool first.
+`, tool)
 	}
 	return b.String()
 }

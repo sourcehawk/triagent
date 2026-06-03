@@ -193,6 +193,11 @@ func (s *Server) register() {
 	}, telemetry.Wrap("playbook_proposal_draft", s.proposePlaybookDraft))
 
 	mcp.AddTool(s.impl, &mcp.Tool{
+		Name:        "decline_proposal",
+		Description: "The explicit terminal for a proposal flow that decides NOT to submit a draft (the work is below the bar). Call this with a one-line reason instead of ending with a prose summary — the dispatcher requires either playbook_proposal_draft / propose_wiki_draft (submit) or this (decline) to fire, so it can tell a deliberate no-proposal from a sub-agent that quit without finishing. Records the reason and returns acknowledged.",
+	}, telemetry.Wrap("decline_proposal", s.declineProposal))
+
+	mcp.AddTool(s.impl, &mcp.Tool{
 		Name:        "playbook_resolve_entities",
 		Description: "Canonicalise a candidate keyword set (services / errors / symptoms) against the union of all loaded playbooks' entity tags. **Call this BEFORE playbook_correlate** when you have specific keywords you want to map to canonical names — pass fuzzy guesses ('Zeebe Broker', 'crash looping', 'failing reconciliations') and the tool returns one Resolution per input telling you whether it was exact-match and which canonical names are close by edit distance / substring.\n\nUnlike playbook_correlate this tool does NOT validate input shape — pass fuzzy guesses as you have them. Returns one Resolution per input keyword: {field, input, exact, near}. Use `near[0]` as the canonical name to feed into playbook_correlate.\n\nLighter than dumping every loaded playbook's tags (which is what playbook_correlate's `resolution` field does as a side-effect on every call) — discrete canonicalize-then-correlate flow keeps the audit trail legible.",
 	}, telemetry.Wrap("playbook_resolve_entities", s.playbookResolveEntities))
