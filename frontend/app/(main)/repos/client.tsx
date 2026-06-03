@@ -10,6 +10,7 @@ import {
 } from "@/lib/api";
 import { GitHubIcon, WarningIcon } from "@/components/Icons";
 import { Spinner } from "@/components/Spinner";
+import { notifyReposChanged, onReposChanged } from "@/lib/repos-events";
 import { useDialog } from "@/lib/dialog";
 import {
   repoKey,
@@ -43,8 +44,11 @@ export function ReposIndexClient() {
   // staring at "page 3 of 2".
   const [defaultsPage, setDefaultsPage] = useState(0);
   const [userPage, setUserPage] = useState(0);
-  // Bumped whenever a remove succeeds so the load effect re-runs.
+  // Bumped to re-run the load effect: on this page's own remove, and on
+  // any add/remove from another surface (the sidebar's manage-repos
+  // modal) so a repo linked there shows up here without a page reload.
   const [reloadNonce, setReloadNonce] = useState(0);
+  useEffect(() => onReposChanged(() => setReloadNonce((n) => n + 1)), []);
   // Free-text search applied to BOTH sections. Empty string = no
   // filter. Matches owner, name, alias, and description so operators
   // can find a repo by any of the surfaces visible on the row.
@@ -137,7 +141,7 @@ export function ReposIndexClient() {
       setRemoving(key);
       try {
         await api.removeRepo(repo.owner, repo.name);
-        setReloadNonce((n) => n + 1);
+        notifyReposChanged();
       } catch (e) {
         const msg = e instanceof ApiError ? e.message : String(e);
         await dialog.alert({

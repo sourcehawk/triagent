@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, ApiError, type Investigation, type LinkedRepo, type RepoSummaryStatus } from "@/lib/api";
+import { notifyReposChanged, onReposChanged } from "@/lib/repos-events";
 import { useDialog } from "@/lib/dialog";
 import { Spinner } from "./Spinner";
 import {
@@ -132,6 +133,10 @@ export function LinkedReposPanel({ investigation, refreshNonce }: Props) {
 function PendingReposList({ refreshNonce }: { refreshNonce?: number }) {
   const [repos, setRepos] = useState<LinkedRepo[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  // Refetch when a repo is added/removed from any surface (the manage
+  // modal here, or the /repos page) so the sidebar list stays in sync.
+  const [changeNonce, setChangeNonce] = useState(0);
+  useEffect(() => onReposChanged(() => setChangeNonce((n) => n + 1)), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -151,7 +156,7 @@ function PendingReposList({ refreshNonce }: { refreshNonce?: number }) {
     return () => {
       cancelled = true;
     };
-  }, [refreshNonce]);
+  }, [refreshNonce, changeNonce]);
 
   if (err) {
     return (
@@ -336,6 +341,11 @@ function ManageReposModal({
   const [alias, setAlias] = useState("");
   const [description, setDescription] = useState("");
 
+  // changeNonce reloads the modal both on its own add/remove and on
+  // changes made elsewhere (e.g. the /repos page) while it's open.
+  const [changeNonce, setChangeNonce] = useState(0);
+  useEffect(() => onReposChanged(() => setChangeNonce((n) => n + 1)), []);
+
   function reload() {
     setLoadErr(null);
     api
@@ -349,7 +359,7 @@ function ManageReposModal({
 
   useEffect(() => {
     reload();
-  }, [refreshNonce]);
+  }, [refreshNonce, changeNonce]);
 
   async function add(e: React.FormEvent) {
     e.preventDefault();
@@ -368,7 +378,7 @@ function ManageReposModal({
       setName("");
       setAlias("");
       setDescription("");
-      reload();
+      notifyReposChanged();
     } catch (err) {
       setActionErr(err instanceof ApiError ? err.message : String(err));
     } finally {
@@ -388,7 +398,7 @@ function ManageReposModal({
     setActionErr(null);
     try {
       await api.removeRepo(r.owner, r.name);
-      reload();
+      notifyReposChanged();
     } catch (err) {
       setActionErr(err instanceof ApiError ? err.message : String(err));
     } finally {
