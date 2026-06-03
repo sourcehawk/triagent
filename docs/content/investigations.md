@@ -96,7 +96,7 @@ contains no decision logic — it wires processes together and streams the resul
 | UI                     | Next.js SPA (this app), embedded in the launcher binary        |
 | Authentication         | Per-launch random token + cookie                               |
 
-Playbooks own the procedure, triagent-mcp owns tool semantics, claude owns judgment. Each piece is editable
+Playbooks own the procedure, triagent-mcp owns tool semantics, Claude owns judgment. Each piece is editable
 independently.
 
 ## Using the tool
