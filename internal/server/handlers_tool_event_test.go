@@ -68,3 +68,46 @@ func TestHandleToolEvent_StatusPhase_UnknownTraceID(t *testing.T) {
 	a.handleToolEvent(w, req)
 	require.Equal(t, http.StatusNotFound, w.Code)
 }
+
+// TestHandleToolEvent_WikiProposalDraftPublishesGlobalEvent verifies that a
+// successful propose_wiki_draft end-event fans a global wiki_proposal_created
+// envelope out so the sidebar's pending-proposals list refreshes — regardless
+// of whether the draft was made directly or nested inside a playbook sub-agent
+// (the nesting is what kept the inline card from rendering; this is the
+// surfacing path that doesn't depend on transcript nesting at all).
+func TestHandleToolEvent_WikiProposalDraftPublishesGlobalEvent(t *testing.T) {
+	t.Parallel()
+	mgr, inv := newTestManagerWithInvestigationForLabel(t)
+	a := &apiHandlers{
+		manager:        mgr,
+		telemetryToken: "test-token",
+		mcpHealth:      newMCPHealth(),
+	}
+
+	_, events, _, cancel := mgr.SubscribeStream("test-tok-"+t.Name(), 0)
+	t.Cleanup(cancel)
+
+	// A nested call carries parentToolId; the global event must fire anyway.
+	body := strings.NewReader(`{"phase":"end","traceId":"` + inv.ID + `","toolId":"sub_toolu_01","parentToolId":"dispatch_1","toolName":"mcp__triagent-wiki__propose_wiki_draft","result":"{\"kind\":\"wiki_proposal_draft\",\"proposal_id\":\"prop-deadbeef\",\"slug\":\"x\"}"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/internal/tool-events", body)
+	req.Header.Set("Authorization", "Bearer test-token")
+	w := httptest.NewRecorder()
+	a.handleToolEvent(w, req)
+	require.Equal(t, http.StatusAccepted, w.Code)
+
+	deadline := time.After(time.Second)
+	for {
+		select {
+		case env := <-events:
+			if env.Kind != globalKindWikiProposalCreated {
+				continue
+			}
+			require.NotNil(t, env.WikiProposalCreated)
+			require.Equal(t, "prop-deadbeef", env.WikiProposalCreated.ProposalID)
+			require.Equal(t, inv.ID, env.WikiProposalCreated.InvestigationID)
+			return
+		case <-deadline:
+			t.Fatal("timed out waiting for wiki_proposal_created global envelope")
+		}
+	}
+}

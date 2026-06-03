@@ -8,6 +8,7 @@ import { NewTypeModal } from "@/components/NewTypeModal";
 import { NewWikiEntryModal } from "@/components/wiki/NewWikiEntryModal";
 import { RepoSummaryStateProvider } from "@/components/RepoSummaryStateProvider";
 import { CodefixPRStateProvider } from "@/components/CodefixPRStateProvider";
+import { WikiProposalNotifier } from "@/components/WikiProposalNotifier";
 import { StreamProvider } from "@/lib/stream";
 import { api } from "@/lib/api";
 
@@ -89,6 +90,7 @@ export default function MainLayout({
     <StreamProvider>
       <RepoSummaryStateProvider>
         <CodefixPRStateProvider>
+          <WikiProposalNotifier>
       <AppShell
         activeId={null}
         onSelect={onSelect}
@@ -146,6 +148,7 @@ export default function MainLayout({
           />
         )}
       </AppShell>
+          </WikiProposalNotifier>
         </CodefixPRStateProvider>
       </RepoSummaryStateProvider>
     </StreamProvider>

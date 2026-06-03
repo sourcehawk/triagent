@@ -823,6 +823,15 @@ func (a *apiHandlers) handleToolEvent(w http.ResponseWriter, r *http.Request) {
 				a.persistCodefixProposal(body.TraceID, body.Result)
 			} else if isCreateGithubIssueToolName(body.ToolName) {
 				a.persistCodefixIssue(body.TraceID, body.Result)
+			} else if body.ToolName == proposeWikiDraftToolName {
+				// The wiki MCP already wrote the draft to disk; fan a global
+				// event so the sidebar's pending list refreshes live. This
+				// path is independent of transcript nesting, so it surfaces
+				// proposals drafted inside a playbook sub-agent too.
+				a.manager.PublishWikiProposalCreated(WikiProposalCreatedEvent{
+					ProposalID:      wikiProposalIDFromResult(body.Result),
+					InvestigationID: body.TraceID,
+				})
 			}
 		}
 

@@ -450,6 +450,14 @@ export type StreamEnvelope = {
     durationMs: number;
     error?: string;
   };
+  // wikiProposalCreated rides on wiki_proposal_created global envelopes —
+  // fired when a propose_wiki_draft call lands a new draft. The sidebar's
+  // pending-proposals list refetches on it so a proposal surfaces live even
+  // when it was drafted inside a playbook sub-agent.
+  wikiProposalCreated?: {
+    proposalID?: string;
+    investigationID?: string;
+  };
   // usage rides on assistant + result envelopes — claude's per-message
   // and per-CLI-invocation token tallies. Subscribers that care about
   // running session totals (Sidebar, SessionView footer) sum costUsd +

@@ -13,6 +13,25 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// proposeWikiDraftToolName is the wire-format name of the wiki MCP's draft
+// tool. Mirrors the frontend PROPOSE_WIKI_DRAFT_TOOL_NAME constant; the
+// tool-event handler keys the wiki_proposal_created global event off it.
+const proposeWikiDraftToolName = "mcp__triagent-wiki__propose_wiki_draft"
+
+// wikiProposalIDFromResult pulls the proposal_id out of a propose_wiki_draft
+// structured result. Best-effort: returns "" when the result isn't the
+// expected JSON. The sidebar refetches the whole list regardless, so the id
+// is for traceability only and never gates the refresh.
+func wikiProposalIDFromResult(result string) string {
+	var parsed struct {
+		ProposalID string `json:"proposal_id"`
+	}
+	if err := json.Unmarshal([]byte(result), &parsed); err != nil {
+		return ""
+	}
+	return parsed.ProposalID
+}
+
 // marshalWikiFrontmatter marshals a wikiFrontmatter struct back to YAML text
 // (without trailing newline). Used by the resolve handler to rewrite the file.
 func marshalWikiFrontmatter(fm wikiFrontmatter) (string, error) {
