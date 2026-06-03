@@ -132,6 +132,13 @@ nodes:
       the master investigation's session id (NOT this
       `capture_offer` session) so the proposal lives as a sibling
       of the original investigation in the activity panel.
+      The dispatched sub-agent has NO access to this investigation —
+      your `notes` are its only context. Write a complete, self-
+      contained brief: the symptom, the key findings and evidence, the
+      root cause and resolution, and the actual prose and sections that
+      should make up the wiki entry. If a detail belongs in the entry,
+      write it out in full here — the sub-agent cannot see anything you
+      have seen.
     handoff:
       - wiki_proposal
 
@@ -141,6 +148,13 @@ nodes:
       Hand off to `playbook_proposal`. Pass `parent_session_id`
       set to the master investigation's session id (NOT this
       `capture_offer` session).
+      The dispatched sub-agent has NO access to this investigation —
+      your `notes` are its only context. Write a complete, self-
+      contained brief: the symptom, the key findings and evidence, the
+      root cause and resolution, and the playbook's actual shape — the
+      node descriptions, the suggested_calls each step should run, and
+      the terminals. If a detail belongs in the playbook, write it out
+      in full here — the sub-agent cannot see anything you have seen.
     handoff:
       - playbook_proposal
 
@@ -169,7 +183,10 @@ nodes:
       Run wiki first, then playbook, then codefix. The codefix
       issue body can cite the freshly-promoted wiki entry. For each,
       hand off via `walk_playbook` and pass `parent_session_id`
-      set to the master investigation's session id.
+      set to the master investigation's session id. Each dispatched
+      sub-agent has NO access to this investigation — its `notes` are
+      its only context, so give each a complete, self-contained brief
+      with every detail that belongs in that artifact.
     handoff:
       - wiki_proposal
       - playbook_proposal

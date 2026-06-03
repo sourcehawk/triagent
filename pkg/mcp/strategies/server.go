@@ -249,7 +249,7 @@ type walkPlaybookIn struct {
 	PlaybookID string `json:"playbook_id" jsonschema:"the playbook to start; one of the ids returned by list_playbooks"`
 	ClusterID  string `json:"cluster_id" jsonschema:"the cluster id under investigation"`
 	Namespace  string `json:"namespace" jsonschema:"the Kubernetes namespace bound to the k8s MCP for this session"`
-	Notes      string `json:"notes,omitempty" jsonschema:"optional operator-supplied context (incident summary, what was tried already)"`
+	Notes      string `json:"notes,omitempty" jsonschema:"Context for this walk. For a dispatch-mode proposal playbook (wiki_proposal, playbook_proposal) this is CRITICAL and must be exhaustive: the dispatched sub-agent runs in a SEPARATE session with NO access to this investigation — your notes are its ENTIRE context. Write a complete, self-contained brief — the symptom, the key findings and evidence, the root cause and resolution, and the actual content that should end up in the artifact (entry sections and prose for a wiki entry; node descriptions, suggested_calls, and terminals for a playbook). Do not assume the sub-agent can see anything you have seen or summarised; if a detail belongs in the playbook/wiki, write it out here in full. For a non-dispatch playbook, a short incident summary plus what was tried is enough."`
 	// ParentSessionID is set when this walk_playbook is the
 	// follow-up to a terminal node's handoff. The walker uses it to
 	// detect circular handoffs (A → B → A) and reject them. Always
