@@ -304,7 +304,7 @@ investigation_inputs:
 | `text`          | single-line input                                   | `{{.value}}`                       |
 | `url`           | single-line input, light URL validation             | `{{.value}}`                       |
 | `textarea`      | multi-line textarea                                 | `{{.value}}`                       |
-| `cluster_id`    | cluster picker bound to detected kube contexts      | `{{.value}}`                       |
+| `cluster_id`    | cluster picker bound to the provider's clusters     | `{{.value}}`                       |
 | `slack_channel` | channel picker (filtered by `slack.channel_prefix`) | `{{.id}}`, `{{.name}}`, `{{.url}}` |
 
 Required (`optional: false`) inputs must be non-empty at preflight or the investigation refuses to start. For

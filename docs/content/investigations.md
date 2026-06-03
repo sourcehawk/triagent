@@ -18,31 +18,8 @@ The result of a typical session is a tidy markdown summary the operator can past
 likely root cause, evidence, recommended next steps. The activity panel keeps every tool call visible, so operators can
 audit the chain or interrupt with a follow-up at any point.
 
-## Why it exists
-
-Cluster triage isn't a `kubectl` command; it's a cross-source scramble. A typical incident looks like this:
-
-1. **Alert lands.** Pager, Slack `@`-mention, customer ticket. You were probably already on something else.
-2. **Catch up on the channel.** What has the customer / oncall / support already said? What's been ruled out? Who
-   else is looking?
-3. **Read the cluster state.** Pods, events, logs, the failing pod's owner CR, the Crossplane composite, the
-   backup status, the gateway service.
-4. **Check what changed.** Recent deploys, spec bumps, controller version skews, last week's incident
-   write-up that mentioned the same component.
-5. **Pull metrics.** Prometheus for saturation, incident.io for the ongoing-incident timeline.
-6. **Recall prior art.** Have we seen this exact pattern before, and what fixed it?
-7. **Synthesise.** Hold the cross-references in your head, decide which thread to pull next, write up a conclusion
-   someone else can act on.
-
-Each step is mechanical for an experienced operator, but the tabs multiply and the synthesis is slow. Worse, the
-patterns drift as new operators rotate in, and the artefact at the end is a Slack message that decays the moment the
-channel scrolls.
-
-This tool collapses steps 2–6 into one conversation against one audit trail. The walker knows which sources to consult
-for which failure shapes; the MCP catalog turns each query into a single typed tool call; the summary in step 7 falls
-out of the walker's terminal node. Operators stay in the loop: every tool call is visible in the activity panel, the
-conclusion is editable before sharing, and you can step in mid-session whenever the walker hits something it doesn't
-recognise.
+For the broader problem this surface addresses — the cross-source scramble a typical incident turns into — see
+[Overview → The problem it solves](/docs/overview#the-problem-it-solves).
 
 ## How it works
 
@@ -86,10 +63,14 @@ the token falls out of the address bar. The launcher stays alive in the terminal
 
 ### One investigation, end-to-end
 
-1. **Pick a cluster.** The launcher queries the configured provider (Teleport by default) for the operator's
-   reachable clusters, then calls the provider's `Login` to obtain a kubeconfig context.
-2. **Preflight.** Confirms the namespace exists, RBAC permits pod listing, and writes a per-session `mcp.json`
-   describing which triagent-mcp servers to spawn.
+1. **Provide a starting point.** An investigation needs at least one input: a cluster, an incident URL, a Slack thread,
+   or free-form notes. Picking a cluster is optional. When one is picked, the launcher queries the configured provider
+   (kubeconfig by default, Teleport when the profile selects it) for the operator's reachable clusters and calls the
+   provider's `Login` to obtain a kubeconfig context. With no cluster up front, the agent infers one from the remaining
+   inputs and calls `switch_context` at runtime.
+2. **Preflight.** When a cluster was picked, confirms it is reachable and RBAC permits read access. Either way it writes
+   a per-session `mcp.json` describing which triagent-mcp servers to spawn. The agent narrows down the namespace at
+   runtime via the k8s tools; it isn't fixed at preflight.
 3. **Spawn the agent.** Claude is launched with that `mcp.json` plus a system prompt that points the agent at the
    `investigation` playbook. The agent is told nothing product-specific in prose; the playbooks carry the procedural
    knowledge.
@@ -101,19 +82,22 @@ the token falls out of the address bar. The launcher stays alive in the terminal
 6. **Follow up or close.** The operator can keep chatting (clarifying questions, deeper dives); those route through the
    `followup_conversation` meta-playbook so the response shape stays coherent.
 
-### What lives where
+### Separation of concerns
+
+Each part of the system owns exactly one job, so any one can change without touching the others. The launcher itself
+contains no decision logic — it wires processes together and streams the result to the browser.
 
 | Concern                | Owner                                                          |
 | ---------------------- | -------------------------------------------------------------- |
-| Cluster picker / login | Provider plugin (Teleport by default)                          |
+| Cluster picker / login | Auth provider (kubeconfig by default, Teleport optional)       |
 | Tool execution         | triagent-mcp servers (k8s, strategies, git, wiki, ...)         |
 | Decision logic         | YAML playbooks (the strategies MCP walks them)                 |
 | Reasoning              | Claude CLI (the agent invoking tools)                          |
 | UI                     | Next.js SPA (this app), embedded in the launcher binary        |
 | Authentication         | Per-launch random token + cookie                               |
 
-The launcher itself contains zero decision logic. Playbooks own the procedure, triagent-mcp owns tool semantics,
-claude owns judgment. Each piece is editable independently.
+Playbooks own the procedure, triagent-mcp owns tool semantics, Claude owns judgment. Each piece is editable
+independently.
 
 ## Using the tool
 
@@ -126,8 +110,8 @@ claude owns judgment. Each piece is editable independently.
 3. Click **+ new investigation** in the sidebar (or navigate to `/investigations/new`) to start a fresh one. Pick a
    cluster from the dropdown. If the provider isn't logged in, you'll be prompted to authenticate (SSO/2FA prompts
    surface in the terminal where you ran `triagent start`, not the browser).
-4. Fill in the form:
-   - **cluster ID** (required when using the cluster_id profile input). The data namespace is derived per your profile.
+4. Fill in the form. The fields below are individually optional, but the investigation needs at least one starting
+   point — the cluster you picked above, or one of these:
    - **incident URL** (optional). Pasted verbatim into the agent's prompt as context, useful for incident.io links
      so the agent can pull the corresponding incident metadata if the incident.io MCP is connected.
    - **Slack channel** (optional). When Slack is connected, the field becomes a channel picker (search by name); the
@@ -232,9 +216,9 @@ have it and is trained to yield to you in those cases.
 
 ### Enabling
 
-- **Start screen:** tick **Run in auto mode** before submitting.
-- **Mid-session:** press **Enable auto mode** on the session header
-  (coming soon; for now, restart with auto mode on).
+Tick **Run in auto mode** on the start screen before submitting. A watch can also start a session in auto mode
+directly (see [Watches](/docs/watches#two-toggles-auto-ingest-and-auto-start)). To hand an already-running manual
+session to the operator agent, restart it with auto mode on.
 
 ### Take over
 
