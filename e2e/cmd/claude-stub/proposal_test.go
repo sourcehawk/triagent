@@ -86,6 +86,60 @@ func TestReplay_ProposalPostsStartAndEndToolEvents(t *testing.T) {
 	}
 }
 
+// A proposal action with an explicit toolId + parentToolId models a
+// proposal drafted INSIDE a walk_playbook sub-agent: its tool-events nest
+// under the dispatch. The stub must forward parentToolId verbatim so the
+// launcher publishes a nested envelope — the exact shape the surfacing
+// fixes (card hoist, global event, codefix persist) have to handle.
+func TestReplay_NestedProposalCarriesParentToolID(t *testing.T) {
+	var mu sync.Mutex
+	var got []toolEventBody
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var b toolEventBody
+		if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
+			t.Errorf("decode body: %v", err)
+		}
+		mu.Lock()
+		got = append(got, b)
+		mu.Unlock()
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer srv.Close()
+
+	p := &poster{client: srv.Client(), url: srv.URL + "/api/internal/tool-events", traceID: "inv-1"}
+
+	actions := []action{
+		{Action: "proposal", Name: "mcp__triagent-strategies__walk_playbook", ToolID: "dispatch-1",
+			Result: json.RawMessage(`{"dispatched":{"summary":"running"}}`)},
+		{Action: "proposal", Name: "mcp__triagent-wiki__propose_wiki_draft", ToolID: "wiki-nested", ParentToolID: "dispatch-1",
+			Result: json.RawMessage(`{"kind":"wiki_proposal_draft","proposal_id":"pw-1"}`)},
+		{Action: "exit", Code: 0},
+	}
+
+	tr := &trace{f: os.NewFile(0, ""), enc: json.NewEncoder(&bytes.Buffer{})}
+	out := bufio.NewWriter(&bytes.Buffer{})
+	if _, err := replay(actions, bufio.NewReader(strings.NewReader("")), out, tr, replayDeps{poster: p}); err != nil {
+		t.Fatalf("replay: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(got) != 4 {
+		t.Fatalf("got %d tool-events, want 4 (2 per proposal): %+v", len(got), got)
+	}
+	for _, ev := range got[2:] { // the wiki child's start+end
+		if ev.ToolID != "wiki-nested" {
+			t.Errorf("nested proposal toolId = %q, want the explicit wiki-nested", ev.ToolID)
+		}
+		if ev.ParentToolID != "dispatch-1" {
+			t.Errorf("nested proposal parentToolId = %q, want dispatch-1 (must nest under the dispatch)", ev.ParentToolID)
+		}
+	}
+	if got[0].ParentToolID != "" {
+		t.Errorf("the dispatch itself must be top-level, got parentToolId %q", got[0].ParentToolID)
+	}
+}
+
 // A nil poster means telemetry isn't configured (the launcher ran the
 // stub without an MCP-config telemetry block, e.g. the stub's own unit
 // tests). A proposal action must then degrade to emitting the stream

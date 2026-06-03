@@ -32,12 +32,13 @@ type poster struct {
 // (internal/server/handlers.go). Only the fields the stub sets are
 // modelled; the launcher tolerates the omitted ones.
 type toolEventBody struct {
-	Phase    string          `json:"phase"`
-	TraceID  string          `json:"traceId"`
-	ToolID   string          `json:"toolId"`
-	ToolName string          `json:"toolName,omitempty"`
-	Input    json.RawMessage `json:"input,omitempty"`
-	Result   string          `json:"result,omitempty"`
+	Phase        string          `json:"phase"`
+	TraceID      string          `json:"traceId"`
+	ToolID       string          `json:"toolId"`
+	ToolName     string          `json:"toolName,omitempty"`
+	ParentToolID string          `json:"parentToolId,omitempty"`
+	Input        json.RawMessage `json:"input,omitempty"`
+	Result       string          `json:"result,omitempty"`
 }
 
 // mcpConfigEnvSnippet is the minimal view of a launcher-written mcp.json
@@ -96,23 +97,28 @@ func (p *poster) nextToolID() string {
 // render the proposal card. The end event also carries toolName because
 // the launcher branches on it to persist draft-PR / GitHub-issue codefix
 // proposals (handleToolEvent); a real triagent-mcp end event sets it too.
-func (p *poster) roundTrip(toolName string, input json.RawMessage, result string) (string, error) {
-	id := p.nextToolID()
+func (p *poster) roundTrip(toolName string, input json.RawMessage, result, toolID, parentToolID string) (string, error) {
+	id := toolID
+	if id == "" {
+		id = p.nextToolID()
+	}
 	if err := p.post(toolEventBody{
-		Phase:    "start",
-		TraceID:  p.traceID,
-		ToolID:   id,
-		ToolName: toolName,
-		Input:    input,
+		Phase:        "start",
+		TraceID:      p.traceID,
+		ToolID:       id,
+		ToolName:     toolName,
+		ParentToolID: parentToolID,
+		Input:        input,
 	}); err != nil {
 		return id, err
 	}
 	if err := p.post(toolEventBody{
-		Phase:    "end",
-		TraceID:  p.traceID,
-		ToolID:   id,
-		ToolName: toolName,
-		Result:   result,
+		Phase:        "end",
+		TraceID:      p.traceID,
+		ToolID:       id,
+		ToolName:     toolName,
+		ParentToolID: parentToolID,
+		Result:       result,
 	}); err != nil {
 		return id, err
 	}
