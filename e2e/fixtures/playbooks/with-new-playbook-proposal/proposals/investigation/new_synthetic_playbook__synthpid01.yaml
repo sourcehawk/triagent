@@ -1,0 +1,13 @@
+id: new_synthetic_playbook
+schema_version: 1
+type: investigation
+symptom: "Synthetic new-playbook proposal — no live playbook with this id exists on disk"
+description: |
+  A brand-new playbook proposed by the agent. There is no live playbook
+  with this id, so opening the proposal must seed the editor from the
+  draft rather than 404 on getPlaybook.
+entrypoint: assess
+nodes:
+  assess:
+    description: "Assess whether the pattern applies, then report the verdict."
+    terminal_advice: "Report the assessment and stand down."
