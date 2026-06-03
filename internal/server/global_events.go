@@ -17,13 +17,14 @@ const (
 // from the per-investigation envKind* set so a misrouted event would
 // stand out.
 const (
-	globalKindRepoSummaryState   = "repo_summary_state"
-	globalKindCodefixPRState     = "codefix_pr_state"
-	globalKindWatchStatus        = "watch_status"
-	globalKindSignalCreated      = "signal_created"
-	globalKindItemCaptured       = "item_captured"
-	globalKindIngestRunStarted   = "ingest_run_started"
-	globalKindIngestRunFinished  = "ingest_run_finished"
+	globalKindRepoSummaryState    = "repo_summary_state"
+	globalKindCodefixPRState      = "codefix_pr_state"
+	globalKindWatchStatus         = "watch_status"
+	globalKindSignalCreated       = "signal_created"
+	globalKindItemCaptured        = "item_captured"
+	globalKindIngestRunStarted    = "ingest_run_started"
+	globalKindIngestRunFinished   = "ingest_run_finished"
+	globalKindWikiProposalCreated = "wiki_proposal_created"
 )
 
 // GlobalEventEnvelope is the wire shape on /api/events. Mirrors
@@ -41,11 +42,21 @@ type GlobalEventEnvelope struct {
 	// CodefixPRState is set when Kind == "codefix_pr_state".
 	CodefixPRState *CodefixPRStatePayload `json:"codefixPRState,omitempty"`
 
-	WatchStatus        *WatchStatusEvent        `json:"watchStatus,omitempty"`
-	SignalCreated      *SignalCreatedEvent      `json:"signalCreated,omitempty"`
-	ItemCaptured       *ItemCapturedEvent       `json:"itemCaptured,omitempty"`
-	IngestRunStarted   *IngestRunStartedEvent   `json:"ingestRunStarted,omitempty"`
-	IngestRunFinished  *IngestRunFinishedEvent  `json:"ingestRunFinished,omitempty"`
+	WatchStatus         *WatchStatusEvent         `json:"watchStatus,omitempty"`
+	SignalCreated       *SignalCreatedEvent       `json:"signalCreated,omitempty"`
+	ItemCaptured        *ItemCapturedEvent        `json:"itemCaptured,omitempty"`
+	IngestRunStarted    *IngestRunStartedEvent    `json:"ingestRunStarted,omitempty"`
+	IngestRunFinished   *IngestRunFinishedEvent   `json:"ingestRunFinished,omitempty"`
+	WikiProposalCreated *WikiProposalCreatedEvent `json:"wikiProposalCreated,omitempty"`
+}
+
+// WikiProposalCreatedEvent fires when a propose_wiki_draft tool call lands a
+// new draft on disk. The sidebar's pending-proposals list refetches on it, so
+// a proposal surfaces live even when the draft was made inside a playbook
+// sub-agent (whose nested tool result the transcript-card path can't see).
+type WikiProposalCreatedEvent struct {
+	ProposalID      string `json:"proposalID,omitempty"`
+	InvestigationID string `json:"investigationID,omitempty"`
 }
 
 // IngestRunStartedEvent fires when ClaudeIngestor.Run spawns claude.
@@ -103,7 +114,7 @@ type ItemCapturedEvent struct {
 // reads it off /api/events to flip CodefixProposalCard lifecycle.
 type CodefixPRStatePayload struct {
 	URL      string     `json:"url"`
-	State    string     `json:"state"`              // "open" | "merged" | "closed" | "" (unknown)
+	State    string     `json:"state"` // "open" | "merged" | "closed" | "" (unknown)
 	MergedAt *time.Time `json:"mergedAt,omitempty"`
 	ClosedAt *time.Time `json:"closedAt,omitempty"`
 }
@@ -162,4 +173,3 @@ func (r *globalRing) replay(now time.Time) []GlobalEventEnvelope {
 	}
 	return out
 }
-

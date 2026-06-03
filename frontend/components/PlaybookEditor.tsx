@@ -634,8 +634,37 @@ export function PlaybookEditor({ id, onBack, onMutated, onOpenPlaybook }: Props)
         // No-op restore lets the persist effect skip its own write below.
         void restored;
       })
-      .catch((e) => {
+      .catch(async (e) => {
         if (cancelled) return;
+        // A brand-new playbook proposal has no live playbook by this id yet,
+        // so getPlaybook 404s. When we're deep-linked to that proposal
+        // (?proposal=<id>&tab=proposal), seed the editor from the proposal's
+        // draft — like __new — instead of showing "playbook not found".
+        if (e instanceof ApiError && e.status === 404 && initialProposalID) {
+          try {
+            const res = await api.getPlaybookProposal(initialProposalID);
+            if (cancelled) return;
+            if (res.status === "pending" && res.new_yaml) {
+              const parsed = parsePlaybookYAML(res.new_yaml);
+              if (res.type) parsed.type = res.type;
+              dispatch({ type: "set", next: parsed });
+              setLoad({
+                kind: "loaded",
+                original: parsed,
+                source: "user",
+                locked: false,
+                isNew: true,
+                disabled: false,
+                commits: [],
+              });
+              setSyncState({ status: "local-only", reason: "not yet on upstream" });
+              setSelectedNode(parsed.entrypoint);
+              return;
+            }
+          } catch {
+            /* fall through to the error state below */
+          }
+        }
         setLoad({
           kind: "error",
           message: e instanceof ApiError ? e.message : String(e),
@@ -645,7 +674,7 @@ export function PlaybookEditor({ id, onBack, onMutated, onOpenPlaybook }: Props)
     return () => {
       cancelled = true;
     };
-  }, [id, refetchKey]);
+  }, [id, refetchKey, initialProposalID]);
 
   // Chat-alive gate: once the operator has opened a chat session for
   // some playbook, the drawer's session is anchored to THAT subject

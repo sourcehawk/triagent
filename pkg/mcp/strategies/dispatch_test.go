@@ -248,3 +248,93 @@ func TestWalkPlaybook_DefaultDispatchUsesWalker(t *testing.T) {
 	assert.NotEmpty(t, out.SessionID, "default dispatch returns a walker session id")
 	assert.Equal(t, "a", out.Step.NodeID)
 }
+
+// TestWalkPlaybook_DispatchResumesAndForcesTerminal: a proposal dispatch that
+// returns without calling a terminal tool is resumed (same session) with a
+// forcing follow-up; once it calls the submit tool the outcome is "submitted".
+func TestWalkPlaybook_DispatchResumesAndForcesTerminal(t *testing.T) {
+	t.Parallel()
+	pb := &Playbook{ID: "playbook_proposal", Dispatch: DispatchSubagent, Entrypoint: "a",
+		Nodes: map[string]Node{"a": {ID: "a", Description: "draft a playbook"}}}
+	var calls []subagent.Options
+	srv := newEmptyServer(t)
+	srv.playbooks[pb.ID] = pb
+	srv.subAgentRunner = func(_ context.Context, opts subagent.Options) (subagent.Result, error) {
+		calls = append(calls, opts)
+		if len(calls) == 1 {
+			return subagent.Result{Summary: "I wrote the YAML to a file.", SessionID: "sess-1"}, nil
+		}
+		return subagent.Result{Summary: "Submitted.", SessionID: "sess-1",
+			TerminalToolsCalled: []string{"mcp__triagent-strategies__playbook_proposal_draft"}}, nil
+	}
+
+	_, out, err := srv.walkPlaybook(context.Background(), nil, walkPlaybookIn{PlaybookID: pb.ID})
+	require.NoError(t, err)
+	require.Len(t, calls, 2, "a no-terminal run must be resumed and forced once")
+	assert.Equal(t, "sess-1", calls[1].ResumeSessionID, "the force-retry resumes the same conversation")
+	assert.NotEmpty(t, calls[1].Prompt, "the force-retry carries a forcing follow-up prompt")
+	assert.Contains(t, calls[0].RequiredTerminalTools, "mcp__triagent-strategies__playbook_proposal_draft")
+	require.NotNil(t, out.Dispatched)
+	assert.Equal(t, "submitted", out.Dispatched.ProposalOutcome)
+}
+
+// TestWalkPlaybook_DispatchDeclineIsNotForced: a sub-agent that explicitly
+// calls decline_proposal reached a terminal — no retry, outcome "declined".
+func TestWalkPlaybook_DispatchDeclineIsNotForced(t *testing.T) {
+	t.Parallel()
+	pb := &Playbook{ID: "wiki_proposal", Dispatch: DispatchSubagent, Entrypoint: "a",
+		Nodes: map[string]Node{"a": {ID: "a", Description: "draft a wiki entry"}}}
+	var calls int
+	srv := newEmptyServer(t)
+	srv.playbooks[pb.ID] = pb
+	srv.subAgentRunner = func(_ context.Context, _ subagent.Options) (subagent.Result, error) {
+		calls++
+		return subagent.Result{Summary: "Below the bar.", SessionID: "s",
+			TerminalToolsCalled: []string{"mcp__triagent-strategies__decline_proposal"}}, nil
+	}
+	_, out, err := srv.walkPlaybook(context.Background(), nil, walkPlaybookIn{PlaybookID: pb.ID})
+	require.NoError(t, err)
+	assert.Equal(t, 1, calls, "a decline is a valid terminal — no force-retry")
+	assert.Equal(t, "declined", out.Dispatched.ProposalOutcome)
+}
+
+// TestWalkPlaybook_DispatchNoTerminalSurfacesNone: when no terminal ever fires,
+// the outcome is "none" and the summary is prefixed so the master can't read it
+// as success.
+func TestWalkPlaybook_DispatchNoTerminalSurfacesNone(t *testing.T) {
+	t.Parallel()
+	pb := &Playbook{ID: "playbook_proposal", Dispatch: DispatchSubagent, Entrypoint: "a",
+		Nodes: map[string]Node{"a": {ID: "a", Description: "draft"}}}
+	var calls int
+	srv := newEmptyServer(t)
+	srv.playbooks[pb.ID] = pb
+	srv.subAgentRunner = func(_ context.Context, _ subagent.Options) (subagent.Result, error) {
+		calls++
+		return subagent.Result{Summary: "Here is what I would propose.", SessionID: "s"}, nil
+	}
+	_, out, err := srv.walkPlaybook(context.Background(), nil, walkPlaybookIn{PlaybookID: pb.ID})
+	require.NoError(t, err)
+	assert.Equal(t, 1+maxForceDispatchRetries, calls, "initial run plus the bounded force-retries")
+	assert.Equal(t, "none", out.Dispatched.ProposalOutcome)
+	assert.Contains(t, out.Dispatched.Summary, "NO PROPOSAL WAS SUBMITTED")
+}
+
+// TestWalkPlaybook_DispatchTimeoutIsNotForced: a timed-out run is surfaced, not
+// retried (the cap fired mid-work; retrying compounds it).
+func TestWalkPlaybook_DispatchTimeoutIsNotForced(t *testing.T) {
+	t.Parallel()
+	pb := &Playbook{ID: "playbook_proposal", Dispatch: DispatchSubagent, Entrypoint: "a",
+		Nodes: map[string]Node{"a": {ID: "a", Description: "draft"}}}
+	var calls int
+	srv := newEmptyServer(t)
+	srv.playbooks[pb.ID] = pb
+	srv.subAgentRunner = func(_ context.Context, _ subagent.Options) (subagent.Result, error) {
+		calls++
+		return subagent.Result{Summary: "partial", SessionID: "s", TimedOut: true}, nil
+	}
+	_, out, err := srv.walkPlaybook(context.Background(), nil, walkPlaybookIn{PlaybookID: pb.ID})
+	require.NoError(t, err)
+	assert.Equal(t, 1, calls, "a timed-out run is not force-retried")
+	assert.Equal(t, "none", out.Dispatched.ProposalOutcome)
+	assert.True(t, out.Dispatched.TimedOut)
+}

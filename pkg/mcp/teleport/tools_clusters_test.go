@@ -22,6 +22,7 @@ type fakeProvider struct {
 	loginResult   *auth.LoginResult
 	loginErr      error
 	loginCalls    []string
+	reauthAdvice  string
 }
 
 func (f *fakeProvider) IsAuthenticated() bool { return f.authenticated }
@@ -31,6 +32,12 @@ func (f *fakeProvider) ListClusters(_ context.Context) ([]auth.Cluster, error) {
 func (f *fakeProvider) Login(_ context.Context, c string) (*auth.LoginResult, error) {
 	f.loginCalls = append(f.loginCalls, c)
 	return f.loginResult, f.loginErr
+}
+func (f *fakeProvider) ReauthAdvice() string {
+	if f.reauthAdvice != "" {
+		return f.reauthAdvice
+	}
+	return "Teleport session expired or missing — run `tsh login` in your terminal, then retry"
 }
 
 // kubeconfigWithContexts writes a minimal kubeconfig with the named contexts.
@@ -181,4 +188,46 @@ func TestListClusters_AuthRequired(t *testing.T) {
 	tc, ok := res.Content[0].(*mcpTextContent)
 	require.True(t, ok)
 	assert.Contains(t, tc.Text, "tsh login", "auth-failure message must name the command to run")
+}
+
+// The auth-required message must come from the provider so it reflects the
+// deployment's configured proxy/connector — not a static string baked against
+// the empty package defaults (which produced `tsh login --proxy= --auth=okta`).
+func TestAuthRequiredMessage_ComesFromProvider(t *testing.T) {
+	t.Parallel()
+	provider := &fakeProvider{authenticated: false, reauthAdvice: "SENTINEL-REAUTH-ADVICE"}
+	srv := newTestServer(t, kubeconfigWithContexts(t), provider)
+
+	clusters, _, err := srv.listClusters(context.Background(), nil, ListClustersInput{})
+	require.NoError(t, err)
+	require.True(t, clusters.IsError)
+	assert.Contains(t, clusters.Content[0].(*mcpTextContent).Text, "SENTINEL-REAUTH-ADVICE")
+
+	login, _, err := srv.login(context.Background(), nil, LoginInput{Cluster: "prod-eu-1"})
+	require.NoError(t, err)
+	require.True(t, login.IsError)
+	assert.Contains(t, login.Content[0].(*mcpTextContent).Text, "SENTINEL-REAUTH-ADVICE")
+}
+
+// Regression for the empty-proxy bug: a teleport deployment with a configured
+// proxy must see that proxy in the re-auth advice. Constructs the real
+// provider (no stub) with an empty TELEPORT_HOME so it reads as unauthenticated
+// deterministically, then asserts the proxy threaded through New → provider →
+// message.
+func TestNew_ThreadsConfiguredProxyIntoAuthMessage(t *testing.T) {
+	t.Setenv("TELEPORT_HOME", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+	srv, err := New(Options{
+		KubeconfigPath: kubeconfigWithContexts(t),
+		Proxy:          "proxy.example.com",
+		AuthConnector:  "okta",
+	})
+	require.NoError(t, err)
+
+	res, _, err := srv.listClusters(context.Background(), nil, ListClustersInput{})
+	require.NoError(t, err)
+	require.True(t, res.IsError, "no Teleport session in test env, so auth must be required")
+	text := res.Content[0].(*mcpTextContent).Text
+	assert.Contains(t, text, "--proxy=proxy.example.com", "configured proxy must reach the message")
+	assert.Contains(t, text, "--auth=okta")
 }

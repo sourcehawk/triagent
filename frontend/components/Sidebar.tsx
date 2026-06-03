@@ -106,13 +106,27 @@ function InvRow({ inv, active, onSelect, onDelete, onRenamed }: InvRowProps) {
 
   return (
     <li>
-      <button
-        type="button"
+      {/* role=button (not a <button>) because the row hosts nested
+          controls — rename / delete buttons and the rename <input> — and
+          a <button> may not contain interactive descendants (invalid HTML
+          + hydration error). tabIndex + onKeyDown keep keyboard activation;
+          the guard restricts it to the row's own focus so Enter in the
+          rename input doesn't also select the row. */}
+      <div
+        role="button"
+        tabIndex={0}
         data-testid="triagent-investigation-row"
         data-investigation-id={inv.id}
         onClick={() => onSelect(inv.id)}
+        onKeyDown={(e) => {
+          if (e.target !== e.currentTarget) return;
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onSelect(inv.id);
+          }
+        }}
         className={
-          "group flex w-full flex-col items-start gap-0.5 rounded px-2 py-1.5 text-left transition " +
+          "group flex w-full cursor-pointer flex-col items-start gap-0.5 rounded px-2 py-1.5 text-left transition " +
           (active ? "bg-zinc-800/80" : "hover:bg-zinc-900")
         }
       >
@@ -198,7 +212,7 @@ function InvRow({ inv, active, onSelect, onDelete, onRenamed }: InvRowProps) {
           )}
         </div>
         <StatusLine inv={inv} />
-      </button>
+      </div>
     </li>
   );
 }

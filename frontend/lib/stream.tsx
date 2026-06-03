@@ -25,6 +25,41 @@ type StreamContext = {
 
 const Ctx = createContext<StreamContext | null>(null);
 
+// STREAM_EVENT_KINDS is the exhaustive set of SSE event names the single
+// EventSource listens for. The server names every frame with its Kind
+// (writeStreamSSE sets `event: <kind>`), and EventSource only delivers a frame
+// to a listener registered for that exact name — so a kind missing here is
+// silently dropped and its live updates appear only after a /transcript
+// refetch. Keep this in sync with the Go envKind* (per-investigation) and
+// globalKind* (launcher-wide) constants; lib/stream.test.ts pins the kinds
+// that have live consumers.
+export const STREAM_EVENT_KINDS = [
+  // Per-investigation transcript kinds (Go envKind*).
+  "system",
+  "assistant",
+  "tool_use",
+  "tool_result",
+  "tool_status",
+  "result",
+  "error",
+  "user",
+  "end",
+  "push_state",
+  "rehydrate_state",
+  "label",
+  "auto_mode_state",
+  "usage",
+  // Launcher-wide kinds (Go globalKind*).
+  "repo_summary_state",
+  "codefix_pr_state",
+  "watch_status",
+  "signal_created",
+  "item_captured",
+  "ingest_run_started",
+  "ingest_run_finished",
+  "wiki_proposal_created",
+] as const;
+
 // StreamProvider owns the single EventSource at /api/stream for the
 // page lifetime. Consumers subscribe via useStream() with a filter;
 // their handler receives every envelope matching that filter.
@@ -78,33 +113,12 @@ export function StreamProvider({ children }: { children: ReactNode }) {
     };
 
     // The server sets event: <kind> on every frame (see writeStreamSSE).
-    const kinds = [
-      "system",
-      "assistant",
-      "tool_use",
-      "tool_result",
-      "result",
-      "error",
-      "user",
-      "end",
-      "push_state",
-      "rehydrate_state",
-      "label",
-      "repo_summary_state",
-      "tool_status",
-      "watch_status",
-      "signal_created",
-      "item_captured",
-      "ingest_run_started",
-      "ingest_run_finished",
-      "usage",
-    ];
-    for (const k of kinds) {
+    for (const k of STREAM_EVENT_KINDS) {
       es.addEventListener(k, dispatch as EventListener);
     }
 
     return () => {
-      for (const k of kinds) {
+      for (const k of STREAM_EVENT_KINDS) {
         es.removeEventListener(k, dispatch as EventListener);
       }
       es.close();

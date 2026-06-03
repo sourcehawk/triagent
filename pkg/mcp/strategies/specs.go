@@ -74,6 +74,12 @@ func ToolSpecs() []toolspec.ToolSpec {
 		},
 		{
 			Server:      "triagent-strategies",
+			Name:        "decline_proposal",
+			Description: "Explicit terminal for a proposal flow that deliberately submits no draft (below the bar). Records a one-line reason; the dispatcher requires a submit OR decline call so it can tell a real decline from an unfinished sub-agent.",
+			Inputs:      toolspec.FromStruct(declineProposalIn{}),
+		},
+		{
+			Server:      "triagent-strategies",
 			Name:        "list_proposals",
 			Description: "List current and recently-resolved playbook proposals (status: awaiting_review | approved | declined) with operator decline notes; call before drafting to avoid re-submitting a just-declined shape.",
 			Inputs:      toolspec.FromStruct(listProposalsIn{}),

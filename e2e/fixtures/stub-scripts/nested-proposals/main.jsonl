@@ -1,0 +1,18 @@
+// Models a turn where the proposals are drafted INSIDE a walk_playbook
+// sub-agent dispatch: the three proposal tool-events nest under the
+// dispatch (parentToolId=dispatch-nested), the exact shape that kept
+// sub-agent-drafted proposals from surfacing. The launcher's
+// nesting-independent surfacing must still fire: codefix persists from the
+// draft_pr end-event, and the wiki end-event fans a wiki_proposal_created
+// global event. The inline cards (wiki + playbook) are hoisted out of the
+// nesting on the frontend — asserted in the browser layer.
+{"action":"record_args"}
+{"action":"emit","event":{"type":"assistant_message","text":"Drafting follow-ups through the guided proposal sub-agents."}}
+{"action":"proposal","name":"mcp__triagent-strategies__summarize","input":{"playbook_id":"investigation"},"result":{"markdown":"## Summary\n\nNested-proposal e2e scenario.","evidence_markdown":"- the proposals are drafted inside a dispatch sub-agent"}}
+{"action":"proposal","name":"mcp__triagent-strategies__walk_playbook","toolId":"dispatch-nested","input":{"playbook_id":"wiki_proposal"},"result":{"session_id":"","dispatched":{"summary":"ran the proposal sub-agents"}}}
+{"action":"proposal","name":"mcp__triagent-wiki__propose_wiki_draft","toolId":"wiki-nested","parentToolId":"dispatch-nested","input":{"slug":"nested-wiki"},"result":{"kind":"wiki_proposal_draft","proposal_id":"prop-wiki-nested","slug":"nested-wiki","is_new":true,"new_md":"# Nested wiki entry\n\nDrafted by a sub-agent.\n"}}
+{"action":"proposal","name":"mcp__triagent-strategies__playbook_proposal_draft","toolId":"pb-invalid","parentToolId":"dispatch-nested","input":{"playbook_id":"investigation"},"result":{"message":"","new_yaml":"","playbook_id":"","proposal_id":"","type":"","validation_errors":["parse input: yaml: unmarshal errors:\n  line 7: cannot unmarshal !!seq into map[string]strategies.Node"]}}
+{"action":"proposal","name":"mcp__triagent-strategies__playbook_proposal_draft","toolId":"pb-nested","parentToolId":"dispatch-nested","input":{"playbook_id":"investigation"},"result":{"proposal_id":"prop-pb-nested","playbook_id":"investigation","new_yaml":"id: investigation\nsteps:\n  - id: triage\n    advice: drafted by a sub-agent\n"}}
+{"action":"proposal","name":"mcp__triagent-git-payments__draft_pr","toolId":"cf-nested","parentToolId":"dispatch-nested","input":{"issue_number":52},"result":{"proposal_id":"prop-cf-nested","repo":"acme/payments","issue_url":"https://github.com/acme/payments/issues/52","issue_number":52,"pr_url":"https://github.com/acme/payments/pull/53","pr_number":53,"branch_name":"fix/nested-codefix","summary":"Nested codefix proposal drafted in a sub-agent."}}
+{"action":"emit","event":{"type":"end"}}
+{"action":"exit","code":0}

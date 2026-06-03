@@ -186,6 +186,17 @@ export const PROPOSE_PLAYBOOK_DRAFT_TOOL_NAME =
 export const PROPOSE_WIKI_DRAFT_TOOL_NAME =
   "mcp__triagent-wiki__propose_wiki_draft";
 
+// A proposal-draft tool result is a top-level investigation artifact even
+// when the call happens inside a sub-agent dispatch (e.g. the wiki_proposal /
+// playbook_proposal walker). The transcript folder hoists these out of the
+// dispatch's nested children so the inline card renders; see applyEvent.
+export function isProposalDraftToolName(name: string | undefined): boolean {
+  return (
+    name === PROPOSE_WIKI_DRAFT_TOOL_NAME ||
+    name === PROPOSE_PLAYBOOK_DRAFT_TOOL_NAME
+  );
+}
+
 // Wire-format suffix of the per-repo draft_pr tool. Since each linked
 // repo gets its own triagent-git-<alias> MCP server (one process per repo),
 // the full tool name varies (e.g. `mcp__triagent-git-zeebe__draft_pr`,
@@ -251,12 +262,30 @@ export function applyEvent(
   // parent must already exist (parent tool_use precedes its children in
   // the wire ordering); if it doesn't, we drop the event silently rather
   // than synthesising a top-level item that would confuse the UI.
+  //
+  // Exception: a proposal-draft call (and its result) is a top-level
+  // investigation artifact even when it runs inside a sub-agent dispatch.
+  // Burying it would hide the inline approve/decline card, so it escapes
+  // nesting and falls through to the top-level switch below. We key the
+  // result's escape off the hoisted tool_call already present at top level
+  // (matched by toolId) since result envelopes don't carry the tool name.
   if (ev.parentToolId && (ev.kind === "tool_use" || ev.kind === "tool_result" || ev.kind === "assistant" || ev.kind === "tool_status")) {
-    return items.map((it) =>
-      it.kind === "tool_call" && it.toolId === ev.parentToolId
-        ? { ...it, children: applyNested(it.children ?? [], ev) }
-        : it,
-    );
+    const escapesNesting =
+      (ev.kind === "tool_use" && isProposalDraftToolName(ev.toolName)) ||
+      (ev.kind === "tool_result" &&
+        items.some(
+          (it) =>
+            it.kind === "tool_call" &&
+            it.toolId === ev.toolId &&
+            isProposalDraftToolName(it.name),
+        ));
+    if (!escapesNesting) {
+      return items.map((it) =>
+        it.kind === "tool_call" && it.toolId === ev.parentToolId
+          ? { ...it, children: applyNested(it.children ?? [], ev) }
+          : it,
+      );
+    }
   }
 
   switch (ev.kind) {

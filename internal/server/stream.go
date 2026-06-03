@@ -36,22 +36,23 @@ type StreamEnvelope struct {
 
 	// Per-kind payload — superset of EventEnvelope and
 	// GlobalEventEnvelope today.
-	SessionID      string                   `json:"sessionId,omitempty"`
-	Subtype        string                   `json:"subtype,omitempty"`
-	Text           string                   `json:"text,omitempty"`
-	ToolID         string                   `json:"toolId,omitempty"`
-	ToolName       string                   `json:"toolName,omitempty"`
-	ToolInput      map[string]any           `json:"toolInput,omitempty"`
-	ParentToolID   string                   `json:"parentToolId,omitempty"`
-	PushState      *PushStatePayload        `json:"pushState,omitempty"`
-	RehydrateState *RehydrateStatePayload   `json:"rehydrateState,omitempty"`
-	RepoSummary    *RepoSummaryStatePayload `json:"repoSummary,omitempty"`
-	CodefixPRState *CodefixPRStatePayload   `json:"codefixPRState,omitempty"`
-	WatchStatus       *WatchStatusEvent        `json:"watchStatus,omitempty"`
-	SignalCreated     *SignalCreatedEvent      `json:"signalCreated,omitempty"`
-	ItemCaptured      *ItemCapturedEvent       `json:"itemCaptured,omitempty"`
-	IngestRunStarted  *IngestRunStartedEvent   `json:"ingestRunStarted,omitempty"`
-	IngestRunFinished *IngestRunFinishedEvent  `json:"ingestRunFinished,omitempty"`
+	SessionID           string                    `json:"sessionId,omitempty"`
+	Subtype             string                    `json:"subtype,omitempty"`
+	Text                string                    `json:"text,omitempty"`
+	ToolID              string                    `json:"toolId,omitempty"`
+	ToolName            string                    `json:"toolName,omitempty"`
+	ToolInput           map[string]any            `json:"toolInput,omitempty"`
+	ParentToolID        string                    `json:"parentToolId,omitempty"`
+	PushState           *PushStatePayload         `json:"pushState,omitempty"`
+	RehydrateState      *RehydrateStatePayload    `json:"rehydrateState,omitempty"`
+	RepoSummary         *RepoSummaryStatePayload  `json:"repoSummary,omitempty"`
+	CodefixPRState      *CodefixPRStatePayload    `json:"codefixPRState,omitempty"`
+	WatchStatus         *WatchStatusEvent         `json:"watchStatus,omitempty"`
+	SignalCreated       *SignalCreatedEvent       `json:"signalCreated,omitempty"`
+	ItemCaptured        *ItemCapturedEvent        `json:"itemCaptured,omitempty"`
+	IngestRunStarted    *IngestRunStartedEvent    `json:"ingestRunStarted,omitempty"`
+	IngestRunFinished   *IngestRunFinishedEvent   `json:"ingestRunFinished,omitempty"`
+	WikiProposalCreated *WikiProposalCreatedEvent `json:"wikiProposalCreated,omitempty"`
 	// Usage rides on assistant + result envelopes (claude per-message /
 	// per-CLI-invocation token tally). Subscribers that fold these into
 	// running session totals read off result envelopes only.

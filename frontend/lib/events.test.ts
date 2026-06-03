@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { applyEvent, isDraftPrToolName, type EventEnvelope, type TranscriptItem } from "./events";
+import {
+  applyEvent,
+  isDraftPrToolName,
+  PROPOSE_WIKI_DRAFT_TOOL_NAME,
+  PROPOSE_PLAYBOOK_DRAFT_TOOL_NAME,
+  type EventEnvelope,
+  type TranscriptItem,
+} from "./events";
 
 function envelope(partial: Partial<EventEnvelope> & Pick<EventEnvelope, "kind" | "seq">): EventEnvelope {
   return {
@@ -39,6 +46,57 @@ describe("applyEvent — tool_status routing", () => {
       "writing failing test",
       "running pytest",
     ]);
+  });
+
+  // A proposal drafted inside the wiki_proposal playbook runs in a sub-agent,
+  // so its propose_wiki_draft call arrives with a parentToolId (the dispatch).
+  // Nesting it would bury the structured result and the inline WikiProposalCard
+  // would never render — the exact bug. Proposal-draft calls must escape
+  // nesting and surface as a top-level tool_call carrying their result.
+  it("hoists a nested propose_wiki_draft call to a top-level tool_call with its result", () => {
+    let items: TranscriptItem[] = [];
+    // The sub-agent dispatch (e.g. walk_playbook) is the parent.
+    items = applyEvent(items, envelope({
+      kind: "tool_use",
+      seq: 1,
+      toolId: "dispatch",
+      toolName: "mcp__triagent-strategies__walk_playbook",
+    }));
+    items = applyEvent(items, envelope({
+      kind: "tool_use",
+      seq: 2,
+      toolId: "sub_propose",
+      parentToolId: "dispatch",
+      toolName: PROPOSE_WIKI_DRAFT_TOOL_NAME,
+    }));
+    items = applyEvent(items, envelope({
+      kind: "tool_result",
+      seq: 3,
+      toolId: "sub_propose",
+      parentToolId: "dispatch",
+      text: '{"kind":"wiki_proposal_draft","proposal_id":"prop-1","slug":"x"}',
+    }));
+
+    const card = items.find(
+      (it) => it.kind === "tool_call" && it.name === PROPOSE_WIKI_DRAFT_TOOL_NAME,
+    );
+    expect(card).toBeDefined();
+    if (card?.kind !== "tool_call") throw new Error("expected top-level tool_call");
+    expect(card.result).toContain("prop-1");
+    // It must NOT also be buried as a child of the dispatch.
+    const dispatch = items.find((it) => it.kind === "tool_call" && it.toolId === "dispatch");
+    if (dispatch?.kind !== "tool_call") throw new Error("expected dispatch tool_call");
+    expect(dispatch.children ?? []).toHaveLength(0);
+  });
+
+  it("hoists a nested playbook_proposal_draft call the same way", () => {
+    let items: TranscriptItem[] = [];
+    items = applyEvent(items, envelope({ kind: "tool_use", seq: 1, toolId: "dispatch", toolName: "mcp__triagent-strategies__walk_playbook" }));
+    items = applyEvent(items, envelope({ kind: "tool_use", seq: 2, toolId: "sub_pb", parentToolId: "dispatch", toolName: PROPOSE_PLAYBOOK_DRAFT_TOOL_NAME }));
+    items = applyEvent(items, envelope({ kind: "tool_result", seq: 3, toolId: "sub_pb", parentToolId: "dispatch", text: '{"proposal_id":"pp-1"}' }));
+
+    const card = items.find((it) => it.kind === "tool_call" && it.name === PROPOSE_PLAYBOOK_DRAFT_TOOL_NAME);
+    expect(card?.kind === "tool_call" && card.result).toContain("pp-1");
   });
 
   it("drops tool_status without parentToolId silently (no crash, no top-level item)", () => {

@@ -23,7 +23,7 @@ type LoginOutput struct {
 // triagent-k8s.switch_context to start querying that cluster.
 func (s *Server) login(ctx context.Context, _ *mcp.CallToolRequest, in LoginInput) (*mcp.CallToolResult, LoginOutput, error) {
 	if !s.provider.IsAuthenticated() {
-		return errorResult(authRequiredMessage), LoginOutput{}, nil
+		return errorResult(s.provider.ReauthAdvice()), LoginOutput{}, nil
 	}
 	if in.Cluster == "" {
 		return errorResult("cluster is required"), LoginOutput{}, nil

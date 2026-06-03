@@ -60,8 +60,8 @@ type OriginatingSignal struct {
 // draining any in-flight CLI work.
 type Investigation struct {
 	// Immutable after Register; safe to read without holding the mutex.
-	ID              string
-	Namespace       string
+	ID               string
+	Namespace        string
 	IncidentURL      string
 	SlackChannelURL  string
 	SlackChannelID   string
@@ -73,24 +73,24 @@ type Investigation struct {
 	// Manager.SetLabel which serializes writes under inv.mu. Empty
 	// until first set; the frontend renders "New Investigation" as a
 	// placeholder rather than the empty string.
-	Label           string
-	MCPConfigPath   string
-	DocsPrefix      string
-	SessionDir      string
+	Label                string
+	MCPConfigPath        string
+	DocsPrefix           string
+	SessionDir           string
 	SlackMCPEnabled      bool
 	IncidentioMCPEnabled bool
-	LinkedRepos     []repos.LinkedRepo
-	Profile         *profile.Profile // investigation profile (prompt content + playbook IDs)
+	LinkedRepos          []repos.LinkedRepo
+	Profile              *profile.Profile // investigation profile (prompt content + playbook IDs)
 	// PromTarget is the per-investigation Prometheus port-forward target,
 	// resolved from the profile defaults overlaid with any per-investigation
 	// override supplied at preflight time. Nil means no prom target was
 	// configured for this investigation.
-	PromTarget  *promforward.Target
+	PromTarget *promforward.Target
 	// PromDisabled, when true, explicitly opts this investigation out of
 	// the prom MCP regardless of profile defaults. Set at preflight time
 	// when the operator checks "disable prom MCP" in the form.
 	PromDisabled bool
-	CreatedAt       time.Time
+	CreatedAt    time.Time
 
 	// Set on imported investigations (those adopted from a teammate's
 	// share bundle). Both fields are written together; absence means a
@@ -285,47 +285,47 @@ type CloudMCP struct {
 // InvestigationDTO is the JSON shape returned by /api/investigations and
 // /api/preflight. Snapshotted under the lock so reads are race-free.
 type InvestigationDTO struct {
-	ID              string             `json:"id"`
-	Namespace       string             `json:"namespace"`
-	IncidentURL      string             `json:"incidentUrl,omitempty"`
-	SlackChannelURL  string             `json:"slackChannelUrl,omitempty"`
-	SlackChannelID   string             `json:"slackChannelId,omitempty"`
-	SlackChannelName string             `json:"slackChannelName,omitempty"`
-	Notes            string             `json:"notes,omitempty"`
-	Label            string             `json:"label,omitempty"`
-	MCPConfigPath   string             `json:"mcpConfigPath"`
-	DocsPrefix      string             `json:"docsPrefix,omitempty"`
-	SessionDir      string             `json:"sessionDir"`
+	ID                   string             `json:"id"`
+	Namespace            string             `json:"namespace"`
+	IncidentURL          string             `json:"incidentUrl,omitempty"`
+	SlackChannelURL      string             `json:"slackChannelUrl,omitempty"`
+	SlackChannelID       string             `json:"slackChannelId,omitempty"`
+	SlackChannelName     string             `json:"slackChannelName,omitempty"`
+	Notes                string             `json:"notes,omitempty"`
+	Label                string             `json:"label,omitempty"`
+	MCPConfigPath        string             `json:"mcpConfigPath"`
+	DocsPrefix           string             `json:"docsPrefix,omitempty"`
+	SessionDir           string             `json:"sessionDir"`
 	SlackMCPEnabled      bool               `json:"slackMCPEnabled,omitempty"`
 	IncidentioMCPEnabled bool               `json:"incidentioMCPEnabled,omitempty"`
 	LinkedRepos          []repos.LinkedRepo `json:"linkedRepos,omitempty"`
 	// CloudMCPs are the cloud-context MCP servers wired into this session,
 	// derived from the profile's cloud sources. Empty when no cloud sources are
 	// configured, or when the session carries no profile (e.g. an import).
-	CloudMCPs []CloudMCP `json:"cloudMcps,omitempty"`
-	CreatedAt       time.Time          `json:"createdAt"`
-	Started         bool               `json:"started"`
-	Streaming       bool               `json:"streaming"`
-	Archived        bool               `json:"archived"`
-	ImportedFrom    *ImportedFrom      `json:"importedFrom,omitempty"`
-	ImportedAt      time.Time          `json:"importedAt,omitempty"`
-	Author          persistedAuthor    `json:"author"`
-	Pushed          bool               `json:"pushed"`
-	PushedAt        *time.Time         `json:"pushedAt,omitempty"`
-	PushURL         string             `json:"pushUrl,omitempty"`
+	CloudMCPs    []CloudMCP      `json:"cloudMcps,omitempty"`
+	CreatedAt    time.Time       `json:"createdAt"`
+	Started      bool            `json:"started"`
+	Streaming    bool            `json:"streaming"`
+	Archived     bool            `json:"archived"`
+	ImportedFrom *ImportedFrom   `json:"importedFrom,omitempty"`
+	ImportedAt   time.Time       `json:"importedAt,omitempty"`
+	Author       persistedAuthor `json:"author"`
+	Pushed       bool            `json:"pushed"`
+	PushedAt     *time.Time      `json:"pushedAt,omitempty"`
+	PushURL      string          `json:"pushUrl,omitempty"`
 	// PR lifecycle: refreshed by Manager.RefreshPRStates against
 	// `gh pr list` on the upstream sessions repo. Lets the frontend
 	// distinguish open vs merged vs closed and bring the push button
 	// back when the operator closed without merging.
-	PRState    string     `json:"prState,omitempty"`
-	PRMergedAt *time.Time `json:"prMergedAt,omitempty"`
-	PRClosedAt *time.Time `json:"prClosedAt,omitempty"`
-	PushInProgress bool       `json:"pushInProgress,omitempty"`
-	PushStartedAt  *time.Time `json:"pushStartedAt,omitempty"`
-	PushError      string     `json:"pushError,omitempty"`
-	ClaudeSessionID string `json:"claudeSessionId,omitempty"`
-	LaunchCwd       string `json:"launchCwd,omitempty"`
-	KubeconfigPath  string `json:"kubeconfigPath,omitempty"`
+	PRState         string     `json:"prState,omitempty"`
+	PRMergedAt      *time.Time `json:"prMergedAt,omitempty"`
+	PRClosedAt      *time.Time `json:"prClosedAt,omitempty"`
+	PushInProgress  bool       `json:"pushInProgress,omitempty"`
+	PushStartedAt   *time.Time `json:"pushStartedAt,omitempty"`
+	PushError       string     `json:"pushError,omitempty"`
+	ClaudeSessionID string     `json:"claudeSessionId,omitempty"`
+	LaunchCwd       string     `json:"launchCwd,omitempty"`
+	KubeconfigPath  string     `json:"kubeconfigPath,omitempty"`
 	// ActiveContext is the kubeconfig context the launcher pre-seeded
 	// for the k8s MCP from the operator's cluster_id pick at preflight.
 	ActiveContext string `json:"activeContext,omitempty"`
@@ -384,49 +384,49 @@ func (i *Investigation) Snapshot() InvestigationDTO {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	return InvestigationDTO{
-		ID:              i.ID,
-		Namespace:       i.Namespace,
-		IncidentURL:      i.IncidentURL,
-		SlackChannelURL:  i.SlackChannelURL,
-		SlackChannelID:   i.SlackChannelID,
-		SlackChannelName: i.SlackChannelName,
-		Notes:            i.Notes,
-		Label:            i.Label,
-		MCPConfigPath:   i.MCPConfigPath,
-		DocsPrefix:      i.DocsPrefix,
-		SessionDir:      i.SessionDir,
+		ID:                   i.ID,
+		Namespace:            i.Namespace,
+		IncidentURL:          i.IncidentURL,
+		SlackChannelURL:      i.SlackChannelURL,
+		SlackChannelID:       i.SlackChannelID,
+		SlackChannelName:     i.SlackChannelName,
+		Notes:                i.Notes,
+		Label:                i.Label,
+		MCPConfigPath:        i.MCPConfigPath,
+		DocsPrefix:           i.DocsPrefix,
+		SessionDir:           i.SessionDir,
 		SlackMCPEnabled:      i.SlackMCPEnabled,
 		IncidentioMCPEnabled: i.IncidentioMCPEnabled,
 		LinkedRepos:          i.LinkedRepos,
 		CloudMCPs:            cloudMCPsForProfile(i.Profile),
-		CreatedAt:       i.CreatedAt,
-		Started:         i.started,
-		Streaming:       i.streaming,
-		Archived:        i.archived,
-		ImportedFrom:    i.ImportedFrom,
-		ImportedAt:      i.ImportedAt,
-		Author:          i.Author,
-		Pushed:          i.PushedAt != nil,
-		PushedAt:        i.PushedAt,
-		PushURL:         i.PushURL,
-		PRState:         i.PRState,
-		PRMergedAt:      i.PRMergedAt,
-		PRClosedAt:      i.PRClosedAt,
-		PushInProgress:  i.PushInProgress,
-		PushStartedAt:   i.PushStartedAt,
-		PushError:       i.PushError,
-		ClaudeSessionID: i.ClaudeSessionID,
-		LaunchCwd:       i.LaunchCwd,
-		KubeconfigPath:  i.KubeconfigPath,
-		ActiveContext:   i.ActiveContext,
-		Auto:               i.Auto,
-		OriginatingWatchID: i.OriginatingWatchID,
-		OriginatingSignal:  i.OriginatingSignal,
-		PromTarget:         i.PromTarget,
-		PromDisabled:       i.PromDisabled,
-		PromEnabled:        i.PromTarget != nil && !i.PromDisabled,
-		Resumable:          !i.archived && i.ClaudeSessionID != "" && i.needsRehydrate,
-		Slug:            computeSessionSlug(i.CreatedAt, i.Namespace, i.ID),
+		CreatedAt:            i.CreatedAt,
+		Started:              i.started,
+		Streaming:            i.streaming,
+		Archived:             i.archived,
+		ImportedFrom:         i.ImportedFrom,
+		ImportedAt:           i.ImportedAt,
+		Author:               i.Author,
+		Pushed:               i.PushedAt != nil,
+		PushedAt:             i.PushedAt,
+		PushURL:              i.PushURL,
+		PRState:              i.PRState,
+		PRMergedAt:           i.PRMergedAt,
+		PRClosedAt:           i.PRClosedAt,
+		PushInProgress:       i.PushInProgress,
+		PushStartedAt:        i.PushStartedAt,
+		PushError:            i.PushError,
+		ClaudeSessionID:      i.ClaudeSessionID,
+		LaunchCwd:            i.LaunchCwd,
+		KubeconfigPath:       i.KubeconfigPath,
+		ActiveContext:        i.ActiveContext,
+		Auto:                 i.Auto,
+		OriginatingWatchID:   i.OriginatingWatchID,
+		OriginatingSignal:    i.OriginatingSignal,
+		PromTarget:           i.PromTarget,
+		PromDisabled:         i.PromDisabled,
+		PromEnabled:          i.PromTarget != nil && !i.PromDisabled,
+		Resumable:            !i.archived && i.ClaudeSessionID != "" && i.needsRehydrate,
+		Slug:                 computeSessionSlug(i.CreatedAt, i.Namespace, i.ID),
 		SyncState: sessionSyncStateFor(sessionSyncStateInputs{
 			HasLocal:   true, // we're snapshotting an in-memory Investigation, by definition local
 			Pushed:     i.PushedAt != nil,
@@ -781,17 +781,23 @@ func (i *Investigation) publishRehydrateState(p RehydrateStatePayload) {
 // InvestigationID and EditorSessionID are empty.
 func streamEnvelopeFromGlobal(env GlobalEventEnvelope) StreamEnvelope {
 	return StreamEnvelope{
-		Seq:               env.Seq,
-		Kind:              env.Kind,
-		Timestamp:         env.Timestamp,
-		RepoSummary:       env.RepoSummary,
-		CodefixPRState:    env.CodefixPRState,
-		WatchStatus:       env.WatchStatus,
-		SignalCreated:     env.SignalCreated,
-		ItemCaptured:      env.ItemCaptured,
-		IngestRunStarted:  env.IngestRunStarted,
-		IngestRunFinished: env.IngestRunFinished,
+		Seq:                 env.Seq,
+		Kind:                env.Kind,
+		Timestamp:           env.Timestamp,
+		RepoSummary:         env.RepoSummary,
+		CodefixPRState:      env.CodefixPRState,
+		WatchStatus:         env.WatchStatus,
+		SignalCreated:       env.SignalCreated,
+		ItemCaptured:        env.ItemCaptured,
+		IngestRunStarted:    env.IngestRunStarted,
+		IngestRunFinished:   env.IngestRunFinished,
+		WikiProposalCreated: env.WikiProposalCreated,
 	}
+}
+
+// PublishWikiProposalCreated fans a WikiProposalCreatedEvent out to the global stream.
+func (m *Manager) PublishWikiProposalCreated(ev WikiProposalCreatedEvent) {
+	m.publishGlobalEvent(GlobalEventEnvelope{Kind: globalKindWikiProposalCreated, WikiProposalCreated: &ev})
 }
 
 // PublishWatchStatus fans a WatchStatusEvent out to the global stream.

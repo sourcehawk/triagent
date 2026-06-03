@@ -1577,7 +1577,12 @@ const TranscriptItemView = memo(function TranscriptItemView({
       ) {
         try {
           const payload = JSON.parse(item.result) as ProposalDraftPayload;
-          if (payload && typeof payload.proposal_id === "string") {
+          // A non-empty proposal_id means the draft was accepted and
+          // persisted. A validation-failure result carries proposal_id:""
+          // (plus validation_errors); it must NOT render as a proposal card —
+          // fall through to the raw tool card so the failed attempt is visible
+          // as activity, not an empty approve/decline card.
+          if (payload && typeof payload.proposal_id === "string" && payload.proposal_id.length > 0) {
             return (
               <div data-testid="triagent-proposal-card" data-proposal-kind="playbook">
                 <ProposalCard
@@ -1599,7 +1604,12 @@ const TranscriptItemView = memo(function TranscriptItemView({
       if (item.name === PROPOSE_WIKI_DRAFT_TOOL_NAME && item.result) {
         try {
           const payload = JSON.parse(item.result) as WikiProposalPayload;
-          if (payload && typeof payload.proposal_id === "string") {
+          // A non-empty proposal_id means the draft was accepted and
+          // persisted. A validation-failure result carries proposal_id:""
+          // (plus validation_errors); it must NOT render as a proposal card —
+          // fall through to the raw tool card so the failed attempt is visible
+          // as activity, not an empty approve/decline card.
+          if (payload && typeof payload.proposal_id === "string" && payload.proposal_id.length > 0) {
             return (
               <div data-testid="triagent-proposal-card" data-proposal-kind="wiki">
                 <WikiProposalCard
@@ -1622,7 +1632,12 @@ const TranscriptItemView = memo(function TranscriptItemView({
       if (isDraftPrToolName(item.name) && item.result) {
         try {
           const payload = JSON.parse(item.result) as CodefixProposalPayload;
-          if (payload && typeof payload.proposal_id === "string") {
+          // A non-empty proposal_id means the draft was accepted and
+          // persisted. A validation-failure result carries proposal_id:""
+          // (plus validation_errors); it must NOT render as a proposal card —
+          // fall through to the raw tool card so the failed attempt is visible
+          // as activity, not an empty approve/decline card.
+          if (payload && typeof payload.proposal_id === "string" && payload.proposal_id.length > 0) {
             return (
               <div data-testid="triagent-proposal-card" data-proposal-kind="codefix">
                 <CodefixProposalCard payload={payload} />

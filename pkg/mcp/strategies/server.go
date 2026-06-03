@@ -32,6 +32,7 @@ import (
 //   - UserPlaybooksDir is an optional directory the launcher writes
 //     operator-customised playbooks to; entries there override or
 //     extend the plugin set (but cannot touch the system set).
+//
 // DispatchModels is the dispatch-relevant subset of profile.Models, threaded
 // in by the launcher. Defined here (not imported from internal/profile) to
 // keep the MCP package layering clean.
@@ -193,6 +194,11 @@ func (s *Server) register() {
 	}, telemetry.Wrap("playbook_proposal_draft", s.proposePlaybookDraft))
 
 	mcp.AddTool(s.impl, &mcp.Tool{
+		Name:        "decline_proposal",
+		Description: "The explicit terminal for a proposal flow that decides NOT to submit a draft (the work is below the bar). Call this with a one-line reason instead of ending with a prose summary — the dispatcher requires either playbook_proposal_draft / propose_wiki_draft (submit) or this (decline) to fire, so it can tell a deliberate no-proposal from a sub-agent that quit without finishing. Records the reason and returns acknowledged.",
+	}, telemetry.Wrap("decline_proposal", s.declineProposal))
+
+	mcp.AddTool(s.impl, &mcp.Tool{
 		Name:        "playbook_resolve_entities",
 		Description: "Canonicalise a candidate keyword set (services / errors / symptoms) against the union of all loaded playbooks' entity tags. **Call this BEFORE playbook_correlate** when you have specific keywords you want to map to canonical names — pass fuzzy guesses ('Zeebe Broker', 'crash looping', 'failing reconciliations') and the tool returns one Resolution per input telling you whether it was exact-match and which canonical names are close by edit distance / substring.\n\nUnlike playbook_correlate this tool does NOT validate input shape — pass fuzzy guesses as you have them. Returns one Resolution per input keyword: {field, input, exact, near}. Use `near[0]` as the canonical name to feed into playbook_correlate.\n\nLighter than dumping every loaded playbook's tags (which is what playbook_correlate's `resolution` field does as a side-effect on every call) — discrete canonicalize-then-correlate flow keeps the audit trail legible.",
 	}, telemetry.Wrap("playbook_resolve_entities", s.playbookResolveEntities))
@@ -243,7 +249,7 @@ type walkPlaybookIn struct {
 	PlaybookID string `json:"playbook_id" jsonschema:"the playbook to start; one of the ids returned by list_playbooks"`
 	ClusterID  string `json:"cluster_id" jsonschema:"the cluster id under investigation"`
 	Namespace  string `json:"namespace" jsonschema:"the Kubernetes namespace bound to the k8s MCP for this session"`
-	Notes      string `json:"notes,omitempty" jsonschema:"optional operator-supplied context (incident summary, what was tried already)"`
+	Notes      string `json:"notes,omitempty" jsonschema:"Context for this walk. For a dispatch-mode proposal playbook (wiki_proposal, playbook_proposal) this is CRITICAL and must be exhaustive: the dispatched sub-agent runs in a SEPARATE session with NO access to this investigation — your notes are its ENTIRE context. Write a complete, self-contained brief — the symptom, the key findings and evidence, the root cause and resolution, and the actual content that should end up in the artifact (entry sections and prose for a wiki entry; node descriptions, suggested_calls, and terminals for a playbook). Do not assume the sub-agent can see anything you have seen or summarised; if a detail belongs in the playbook/wiki, write it out here in full. For a non-dispatch playbook, a short incident summary plus what was tried is enough."`
 	// ParentSessionID is set when this walk_playbook is the
 	// follow-up to a terminal node's handoff. The walker uses it to
 	// detect circular handoffs (A → B → A) and reject them. Always
@@ -268,6 +274,12 @@ type DispatchedResult struct {
 	TimedOut   bool   `json:"timed_out,omitempty"`
 	ExitCode   int    `json:"exit_code,omitempty"`
 	StderrTail string `json:"stderr_tail,omitempty"`
+	// ProposalOutcome is the verified terminal a proposal dispatch reached:
+	// "submitted" (called *_proposal_draft), "declined" (called
+	// decline_proposal), or "none" (ended without a terminal even after the
+	// force-retries). Empty for non-proposal dispatches. The master reads
+	// this so a missing proposal cannot be confabulated as a success.
+	ProposalOutcome string `json:"proposal_outcome,omitempty"`
 }
 
 type walkPlaybookOut struct {
@@ -283,15 +295,22 @@ func (s *Server) walkPlaybook(ctx context.Context, req *mcp.CallToolRequest, in 
 		return errorResult(fmt.Sprintf("unknown playbook_id %q; call list_playbooks for valid ids", in.PlaybookID)), walkPlaybookOut{}, nil
 	}
 	if pb.Dispatch == DispatchSubagent {
-		res, err := s.runDispatch(ctx, pb, in.ParentSessionID, in.Notes, in.OperatorRefinement)
+		res, outcome, err := s.runDispatch(ctx, pb, in.ParentSessionID, in.Notes, in.OperatorRefinement)
 		if err != nil {
 			return errorResult(fmt.Sprintf("dispatch %q: %v", pb.ID, err)), walkPlaybookOut{}, nil
 		}
+		summary := res.Summary
+		if outcome == "none" {
+			// Make the missing proposal impossible to read as success, even
+			// for a master that ignores the structured ProposalOutcome.
+			summary = "NO PROPOSAL WAS SUBMITTED — the sub-agent ended without calling a terminal tool (a *_proposal_draft or decline_proposal). Do not report this as a successful proposal.\n\n" + summary
+		}
 		return nil, walkPlaybookOut{Dispatched: &DispatchedResult{
-			Summary:    res.Summary,
-			TimedOut:   res.TimedOut,
-			ExitCode:   res.ExitCode,
-			StderrTail: res.StderrTail,
+			Summary:         summary,
+			TimedOut:        res.TimedOut,
+			ExitCode:        res.ExitCode,
+			StderrTail:      res.StderrTail,
+			ProposalOutcome: outcome,
 		}}, nil
 	}
 	// cluster_id is required only for investigation-type playbooks (they

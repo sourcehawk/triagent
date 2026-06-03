@@ -40,6 +40,12 @@ type action struct {
 	Input  json.RawMessage `json:"input,omitempty"`
 	Result json.RawMessage `json:"result,omitempty"`
 	Gh     []string        `json:"gh,omitempty"`
+	// ToolID, when set, overrides the auto-minted tool id so a later
+	// proposal can reference it as ParentToolID. ParentToolID nests this
+	// proposal's tool-events under that parent — modelling a proposal
+	// drafted inside a walk_playbook sub-agent dispatch.
+	ToolID       string `json:"toolId,omitempty"`
+	ParentToolID string `json:"parentToolId,omitempty"`
 }
 
 // scriptEvent is the simplified event shape carried by an "emit" action.
@@ -254,7 +260,7 @@ func emitProposal(out *bufio.Writer, tr *trace, p *poster, a action) error {
 	}
 	toolID := ""
 	if p != nil {
-		id, err := p.roundTrip(a.Name, a.Input, result)
+		id, err := p.roundTrip(a.Name, a.Input, result, a.ToolID, a.ParentToolID)
 		if err != nil {
 			return err
 		}

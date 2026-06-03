@@ -52,6 +52,9 @@ const (
 	envSessionsProposalsPath = "TRIAGENT_MCP_SESSIONS_PROPOSALS_PATH"
 	envSessionsClaudeBinary  = "TRIAGENT_MCP_SESSIONS_CLAUDE_BINARY"
 
+	envTeleportProxy         = "TRIAGENT_MCP_TELEPORT_PROXY"
+	envTeleportAuthConnector = "TRIAGENT_MCP_TELEPORT_AUTH_CONNECTOR"
+
 	envSlackToken = "TRIAGENT_MCP_SLACK_TOKEN"
 
 	envIncidentioToken = "TRIAGENT_MCP_INCIDENTIO_TOKEN"
@@ -68,6 +71,10 @@ type serveFlags struct {
 	kubeconfig       string
 	crdsFile         string
 	crossplaneGroups string
+
+	// teleport flags
+	teleportProxy         string
+	teleportAuthConnector string
 
 	// strategies flags
 	sessionDir         string
@@ -126,6 +133,10 @@ func serveCmd() *cobra.Command {
 	cmd.Flags().StringVar(&f.crdsFile, "crds-file", "", "JSON file overriding the embedded resource allow-list (defaults to $"+envCRDsFile+") [kind=k8s]")
 	cmd.Flags().StringVar(&f.crossplaneGroups, "crossplane-groups", "", "comma-separated glob patterns for Crossplane provider API groups (defaults to $"+envCrossplaneGroups+", then '*.upbound.io,*.crossplane.io') [kind=k8s]")
 
+	// teleport flags
+	cmd.Flags().StringVar(&f.teleportProxy, "teleport-proxy", "", "Teleport proxy address for tsh login (defaults to $"+envTeleportProxy+") [kind=teleport]")
+	cmd.Flags().StringVar(&f.teleportAuthConnector, "teleport-auth-connector", "", "Teleport SSO connector for tsh login (defaults to $"+envTeleportAuthConnector+") [kind=teleport]")
+
 	// strategies flags
 	cmd.Flags().StringVar(&f.sessionDir, "session-dir", "", "directory the strategies walker uses to snapshot state; also required for k8s streaming tools (defaults to $"+envSessionDir+") [kind=strategies,k8s]")
 	cmd.Flags().StringVar(&f.userPlaybooksDir, "user-playbooks-dir", "", "directory holding operator-customised playbooks layered over the plugin set (defaults to $"+envUserPlaybooksDir+") [kind=strategies]")
@@ -174,6 +185,12 @@ func resolveFlags(f *serveFlags) serveFlags {
 	}
 	if out.crossplaneGroups == "" {
 		out.crossplaneGroups = os.Getenv(envCrossplaneGroups)
+	}
+	if out.teleportProxy == "" {
+		out.teleportProxy = os.Getenv(envTeleportProxy)
+	}
+	if out.teleportAuthConnector == "" {
+		out.teleportAuthConnector = os.Getenv(envTeleportAuthConnector)
 	}
 	if out.sessionDir == "" {
 		out.sessionDir = os.Getenv(envSessionDir)
@@ -306,11 +323,15 @@ func runK8s(ctx context.Context, f serveFlags) error {
 
 func runTeleport(ctx context.Context, f serveFlags) error {
 	kubePath := resolveKubeconfigPath(f.kubeconfig)
-	srv, err := teleport.New(teleport.Options{KubeconfigPath: kubePath})
+	srv, err := teleport.New(teleport.Options{
+		KubeconfigPath: kubePath,
+		Proxy:          f.teleportProxy,
+		AuthConnector:  f.teleportAuthConnector,
+	})
 	if err != nil {
 		return fmt.Errorf("build teleport mcp server: %w", err)
 	}
-	log.Info("mcp serve --kind=teleport starting", "kubeconfig", kubePath)
+	log.Info("mcp serve --kind=teleport starting", "kubeconfig", kubePath, "proxy", f.teleportProxy)
 	return srv.Run(ctx)
 }
 

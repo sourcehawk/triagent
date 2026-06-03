@@ -18,6 +18,27 @@ func newServerWithUserPlaybooksDir(t *testing.T) *Server {
 	return srv
 }
 
+func TestDeclineProposal_RequiresReason(t *testing.T) {
+	t.Parallel()
+	srv := newEmptyServer(t)
+	res, _, err := srv.declineProposal(context.Background(), nil, declineProposalIn{Reason: "  "})
+	require.NoError(t, err)
+	require.NotNil(t, res)
+	assert.True(t, res.IsError, "an empty reason is an error — the decline must say why")
+}
+
+func TestDeclineProposal_AcknowledgesWithReason(t *testing.T) {
+	t.Parallel()
+	srv := newEmptyServer(t)
+	res, out, err := srv.declineProposal(context.Background(), nil, declineProposalIn{
+		Reason: "investigation was routine — below the novelty bar",
+	})
+	require.NoError(t, err)
+	assert.Nil(t, res, "a valid decline is not an error result")
+	assert.True(t, out.Acknowledged)
+	assert.Contains(t, out.Message, "below the novelty bar", "the reason is echoed back so it's auditable")
+}
+
 func TestProposePlaybookDraft_ReturnsValidationErrorsInsteadOfErrorResult(t *testing.T) {
 	t.Parallel()
 	srv := newServerWithUserPlaybooksDir(t)

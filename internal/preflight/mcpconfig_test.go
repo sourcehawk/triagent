@@ -262,13 +262,14 @@ func TestWriteMCPConfig_IncludesParallelBroker(t *testing.T) {
 	assert.True(t, hasK8s, "expected triagent-k8s among upstreams")
 }
 
-func TestWriteMCPConfig_RegistersTeleport(t *testing.T) {
+func TestWriteMCPConfig_RegistersTeleportWhenAuthKindTeleport(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	mcpPath, err := writeMCPConfig(mcpConfigInputs{
 		Dir:            dir,
 		MCPBin:         "/tmp/triagent-mcp",
 		KubeconfigPath: "/tmp/kubeconfig",
+		Profile:        &profile.Profile{Auth: profile.Auth{Kind: "teleport"}},
 	})
 	require.NoError(t, err)
 
@@ -285,6 +286,66 @@ func TestWriteMCPConfig_RegistersTeleport(t *testing.T) {
 
 	env := tp["env"].(map[string]any)
 	assert.Equal(t, "/tmp/kubeconfig", env["KUBECONFIG"], "teleport server needs the frozen kubeconfig")
+}
+
+func TestWriteMCPConfig_TeleportCarriesProxyAndConnector(t *testing.T) {
+	t.Parallel()
+	mcpPath, err := writeMCPConfig(mcpConfigInputs{
+		Dir:            t.TempDir(),
+		MCPBin:         "/tmp/triagent-mcp",
+		KubeconfigPath: "/tmp/kubeconfig",
+		Profile: &profile.Profile{Auth: profile.Auth{
+			Kind:     "teleport",
+			Teleport: profile.TeleportConfig{Proxy: "proxy.example.com", AuthConnector: "github"},
+		}},
+	})
+	require.NoError(t, err)
+
+	body, err := os.ReadFile(mcpPath)
+	require.NoError(t, err)
+	var cfg map[string]any
+	require.NoError(t, json.Unmarshal(body, &cfg))
+	servers := cfg["mcpServers"].(map[string]any)
+
+	env := servers[MCPAliasTeleport].(map[string]any)["env"].(map[string]any)
+	// Without these the subprocess builds an empty-config provider and the
+	// re-auth advice degrades to `tsh login --proxy= --auth=okta`.
+	assert.Equal(t, "proxy.example.com", env[EnvTeleportProxy], "profile proxy must reach the teleport subprocess")
+	assert.Equal(t, "github", env[EnvTeleportAuthConnector], "profile auth connector must reach the teleport subprocess")
+}
+
+// A kubeconfig deployment must not expose the Teleport MCP — its list_clusters /
+// login tools are meaningless there, and surfacing them lures the agent into a
+// Teleport login loop. Context switching is the k8s MCP's switch_context.
+func TestWriteMCPConfig_SkipsTeleportWhenAuthKindKubeconfig(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		profile *profile.Profile
+	}{
+		{name: "kind kubeconfig", profile: &profile.Profile{Auth: profile.Auth{Kind: "kubeconfig"}}},
+		{name: "no profile", profile: nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			mcpPath, err := writeMCPConfig(mcpConfigInputs{
+				Dir:            t.TempDir(),
+				MCPBin:         "/tmp/triagent-mcp",
+				KubeconfigPath: "/tmp/kubeconfig",
+				Profile:        tc.profile,
+			})
+			require.NoError(t, err)
+
+			body, err := os.ReadFile(mcpPath)
+			require.NoError(t, err)
+			var cfg map[string]any
+			require.NoError(t, json.Unmarshal(body, &cfg))
+			servers := cfg["mcpServers"].(map[string]any)
+
+			_, ok := servers[MCPAliasTeleport]
+			assert.False(t, ok, "teleport MCP must not be registered for a kubeconfig deployment")
+		})
+	}
 }
 
 func TestWriteMCPConfig_ExtraMCPs_SpawnMode_EmitsServerEntry(t *testing.T) {

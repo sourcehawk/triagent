@@ -110,7 +110,7 @@ func (s *Server) Run(ctx context.Context) error {
 
 // noActiveContextMessage is the uniform error every existing tool returns
 // when called before the first successful switch_context.
-const noActiveContextMessage = "no active kubernetes context — call triagent-teleport.list_clusters → triagent-teleport.login → triagent-k8s.switch_context first"
+const noActiveContextMessage = "no active kubernetes context — bind one with triagent-k8s.list_contexts then triagent-k8s.switch_context. For a Teleport-managed cluster, provision the context first via triagent-teleport.list_clusters → triagent-teleport.login."
 
 // buildSnapshot constructs a fresh clientSnapshot for contextName. Returns
 // the snapshot or an error; callers swap it onto the ToolKit only on
