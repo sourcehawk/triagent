@@ -62,6 +62,18 @@ func dispatchProposalToolFor(playbookID string) string {
 	}
 }
 
+// dispatchValidateToolFor returns the validator a proposal flow must run
+// before submitting, or "" when the submit tool is the only validator (wiki).
+// Drives the validate-before-submit step in the dispatch prompt.
+func dispatchValidateToolFor(playbookID string) string {
+	switch playbookID {
+	case "playbook_proposal":
+		return "validate_playbook"
+	default:
+		return ""
+	}
+}
+
 // maxForceDispatchRetries bounds how many times runDispatch resumes a
 // proposal sub-agent that ended without reaching a terminal, forcing it to
 // call playbook_proposal_draft / propose_wiki_draft or decline_proposal.
@@ -134,6 +146,7 @@ func (s *Server) runDispatch(ctx context.Context, pb *Playbook, parentSessionID,
 		OperatorRefinement: operatorRefinement,
 		Proposals:          proposals,
 		ProposalTool:       dispatchProposalToolFor(pb.ID),
+		ValidateTool:       dispatchValidateToolFor(pb.ID),
 	})
 	if s.subAgentRunner == nil {
 		return subagent.Result{}, "", fmt.Errorf("dispatch %q: subagent runner not configured", pb.ID)

@@ -48,6 +48,35 @@ func TestBuildDispatchPrompt_NamesTerminalToolWhenSet(t *testing.T) {
 	assert.Contains(t, low, "must", "finishing instruction is mandatory, not advisory")
 }
 
+func TestBuildDispatchPrompt_RequiresValidationBeforeSubmit(t *testing.T) {
+	t.Parallel()
+	pb := &Playbook{ID: "playbook_proposal", Entrypoint: "a", Nodes: map[string]Node{
+		"a": {ID: "a", Description: "draft a playbook"},
+	}}
+	prompt := BuildDispatchPrompt(DispatchInputs{
+		Playbook:     pb,
+		ProposalTool: "playbook_proposal_draft",
+		ValidateTool: "validate_playbook",
+	})
+	// The agent must be told to validate (the real session submitted invalid
+	// YAML five times before one validated). The instruction must name the
+	// validator and tie it to submitting.
+	assert.Contains(t, prompt, "validate_playbook",
+		"finishing instruction must name the validator the flow has to run before submitting")
+	assert.Contains(t, strings.ToLower(prompt), "before",
+		"validation must be ordered before the submit")
+}
+
+func TestBuildDispatchPrompt_NoValidateLineWhenValidateToolUnset(t *testing.T) {
+	t.Parallel()
+	pb := &Playbook{ID: "wiki_proposal", Entrypoint: "a", Nodes: map[string]Node{
+		"a": {ID: "a", Description: "draft a wiki entry"},
+	}}
+	// The wiki flow has a submit tool but no separate validator.
+	prompt := BuildDispatchPrompt(DispatchInputs{Playbook: pb, ProposalTool: "propose_wiki_draft"})
+	assert.NotContains(t, prompt, "validate_playbook")
+}
+
 func TestBuildDispatchPrompt_NoTerminalSectionWhenToolUnset(t *testing.T) {
 	t.Parallel()
 	pb := &Playbook{ID: "pb", Entrypoint: "a", Nodes: map[string]Node{

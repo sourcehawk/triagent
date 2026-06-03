@@ -28,6 +28,13 @@ type DispatchInputs struct {
 	// prose summary or a file write. Empty → no finishing section (non-
 	// proposal dispatches). Pairs with subagent terminal-tool verification.
 	ProposalTool string
+	// ValidateTool is the tool that validates a draft before submission
+	// (e.g. validate_playbook). When set, the finishing instruction tells
+	// the sub-agent to validate-until-clean before calling ProposalTool —
+	// the submit tool rejects invalid input, so an unvalidated draft is
+	// wasted effort. Empty → no validation step (flows whose submit tool is
+	// the only validator, e.g. wiki).
+	ValidateTool string
 }
 
 // BuildDispatchPrompt assembles the single-turn prompt the sub-agent receives.
@@ -85,15 +92,30 @@ func BuildDispatchPrompt(in DispatchInputs) string {
 		b.WriteString("\n\n")
 	}
 	if tool := strings.TrimSpace(in.ProposalTool); tool != "" {
+		var submit strings.Builder
+		if validate := strings.TrimSpace(in.ValidateTool); validate != "" {
+			fmt.Fprintf(&submit,
+				"1. Draft the artifact from the playbook nodes above and the context in this prompt.\n"+
+					"2. Validate before you submit: call `%s` on your draft and fix EVERY error it reports; repeat until it returns no errors. `%s` rejects invalid input — it returns `validation_errors` and an empty `proposal_id`, which produces nothing the operator can act on — so never submit a draft you have not validated clean.\n"+
+					"3. Only after validation is clean, call `%s` with the draft and confirm it returns a non-empty `proposal_id`. That returned id is the only signal the operator sees.\n",
+				validate, tool, tool)
+		} else {
+			fmt.Fprintf(&submit,
+				"1. Draft the artifact from the playbook nodes above and the context in this prompt.\n"+
+					"2. Call `%s` with your draft and confirm it returns a non-empty `proposal_id`. That returned id is the only signal the operator sees.\n",
+				tool)
+		}
 		fmt.Fprintf(&b, `## Finishing — required
 
-You MUST end this task by reaching one terminal, as a real tool call:
+Your result MUST be a real tool call. A prose summary describing what you would submit, or writing the draft to a file, does NOT count and the operator will never see it.
 
-- **To submit your draft:** call `+"`%s`"+` and confirm it returns a `+"`proposal_id`"+`. The launcher only learns of a proposal when that tool actually returns one — a prose summary describing the draft, or writing the draft to a file, is NOT a submission and the operator will never see it.
-- **To deliberately not propose** (the work is below the bar): call `+"`decline_proposal`"+` with a one-line reason.
+**To submit:**
 
-Do not end the task any other way. If you find yourself about to write a final summary without having called one of these tools, stop and call the tool first.
-`, tool)
+%s
+**To deliberately not propose** (the work is below the bar): call `+"`decline_proposal`"+` with a one-line reason.
+
+Do not end the task any other way. If you are about to write a final summary without having called one of these tools, stop and call the tool first.
+`, submit.String())
 	}
 	return b.String()
 }
