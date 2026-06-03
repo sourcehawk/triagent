@@ -82,6 +82,20 @@ func TestProposalSurfacing_NestedBackendInvariants(t *testing.T) {
 	}
 }
 
+// TestProposalSurfacing_NestedBrowser pins the DOM half: a wiki and a
+// playbook proposal drafted inside a walk_playbook sub-agent dispatch (nested
+// tool-events) still render their inline cards in the session view, because
+// the transcript folder hoists them out of the nesting. The Go side launches
+// the seeded launcher + scripted stub; the Playwright spec drives the SPA.
+func TestProposalSurfacing_NestedBrowser(t *testing.T) {
+	h := harness.Launch(t, harness.Options{
+		Profile:    "with-prompts-and-linked-repo",
+		StubScript: "nested-proposals",
+		Browser:    true,
+	})
+	h.Browser.Run(t, "nested-proposals.spec.ts")
+}
+
 // transcriptHasToolCall reports whether the investigation transcript carries
 // a tool_use for the named tool (nested or not — the REST transcript flattens
 // every event).
