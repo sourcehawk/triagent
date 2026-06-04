@@ -6,8 +6,8 @@ import {
   ApiError,
   type SessionCard as SessionCardData,
 } from "@/lib/api";
-import { Paginator } from "../Paginator";
-import { Spinner } from "../Spinner";
+import { Paginator } from "@/components/shared/Paginator";
+import { Spinner } from "@/components/shared/Spinner";
 import { SessionCard } from "./SessionCard";
 import { SessionUpstreamHeader } from "./SessionUpstreamHeader";
 

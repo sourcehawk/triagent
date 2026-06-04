@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import type { WikiEntryHit } from "@/lib/wiki-api";
-import { UnsyncedIcon } from "@/components/Icons";
+import { UnsyncedIcon } from "@/components/shared/Icons";
 
 type Props = {
   hit: WikiEntryHit;

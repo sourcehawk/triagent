@@ -30,14 +30,14 @@ import {
 } from "@/lib/wiki-api";
 import { api, type Capabilities, type SyncState } from "@/lib/api";
 import { useDialog } from "@/lib/dialog";
-import { Spinner } from "@/components/Spinner";
+import { Spinner } from "@/components/shared/Spinner";
 import {
   ArrowLeftIcon,
   ChatBubbleIcon,
   GitHubIcon,
   RevertIcon,
   UnsyncedIcon,
-} from "@/components/Icons";
+} from "@/components/shared/Icons";
 import {
   BTN_BASE,
   BTN_GATED,
@@ -53,12 +53,12 @@ import {
 } from "./WikiNodeEditor";
 import { WikiBodyTab } from "./WikiBodyTab";
 import { PushWikiPRModal } from "./PushWikiPRModal";
-import { EditorChatDrawer } from "@/components/EditorChatDrawer";
+import { EditorChatDrawer } from "@/components/playbooks/EditorChatDrawer";
 import {
   WikiProposalCard,
   type WikiProposalPayload,
-} from "@/components/WikiProposalCard";
-import { type ProposalDraftPayload } from "@/components/ProposalCard";
+} from "@/components/wiki/WikiProposalCard";
+import { type ProposalDraftPayload } from "@/components/playbooks/ProposalCard";
 import { PROPOSE_WIKI_DRAFT_TOOL_NAME } from "@/lib/events";
 
 // Parser for the wiki drawer. Validates the three required fields the

@@ -8,8 +8,8 @@
 // content lives in the parent's state.
 
 import { useState } from "react";
-import { Markdown } from "@/components/Markdown";
-import { CheckIcon, EditIcon } from "@/components/Icons";
+import { Markdown } from "@/components/shared/Markdown";
+import { CheckIcon, EditIcon } from "@/components/shared/Icons";
 
 type Props = {
   // Header label shown at the top of the tab content. Pass

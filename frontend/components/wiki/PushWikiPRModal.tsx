@@ -8,8 +8,8 @@ import {
   type WikiOpenPR,
   type WikiPushBundleResult,
 } from "@/lib/wiki-api";
-import { Spinner } from "@/components/Spinner";
-import { CopyButton } from "@/components/CopyButton";
+import { Spinner } from "@/components/shared/Spinner";
+import { CopyButton } from "@/components/shared/CopyButton";
 
 // PushWikiPRModal opens an upstream PR that bundles every locally-
 // committed-but-not-pushed file. The editor builds the bundle (root +

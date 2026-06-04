@@ -5,9 +5,9 @@ import {
   type Investigation,
   type SessionPushPRRequest,
 } from "@/lib/api";
-import { ExternalLinkIcon } from "../Icons";
-import { Spinner } from "../Spinner";
-import type { PushState } from "../SessionView";
+import { ExternalLinkIcon } from "@/components/shared/Icons";
+import { Spinner } from "@/components/shared/Spinner";
+import type { PushState } from "@/components/investigations/SessionView";
 
 type Props = {
   investigation: Investigation;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { DocsView } from "@/components/DocsView";
+import { DocsView } from "@/components/docs/DocsView";
 
 // /docs renders the docs surface defaulted to the "overview" section.
 // Picking another section in DocsView's left rail navigates to the

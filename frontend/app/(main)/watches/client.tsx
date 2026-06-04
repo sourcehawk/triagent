@@ -1,8 +1,8 @@
 "use client";
 
 import { useWatches } from "@/lib/use-watches";
-import { WatchesList } from "@/components/WatchesList";
-import { AllWatchesSignalsPanel } from "@/components/AllWatchesSignalsPanel";
+import { WatchesList } from "@/components/watches/WatchesList";
+import { AllWatchesSignalsPanel } from "@/components/watches/AllWatchesSignalsPanel";
 
 export function WatchesClient() {
   const { watches, refresh } = useWatches();

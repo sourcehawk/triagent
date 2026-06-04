@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { api, ApiError, type Cluster } from "@/lib/api";
-import { FilterableList } from "@/components/FilterableList";
-import { Spinner } from "@/components/Spinner";
+import { FilterableList } from "@/components/shared/FilterableList";
+import { Spinner } from "@/components/shared/Spinner";
 import type { InputProps, ScalarInputValue } from "./types";
 import { interpolateHint } from "./types";
 
