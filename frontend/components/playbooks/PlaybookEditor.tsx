@@ -22,8 +22,6 @@ import {
   parsePlaybookYAML,
   type Playbook,
   type PlaybookCommit,
-  type PlaybookListItem,
-  type PlaybookNode,
   validate,
 } from "@/lib/playbook";
 import { CommitsDropdown } from "@/components/playbooks/CommitsDropdown";
@@ -37,7 +35,6 @@ import { YamlPanel } from "@/components/playbooks/YamlPanel";
 import {
   ArrowLeftIcon,
   ChatBubbleIcon,
-  GitHubIcon,
   RevertIcon,
   TrashIcon,
 } from "@/components/shared/Icons";
@@ -46,42 +43,24 @@ import {
   BTN_GATED,
   BTN_PRIMARY,
   BTN_SECONDARY,
-  BTN_SECONDARY_ACTIVE,
 } from "@/lib/buttons";
 import { pushRecent as recordRecentPlaybook } from "@/lib/recent-playbooks";
-
-// Parser for the playbook drawer. Validates the three required fields
-// the editor's UI relies on, dedupes tabs by playbook_id (latest draft
-// for each id wins).
-function parsePlaybookProposal(
-  raw: unknown,
-): { key: string; payload: ProposalDraftPayload } | null {
-  const r = raw as Partial<ProposalDraftPayload>;
-  if (
-    typeof r?.proposal_id !== "string" ||
-    typeof r?.playbook_id !== "string" ||
-    typeof r?.new_yaml !== "string"
-  ) {
-    return null;
-  }
-  return { key: r.playbook_id, payload: r as ProposalDraftPayload };
-}
-
-// isStubbedDraft returns true when the draft has not been substantively
-// edited from the empty template — i.e., the operator typed at most an
-// id (which we strip from the comparison). The `active` field is also
-// ignored because it's stamped at write time, not authored by the
-// operator. Used by the __new approval flow to decide whether to
-// navigate to a freshly-saved sibling proposal: if the draft is still
-// the stub, navigation isn't disruptive (no operator work to lose).
-function isStubbedDraft(draft: Playbook, original: Playbook): boolean {
-  const stripIDActive = (p: Playbook) => {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { id, active, ...rest } = p;
-    return rest;
-  };
-  return JSON.stringify(stripIDActive(draft)) === JSON.stringify(stripIDActive(original));
-}
+import {
+  isStubbedDraft,
+  parsePlaybookProposal,
+  pickActiveCommitSha,
+  reduce,
+  type LoadState,
+  type ViewMode,
+} from "./PlaybookEditor.reducer";
+import {
+  ChatToggleButton,
+  ProposalTab,
+  ProposalTabBody,
+  PushPRButton,
+  SourceBadge,
+  ViewTab,
+} from "./PlaybookEditor.parts";
 
 type Props = {
   // The id from the URL. "__new" creates a fresh template.
@@ -95,138 +74,6 @@ type Props = {
   // handoff entry can take the operator straight to the target.
   onOpenPlaybook: (id: string) => void;
 };
-
-type LoadState =
-  | { kind: "loading" }
-  | {
-      kind: "loaded";
-      original: Playbook;
-      source: SourceTag;
-      // True when the playbook ships bundled with the launcher
-      // (system tier). Disables save / delete / type-change /
-      // push-PR — locked entries are owned by the launcher binary,
-      // not the operator.
-      locked: boolean;
-      isNew: boolean;
-      disabled: boolean;
-      // Commit history for the commits dropdown (up to 50, merged
-      // across upstream + local repos). Populated from the detail
-      // response; empty for brand-new (unsaved) playbooks.
-      commits: PlaybookCommit[];
-      // The sha the operator is currently viewing. Undefined means
-      // HEAD (latest). Resets to undefined after a save.
-      viewedCommit?: string;
-      // Raw upstream-clone YAML when this id has an upstream
-      // counterpart. Empty for user-only playbooks. The push-PR gate
-      // compares the operator's draft against this — a draft that
-      // matches upstream produces a no-op PR, so the button locks.
-      upstreamYAML?: string;
-    }
-  | { kind: "error"; message: string };
-
-type SourceTag = "plugin" | "system" | "user" | "override" | "broken";
-
-// Reducer-style updates against the editable Playbook. Each field-level
-// edit dispatches a partial that's merged in. Node operations (rename,
-// delete, add) take dedicated actions because they touch multiple fields.
-type Action =
-  | { type: "set"; next: Playbook }
-  | {
-      type: "setMeta";
-      meta: Partial<
-        Pick<
-          Playbook,
-          | "id"
-          | "symptom"
-          | "description"
-          | "entrypoint"
-          | "type"
-          | "active"
-          | "services"
-          | "errors"
-          | "symptoms"
-        >
-      >;
-    }
-  | { type: "setNode"; nodeId: string; node: PlaybookNode }
-  | { type: "renameNode"; oldId: string; newId: string }
-  | { type: "addNode"; nodeId: string }
-  | { type: "deleteNode"; nodeId: string };
-
-// pickActiveCommitSha returns the sha of the commit that wrote the
-// currently-active YAML for a playbook, derived from the merged
-// commits list + the source slot. Newest-first ordering means the
-// first source-matching commit is the active one. Returns undefined
-// when there's no candidate (e.g. a system playbook that lives only
-// in the launcher binary, or a fresh playbook with no history).
-function pickActiveCommitSha(
-  commits: PlaybookCommit[],
-  source: PlaybookListItem["source"],
-): string | undefined {
-  // user / override: latest commit on the local user-playbooks repo
-  // is what's on disk and active.
-  // plugin: latest commit on the upstream-playbooks repo wins.
-  // system / broken / disabled: no commit history we can pin to.
-  let want: PlaybookCommit["source"] | undefined;
-  if (source === "user" || source === "override") want = "local";
-  else if (source === "plugin") want = "upstream";
-  if (!want) return undefined;
-  const m = commits.find((c) => c.source === want);
-  return m?.sha;
-}
-
-type ViewMode =
-  | { kind: "graph" }
-  | { kind: "yaml" }
-  | { kind: "proposal"; proposalId: string };
-
-function reduce(state: Playbook, action: Action): Playbook {
-  switch (action.type) {
-    case "set":
-      return action.next;
-    case "setMeta":
-      return { ...state, ...action.meta };
-    case "setNode":
-      return {
-        ...state,
-        nodes: { ...state.nodes, [action.nodeId]: action.node },
-      };
-    case "renameNode": {
-      if (action.oldId === action.newId || !action.newId) return state;
-      if (state.nodes[action.newId]) return state; // collision; ignored
-      const nextNodes: Record<string, PlaybookNode> = {};
-      for (const [id, node] of Object.entries(state.nodes)) {
-        nextNodes[id === action.oldId ? action.newId : id] = {
-          ...node,
-          next: node.next?.map((b) =>
-            b.goto === action.oldId ? { ...b, goto: action.newId } : b,
-          ),
-        };
-      }
-      return {
-        ...state,
-        nodes: nextNodes,
-        entrypoint:
-          state.entrypoint === action.oldId ? action.newId : state.entrypoint,
-      };
-    }
-    case "addNode": {
-      if (state.nodes[action.nodeId]) return state;
-      return {
-        ...state,
-        nodes: {
-          ...state.nodes,
-          [action.nodeId]: { description: "" },
-        },
-      };
-    }
-    case "deleteNode": {
-      const nextNodes: Record<string, PlaybookNode> = { ...state.nodes };
-      delete nextNodes[action.nodeId];
-      return { ...state, nodes: nextNodes };
-    }
-  }
-}
 
 export function PlaybookEditor({ id, onBack, onMutated, onOpenPlaybook }: Props) {
   const [load, setLoad] = useState<LoadState>({ kind: "loading" });
@@ -1689,244 +1536,3 @@ export function PlaybookEditor({ id, onBack, onMutated, onOpenPlaybook }: Props)
     </div>
   );
 }
-
-function ViewTab({
-  active,
-  onClick,
-  label,
-  badge,
-  trailing,
-  disabled,
-}: {
-  active: boolean;
-  onClick: () => void;
-  label: string;
-  badge?: React.ReactNode;
-  // trailing renders inside the same tab "chip" but to the right of
-  // the label — used for the proposal tab's discard ✕. Kept inside
-  // the chip rather than separate so the visual association is
-  // unambiguous.
-  trailing?: React.ReactNode;
-  disabled?: boolean;
-}) {
-  return (
-    <div
-      role="tab"
-      aria-selected={active}
-      aria-disabled={disabled || undefined}
-      className={
-        "inline-flex shrink-0 items-center gap-2 rounded-t border-b-2 px-3 py-1.5 text-sm font-medium transition " +
-        (disabled
-          ? "cursor-not-allowed border-transparent text-zinc-700"
-          : active
-            ? "border-sky-500 bg-zinc-900/40 text-zinc-100"
-            : "cursor-pointer border-transparent text-zinc-500 hover:text-zinc-200")
-      }
-      onClick={() => {
-        if (disabled) return;
-        onClick();
-      }}
-    >
-      {label}
-      {badge}
-      {trailing}
-    </div>
-  );
-}
-
-function ProposalTabBody({
-  payload,
-  onResolved,
-}: {
-  payload: ProposalDraftPayload | undefined;
-  onResolved: (
-    p: ProposalDraftPayload,
-    kind: "approved" | "declined",
-  ) => void;
-}) {
-  if (!payload) {
-    return (
-      <div className="px-3 py-4 text-xs text-zinc-500">
-        Proposal no longer pending — pick another tab.
-      </div>
-    );
-  }
-  return (
-    <div className="h-full min-h-0 overflow-y-auto">
-      <ProposalCard
-        payload={payload}
-        onSendRefinement={async () => {
-          /* refinements go through the chat composer */
-        }}
-        onResolved={(kind) => onResolved(payload, kind)}
-      />
-    </div>
-  );
-}
-
-function ProposalTab({
-  payload,
-  active,
-  onClick,
-  onDiscard,
-}: {
-  payload: ProposalDraftPayload;
-  active: boolean;
-  onClick: () => void;
-  onDiscard: (p: ProposalDraftPayload) => void | Promise<void>;
-}) {
-  return (
-    <div
-      role="tab"
-      aria-selected={active}
-      title={payload.playbook_id}
-      onClick={onClick}
-      className={
-        "inline-flex shrink-0 max-w-[14ch] items-center gap-1 rounded-t border-b-2 px-3 py-1.5 text-sm font-medium transition cursor-pointer " +
-        (active
-          ? "border-sky-500 bg-zinc-900/40 text-zinc-100"
-          : "border-transparent text-zinc-500 hover:text-zinc-200")
-      }
-    >
-      <span className="truncate">AI: {payload.playbook_id}</span>
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          void onDiscard(payload);
-        }}
-        title="discard proposal"
-        aria-label="discard proposal"
-        className="-mr-1 ml-1 inline-flex h-5 w-5 items-center justify-center rounded-full text-zinc-500 transition hover:bg-rose-500/15 hover:text-rose-300"
-      >
-        <svg
-          viewBox="0 0 16 16"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          className="h-3 w-3"
-          aria-hidden
-        >
-          <path d="M4 4l8 8M12 4l-8 8" />
-        </svg>
-      </button>
-    </div>
-  );
-}
-
-function ChatToggleButton({
-  open,
-  onClick,
-  label = "chat",
-}: {
-  open: boolean;
-  onClick: () => void;
-  label?: string;
-}) {
-  return (
-    <button
-      type="button"
-      data-testid="triagent-playbook-chat-toggle"
-      onClick={onClick}
-      aria-pressed={open}
-      title={
-        open
-          ? "collapse chat (keeps session alive — toggle again to resume)"
-          : "open editor chat — refine this playbook with the assistant"
-      }
-      className={open ? BTN_SECONDARY_ACTIVE : BTN_SECONDARY}
-    >
-      <ChatBubbleIcon className="h-3.5 w-3.5" />
-      {label}
-    </button>
-  );
-}
-
-// PushPRButton renders the "push as PR" action and explains via a
-// tooltip when it's disabled (gh missing, repo path missing, validation
-// errors). Disabled-but-visible is intentional — operators should
-// understand the feature exists and what to fix to unlock it, rather
-// than wondering why a button is missing. System (locked) playbooks
-// don't render this at all — the parent gates it.
-function PushPRButton({
-  capabilities,
-  disabled,
-  noUpstreamDiff,
-  onClick,
-}: {
-  capabilities: Capabilities | null;
-  disabled: boolean;
-  // True when the operator's draft body matches upstream (with
-  // active+version stripped). Pushing would create a no-op PR, so we
-  // lock the button and explain why.
-  noUpstreamDiff: boolean;
-  onClick: () => void;
-}) {
-  let blockReason: string | null = null;
-  if (!capabilities) {
-    blockReason = "checking capabilities…";
-  } else if (!capabilities.gh.authenticated) {
-    blockReason = capabilities.gh.reason ?? "gh CLI unavailable";
-  } else if (!capabilities.repoPath.valid) {
-    blockReason = capabilities.repoPath.reason ?? "repo path not configured";
-  } else if (!(capabilities.repoPath.repo ?? "")) {
-    // Local-only mode: the playbooks dir is a usable git checkout but
-    // has no upstream remote, so a PR has nowhere to go.
-    blockReason = "no upstream playbooks repo configured — set defaults.playbooks_repo in your profile and restart the launcher";
-  } else if (disabled) {
-    blockReason = "fix the validation errors first";
-  } else if (noUpstreamDiff) {
-    blockReason = "no diff against upstream — edit the playbook before pushing";
-  }
-  const isDisabled = blockReason !== null;
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={isDisabled}
-      title={blockReason ?? "Push this playbook as a PR to your playbooks repo checkout"}
-      className={isDisabled ? BTN_GATED : BTN_SECONDARY}
-    >
-      <GitHubIcon className="h-3.5 w-3.5" />
-      push as PR
-    </button>
-  );
-}
-
-function SourceBadge({ source }: { source: SourceTag }) {
-  // Provenance only. "plugin" = upstream library (overridable);
-  // "system" = launcher-bundled meta (locked); "user"/"override" =
-  // local; "broken" stays as-is. The "is this synced with remote?"
-  // question is answered separately by the unsynced cloud-up icon
-  // on the playbook list card.
-  const label =
-    source === "plugin"
-      ? "remote"
-      : source === "system"
-        ? "system"
-        : source === "broken"
-          ? "broken"
-          : "local";
-  const cls = {
-    plugin: "bg-zinc-800 text-zinc-300",
-    // System metas are launcher-owned — slate sky tone signals "this
-    // is the framework, not your edits".
-    system: "bg-sky-900/50 text-sky-200",
-    user: "bg-emerald-900/50 text-emerald-300",
-    override: "bg-emerald-900/50 text-emerald-300",
-    broken: "bg-red-900/60 text-red-300",
-  }[source];
-  return (
-    <span
-      className={
-        "rounded-full px-2 py-0.5 text-xs font-medium uppercase tracking-wide " +
-        cls
-      }
-    >
-      {label}
-    </span>
-  );
-}
-
-
