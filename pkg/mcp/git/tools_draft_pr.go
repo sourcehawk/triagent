@@ -76,8 +76,9 @@ var prBodyMarkerPattern = regexp.MustCompile(`(?s)<<<PR_BODY\s*\n(.*?)\nPR_BODY>
 
 func (s *Server) draftPR(ctx context.Context, _ *mcp.CallToolRequest, in draftPRIn) (*mcp.CallToolResult, draftPROut, error) {
 	out := draftPROut{
-		Repo:     s.repoFull(),
-		IssueURL: strings.TrimSpace(in.IssueURL),
+		Repo:      s.repoFull(),
+		IssueURL:  strings.TrimSpace(in.IssueURL),
+		Citations: []citations.Citation{},
 	}
 
 	issueOwner, issueRepo, issueNum, ok := parseThisRepoIssueURL(in.IssueURL)

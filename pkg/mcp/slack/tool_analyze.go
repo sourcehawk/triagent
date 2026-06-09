@@ -32,19 +32,19 @@ type analyzeChannelOut struct {
 func (s *Server) handleAnalyzeChannel(ctx context.Context, _ *mcp.CallToolRequest, in analyzeChannelIn) (*mcp.CallToolResult, analyzeChannelOut, error) {
 	channelID := strings.TrimSpace(in.ChannelID)
 	if channelID == "" {
-		return errorResult("channel_id is required"), analyzeChannelOut{}, nil
+		return errorResult("channel_id is required"), analyzeChannelOut{Citations: []citations.Citation{}}, nil
 	}
 	if in.DesiredFindings == "" {
-		return errorResult("desired_findings is required"), analyzeChannelOut{}, nil
+		return errorResult("desired_findings is required"), analyzeChannelOut{Citations: []citations.Citation{}}, nil
 	}
 
 	store, err := s.resolveStore(channelID)
 	if err != nil {
-		return errorResult(err.Error()), analyzeChannelOut{}, nil
+		return errorResult(err.Error()), analyzeChannelOut{Citations: []citations.Citation{}}, nil
 	}
 	syncRes, err := store.Sync(ctx, syncFull, in.SinceUnix)
 	if err != nil {
-		return errorResult(err.Error()), analyzeChannelOut{}, nil
+		return errorResult(err.Error()), analyzeChannelOut{Citations: []citations.Citation{}}, nil
 	}
 
 	prompt := fmt.Sprintf(`You are analysing an entire Slack channel. This message is your COMPLETE task — there is no prior conversation, no missing context, no original question to ask about. Everything you need is below: the working directory holds the cached channel content, and your findings request is stated explicitly.
@@ -75,6 +75,7 @@ Self-verify before emitting the citations block: for each candidate thread_ts, G
 	res, runErr := s.runSubAgentWithCitations(ctx, prompt, parentID, channelID, store)
 	if runErr != nil {
 		return errorResult(runErr.Error()), analyzeChannelOut{
+			Citations:     []citations.Citation{},
 			PromptSent:    prompt,
 			ParentCount:   syncRes.ParentCount,
 			Truncated:     syncRes.Truncated,

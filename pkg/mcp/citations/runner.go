@@ -68,6 +68,7 @@ func Run(ctx context.Context, in RunInput) (Outcome, error) {
 	if err != nil {
 		return Outcome{
 			Prose:               prose1,
+			Citations:           []Citation{},
 			CitationsParseError: combine(errs1) + " (retry transport error: " + err.Error() + ")",
 			TimedOut:            raw1.TimedOut,
 		}, nil
@@ -84,6 +85,7 @@ func Run(ctx context.Context, in RunInput) (Outcome, error) {
 	}
 	return Outcome{
 		Prose:               finalProse,
+		Citations:           []Citation{},
 		CitationsParseError: combine(errs2),
 		TimedOut:            raw2.TimedOut,
 	}, nil

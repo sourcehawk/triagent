@@ -86,6 +86,7 @@ CITATIONS>>>`}, nil
 	out, err := Run(context.Background(), RunInput{Run: run, Validator: v, Prompt: "ask"})
 	require.NoError(t, err, "soft-fail should not propagate as Go error")
 	assert.Equal(t, 2, calls, "retry budget capped at 1 — total calls is 2")
+	assert.NotNil(t, out.Citations, "soft-fail Citations must be a non-nil empty slice so it marshals as [] not null — a nil slice trips the consumer's non-nullable array output schema")
 	assert.Empty(t, out.Citations)
 	assert.NotEmpty(t, out.CitationsParseError)
 	assert.Contains(t, out.Prose, "claim [1]", "prose still surfaced on soft-fail")
@@ -156,6 +157,7 @@ CITATIONS>>>`}, nil
 	out, err := Run(context.Background(), RunInput{Run: run, Validator: v, Prompt: "ask"})
 	require.NoError(t, err, "retry transport failure should soft-fail, not error")
 	assert.Equal(t, 2, calls)
+	assert.NotNil(t, out.Citations, "retry-transport soft-fail Citations must be non-nil so it marshals as [] not null")
 	assert.Contains(t, out.CitationsParseError, "retry transport")
 	assert.Contains(t, out.Prose, "claim [1]")
 }
