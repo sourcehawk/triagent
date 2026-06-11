@@ -44,17 +44,17 @@ type correlateOut struct {
 
 func (s *Server) analyzeChange(ctx context.Context, _ *mcp.CallToolRequest, in analyzeChangeIn) (*mcp.CallToolResult, analyzeChangeOut, error) {
 	if in.Ref == "" || in.Question == "" {
-		return errorResult("ref and question are required"), analyzeChangeOut{Repo: s.repoFull(), Ref: in.Ref}, nil
+		return errorResult("ref and question are required"), analyzeChangeOut{Repo: s.repoFull(), Ref: in.Ref, Citations: []citations.Citation{}}, nil
 	}
 	dir, err := s.EnsureClone(ctx)
 	if err != nil {
-		return errorResult(err.Error()), analyzeChangeOut{Repo: s.repoFull(), Ref: in.Ref}, nil
+		return errorResult(err.Error()), analyzeChangeOut{Repo: s.repoFull(), Ref: in.Ref, Citations: []citations.Citation{}}, nil
 	}
 	// Rewrite bare branch names to origin/<name> so the sub-agent's
 	// git invocations operate on the fresh tip, not the stale local ref.
 	resolvedRef, err := s.resolveRef(ctx, dir, in.Ref)
 	if err != nil {
-		return errorResult(err.Error()), analyzeChangeOut{Repo: s.repoFull(), Ref: in.Ref}, nil
+		return errorResult(err.Error()), analyzeChangeOut{Repo: s.repoFull(), Ref: in.Ref, Citations: []citations.Citation{}}, nil
 	}
 	prompt := fmt.Sprintf(
 `You are analysing a single git change in a repository for an incident investigation.
@@ -123,7 +123,7 @@ Self-verify before emitting the citations block:
 
 func (s *Server) correlateWithFindings(ctx context.Context, _ *mcp.CallToolRequest, in correlateIn) (*mcp.CallToolResult, correlateOut, error) {
 	if in.Findings == "" {
-		return errorResult("findings is required"), correlateOut{Repo: s.repoFull()}, nil
+		return errorResult("findings is required"), correlateOut{Repo: s.repoFull(), Citations: []citations.Citation{}}, nil
 	}
 	refRange := in.RefRange
 	if refRange == "" {
@@ -131,7 +131,7 @@ func (s *Server) correlateWithFindings(ctx context.Context, _ *mcp.CallToolReque
 	}
 	dir, err := s.EnsureClone(ctx)
 	if err != nil {
-		return errorResult(err.Error()), correlateOut{Repo: s.repoFull()}, nil
+		return errorResult(err.Error()), correlateOut{Repo: s.repoFull(), Citations: []citations.Citation{}}, nil
 	}
 	prompt := fmt.Sprintf(
 `You are correlating an incident's findings against recent code changes.

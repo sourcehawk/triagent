@@ -29,22 +29,22 @@ type summarizeThreadOut struct {
 func (s *Server) handleSummarizeThread(ctx context.Context, _ *mcp.CallToolRequest, in summarizeThreadIn) (*mcp.CallToolResult, summarizeThreadOut, error) {
 	channelID := strings.TrimSpace(in.ChannelID)
 	if channelID == "" {
-		return errorResult("channel_id is required"), summarizeThreadOut{}, nil
+		return errorResult("channel_id is required"), summarizeThreadOut{Citations: []citations.Citation{}}, nil
 	}
 	if in.ThreadTS == "" {
-		return errorResult("thread_ts is required"), summarizeThreadOut{}, nil
+		return errorResult("thread_ts is required"), summarizeThreadOut{Citations: []citations.Citation{}}, nil
 	}
 	if in.DesiredFindings == "" {
-		return errorResult("desired_findings is required"), summarizeThreadOut{}, nil
+		return errorResult("desired_findings is required"), summarizeThreadOut{Citations: []citations.Citation{}}, nil
 	}
 
 	store, err := s.resolveStore(channelID)
 	if err != nil {
-		return errorResult(err.Error()), summarizeThreadOut{}, nil
+		return errorResult(err.Error()), summarizeThreadOut{Citations: []citations.Citation{}}, nil
 	}
 	_, rateLimited, err := store.SyncThread(ctx, in.ThreadTS)
 	if err != nil {
-		return errorResult(err.Error()), summarizeThreadOut{}, nil
+		return errorResult(err.Error()), summarizeThreadOut{Citations: []citations.Citation{}}, nil
 	}
 
 	prompt := fmt.Sprintf(`You are analysing one Slack thread. This message is your COMPLETE task — there is no prior conversation, no missing context, no original question to ask about. Everything you need is below: the working directory holds the cached thread content, and your findings request is stated explicitly.
@@ -76,6 +76,7 @@ Self-verify before emitting the citations block: this tool resolved one thread, 
 	res, runErr := s.runSubAgentWithCitations(ctx, prompt, parentID, channelID, store)
 	if runErr != nil {
 		return errorResult(runErr.Error()), summarizeThreadOut{
+			Citations:   []citations.Citation{},
 			ThreadTS:    in.ThreadTS,
 			PromptSent:  prompt,
 			RateLimited: rateLimited,
