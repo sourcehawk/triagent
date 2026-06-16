@@ -277,15 +277,17 @@ func unsyncedWikiFiles(ctx context.Context, vaultPath string) map[string]bool {
 	if vaultPath == "" {
 		return out
 	}
-	// `git diff --name-only origin/HEAD HEAD` returns paths that differ
-	// in either direction. We don't restrict to a subdir — both
-	// entries/ and entities/ paths flow through here so the same set
-	// can be queried from multiple call sites.
-	res, err := runGitCapture(ctx, vaultPath, "diff", "--name-only", "origin/HEAD", "HEAD")
+	// `git diff --name-only --relative origin/HEAD HEAD` returns paths
+	// that differ in either direction, relative to vaultPath. --relative
+	// is required when vaultPath is a subdirectory of the repo root
+	// (e.g. a wiki_path like "wikis/"): without it git outputs paths
+	// relative to the repo root (e.g. "wikis/entries/foo.md") while
+	// callers look up vault-relative keys (e.g. "entries/foo.md").
+	res, err := runGitCapture(ctx, vaultPath, "diff", "--name-only", "--relative", "origin/HEAD", "HEAD")
 	if err != nil {
 		// Some repos don't expose origin/HEAD as a symbolic ref; try
 		// origin/main as a fallback before giving up.
-		res, err = runGitCapture(ctx, vaultPath, "diff", "--name-only", "origin/main", "HEAD")
+		res, err = runGitCapture(ctx, vaultPath, "diff", "--name-only", "--relative", "origin/main", "HEAD")
 		if err != nil {
 			return out
 		}
