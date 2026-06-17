@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -287,4 +288,41 @@ References [[service-x]] (already on origin) and [[service-new]] (local-only).
 	)
 	assert.Equal(t, []string{"entities/services/service-new.md"}, got,
 		"auto-include must pick up the unsynced stub and ignore the already-synced one")
+}
+
+// TestUnsyncedWikiFiles_SubdirVaultPath verifies that unsyncedWikiFiles
+// returns paths relative to vaultPath even when vaultPath is a
+// subdirectory of the git repo root (e.g. wiki_path: "wikis/"). Without
+// --relative, git diff emits paths like "wikis/entries/foo.md" while
+// callers look up vault-relative keys like "entries/foo.md" — causing
+// every newly committed entry to appear synced and disabling the push
+// button.
+func TestUnsyncedWikiFiles_SubdirVaultPath(t *testing.T) {
+	t.Parallel()
+
+	repoRoot := t.TempDir()
+	gitInit(t, repoRoot)
+
+	// Write a seed file at the repo root so the initial commit is non-empty.
+	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "README.md"), []byte("wiki\n"), 0o600))
+	gitCommitAll(t, repoRoot, "init")
+	gitSetupOriginWithMain(t, repoRoot)
+
+	// Create the wikis/ subdir that mirrors a profile with wiki_path: "wikis".
+	vaultPath := filepath.Join(repoRoot, "wikis")
+	require.NoError(t, os.MkdirAll(filepath.Join(vaultPath, "entries"), 0o700))
+
+	// Commit a new entry locally (not yet pushed to origin).
+	entryPath := filepath.Join(vaultPath, "entries", "inv-test.md")
+	require.NoError(t, os.WriteFile(entryPath, []byte("# test\n"), 0o600))
+	gitCommitAll(t, repoRoot, "wiki: inv-test")
+
+	got := unsyncedWikiFiles(context.Background(), vaultPath)
+
+	// The key must be vault-relative ("entries/inv-test.md"), not
+	// repo-root-relative ("wikis/entries/inv-test.md").
+	assert.True(t, got["entries/inv-test.md"],
+		"entry committed under wikis/ subdir must appear as vault-relative key in unsynced set; got keys: %v", got)
+	assert.False(t, got["wikis/entries/inv-test.md"],
+		"repo-root-relative key must not appear; got keys: %v", got)
 }
