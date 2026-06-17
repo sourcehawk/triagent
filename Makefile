@@ -25,7 +25,7 @@ test-go:
 	go test -race -count=1 ./...
 
 test-frontend:
-	cd frontend && npm install && npm test -- --run
+	cd frontend && npm ci && npm test -- --run
 
 # End-to-end suite: drives the real triagent binary against scripted
 # claude/gh stubs. Gated behind the `e2e` build tag so it stays out of the
@@ -58,7 +58,7 @@ fmt:
 # tracked .gitkeep so the embed still has at least one match on a fresh
 # `make clean` checkout.
 frontend:
-	cd frontend && npm install && npm run build
+	cd frontend && npm ci && npm run build
 	rm -rf internal/web/dist
 	mkdir -p internal/web/dist
 	cp -a frontend/out/. internal/web/dist/
