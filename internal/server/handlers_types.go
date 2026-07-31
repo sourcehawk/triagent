@@ -46,7 +46,7 @@ func (a *apiHandlers) handleListPlaybookTypes(w http.ResponseWriter, r *http.Req
 		writeJSON(w, http.StatusOK, map[string]any{"types": []playbookTypeItem{}})
 		return
 	}
-	types, err := readTypeDirs(r.Context(), a.opts.PluginPlaybooksDir)
+	types, err := readTypeDirs(r.Context(), a.opts.PluginPlaybooksCloneRoot, a.opts.PluginPlaybooksDir)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -133,7 +133,9 @@ func (a *apiHandlers) tryPushNewTypeAsPR(ctx context.Context, typeName, descript
 	if repoPath == "" {
 		return "", fmt.Errorf("system playbooks dir is not configured")
 	}
-	if _, err := os.Stat(filepath.Join(repoPath, ".git")); err != nil {
+	// Git runs with cwd=repoPath so the relative `git add <type>/type.txt`
+	// resolves, but on subdir layouts `.git` lives at the clone root.
+	if _, err := os.Stat(filepath.Join(upstreamGitDir(a.opts.PluginPlaybooksCloneRoot, repoPath), ".git")); err != nil {
 		return "", fmt.Errorf("playbooks dir is not a git checkout — local write only")
 	}
 	if !a.capabilities.GH.Authenticated {
@@ -173,18 +175,20 @@ func (a *apiHandlers) tryPushNewTypeAsPR(ctx context.Context, typeName, descript
 // subdirectory, with the description from <type>/type.txt and
 // `tracked` reflecting whether <type>/type.txt exists at origin/HEAD.
 //
-// `tracked` is computed via `git cat-file -e origin/HEAD:<name>/type.txt`
-// in systemDir. Failures of any kind (no .git, no origin/HEAD, file not
-// at that ref) collapse to tracked=false — worst case, the operator
-// gets the simple-delete UX for an upstream-tracked type and is mildly
-// surprised when sync brings it back.
-func readTypeDirs(ctx context.Context, systemDir string) ([]playbookTypeItem, error) {
+// `tracked` is computed via `git cat-file -e origin/HEAD:./<name>/type.txt`
+// in systemDir. The `./` prefix makes the rev path resolve relative to
+// systemDir rather than the repo root, which is what subdir layouts need.
+// Failures of any kind (no .git, no origin/HEAD, file not at that ref)
+// collapse to tracked=false — worst case, the operator gets the
+// simple-delete UX for an upstream-tracked type and is mildly surprised
+// when sync brings it back.
+func readTypeDirs(ctx context.Context, cloneRoot, systemDir string) ([]playbookTypeItem, error) {
 	entries, err := os.ReadDir(systemDir)
 	if err != nil {
 		return nil, fmt.Errorf("read system dir: %w", err)
 	}
 	hasGit := false
-	if _, statErr := os.Stat(filepath.Join(systemDir, ".git")); statErr == nil {
+	if _, statErr := os.Stat(filepath.Join(upstreamGitDir(cloneRoot, systemDir), ".git")); statErr == nil {
 		hasGit = true
 	}
 	// Non-nil so JSON marshals an empty result as `[]`, not `null` — the
@@ -206,7 +210,7 @@ func readTypeDirs(ctx context.Context, systemDir string) ([]playbookTypeItem, er
 		}
 		tracked := false
 		if hasGit {
-			if _, gerr := runGit(ctx, systemDir, "cat-file", "-e", "origin/HEAD:"+name+"/type.txt"); gerr == nil {
+			if _, gerr := runGit(ctx, systemDir, "cat-file", "-e", "origin/HEAD:./"+name+"/type.txt"); gerr == nil {
 				tracked = true
 			}
 		}
@@ -343,7 +347,7 @@ func (a *apiHandlers) handleProposePlaybookTypeRemoval(w http.ResponseWriter, r 
 	// `git checkout -B` to a fresh branch instead of refusing the
 	// request, since the operator has no in-app affordance to clean it.
 	repoPath := a.opts.PluginPlaybooksDir
-	if _, gerr := os.Stat(filepath.Join(repoPath, ".git")); gerr != nil {
+	if _, gerr := os.Stat(filepath.Join(upstreamGitDir(a.opts.PluginPlaybooksCloneRoot, repoPath), ".git")); gerr != nil {
 		writeError(w, http.StatusPreconditionFailed, "playbooks dir is not a git checkout — propose-removal needs a cloned repo")
 		return
 	}

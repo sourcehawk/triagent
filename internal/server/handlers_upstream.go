@@ -55,7 +55,8 @@ func (a *apiHandlers) handlePlaybooksUpstreamStatus(w http.ResponseWriter, r *ht
 		writeJSON(w, http.StatusOK, status)
 		return
 	}
-	if _, err := os.Stat(filepath.Join(a.opts.PluginPlaybooksDir, ".git")); err == nil {
+	gitDir := upstreamGitDir(a.opts.PluginPlaybooksCloneRoot, a.opts.PluginPlaybooksDir)
+	if _, err := os.Stat(filepath.Join(gitDir, ".git")); err == nil {
 		status.GitCheckout = true
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		status.Error = err.Error()
@@ -66,25 +67,25 @@ func (a *apiHandlers) handlePlaybooksUpstreamStatus(w http.ResponseWriter, r *ht
 		// HEAD commit + author-time. Best-effort: failures populate
 		// Error but still return OK so the tab can render with what
 		// we have.
-		if commit, err := runGitCapture(r.Context(), a.opts.PluginPlaybooksDir, "rev-parse", "--short", "HEAD"); err == nil {
+		if commit, err := runGitCapture(r.Context(), gitDir, "rev-parse", "--short", "HEAD"); err == nil {
 			status.Commit = strings.TrimSpace(commit)
 		}
 		// "Last synced" = mtime of .git/FETCH_HEAD; HEAD's committer-date
 		// would freeze when origin doesn't advance, making the sync button
 		// look like a no-op. See gitLastSyncTime in handlers_wiki_upstream.go.
-		if t, ok := gitLastSyncTime(r.Context(), a.opts.PluginPlaybooksDir); ok {
+		if t, ok := gitLastSyncTime(r.Context(), gitDir); ok {
 			status.LastSynced = t.UTC().Format(time.RFC3339)
 		}
 		// remote-ahead probe: quick fetch + rev-list. Bounded so a
 		// hung remote doesn't block the page load.
 		fetchCtx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
-		if _, err := runGitCapture(fetchCtx, a.opts.PluginPlaybooksDir, "fetch", "--quiet", "origin"); err != nil {
+		if _, err := runGitCapture(fetchCtx, gitDir, "fetch", "--quiet", "origin"); err != nil {
 			status.RemoteAheadError = err.Error()
-		} else if out, err := runGitCapture(fetchCtx, a.opts.PluginPlaybooksDir, "rev-list", "--count", "HEAD..origin/HEAD"); err != nil {
+		} else if out, err := runGitCapture(fetchCtx, gitDir, "rev-list", "--count", "HEAD..origin/HEAD"); err != nil {
 			// Some remotes don't expose origin/HEAD as a symbolic
 			// ref; fall back to origin/main. Still best-effort.
-			if out2, err2 := runGitCapture(fetchCtx, a.opts.PluginPlaybooksDir, "rev-list", "--count", "HEAD..origin/main"); err2 == nil {
+			if out2, err2 := runGitCapture(fetchCtx, gitDir, "rev-list", "--count", "HEAD..origin/main"); err2 == nil {
 				status.RemoteAhead = atoiOrZero(strings.TrimSpace(out2))
 			} else {
 				status.RemoteAheadError = err.Error()
@@ -95,6 +96,34 @@ func (a *apiHandlers) handlePlaybooksUpstreamStatus(w http.ResponseWriter, r *ht
 		}
 	}
 	writeJSON(w, http.StatusOK, status)
+}
+
+// upstreamGitDir returns the dir holding an upstream vault's `.git`.
+// Subdir-layout profiles put the vault work-dir under the clone
+// (`<cloneRoot>/<subpath>`) with `.git` at the clone root, so probing the
+// work-dir for `.git` misses. Flat-layout profiles leave cloneRoot empty,
+// where the work-dir is the clone.
+//
+// It answers "where is the repo", not "where should git run". Repo-wide
+// commands (fetch, reset --hard, rev-parse) are safe to run here; ones
+// carrying a cwd-relative pathspec or rev path must stay at the work-dir
+// or they resolve against the wrong directory.
+func upstreamGitDir(cloneRoot, workDir string) string {
+	if cloneRoot != "" {
+		return cloneRoot
+	}
+	return workDir
+}
+
+// missingCheckoutDetail names the paths an operator needs in order to fix
+// a vault that has no clone: the dir they configured, plus where `.git`
+// was expected when a subdir layout puts that somewhere else.
+func missingCheckoutDetail(cloneRoot, workDir string) string {
+	gitDir := upstreamGitDir(cloneRoot, workDir)
+	if gitDir == workDir {
+		return workDir
+	}
+	return fmt.Sprintf("%s (no .git at clone root %s)", workDir, gitDir)
 }
 
 func atoiOrZero(s string) int {
@@ -132,23 +161,24 @@ func (a *apiHandlers) handlePlaybooksUpstreamSync(w http.ResponseWriter, r *http
 		writeError(w, http.StatusServiceUnavailable, "no system playbooks dir configured")
 		return
 	}
-	if _, err := os.Stat(filepath.Join(a.opts.PluginPlaybooksDir, ".git")); err != nil {
-		writeError(w, http.StatusFailedDependency, fmt.Sprintf("playbooks dir %s is not a git checkout — sync requires a cloned repo", a.opts.PluginPlaybooksDir))
+	gitDir := upstreamGitDir(a.opts.PluginPlaybooksCloneRoot, a.opts.PluginPlaybooksDir)
+	if _, err := os.Stat(filepath.Join(gitDir, ".git")); err != nil {
+		writeError(w, http.StatusFailedDependency, fmt.Sprintf("playbooks dir %s is not a git checkout — sync requires a cloned repo", missingCheckoutDetail(a.opts.PluginPlaybooksCloneRoot, a.opts.PluginPlaybooksDir)))
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
-	if out, err := runGitCapture(ctx, a.opts.PluginPlaybooksDir, "fetch", "origin"); err != nil {
+	if out, err := runGitCapture(ctx, gitDir, "fetch", "origin"); err != nil {
 		writeError(w, http.StatusBadGateway, fmt.Sprintf("git fetch: %v\n%s", err, out))
 		return
 	}
-	if out, err := runGitCapture(ctx, a.opts.PluginPlaybooksDir, "reset", "--hard", "origin/HEAD"); err != nil {
+	if out, err := runGitCapture(ctx, gitDir, "reset", "--hard", "origin/HEAD"); err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("git reset: %v\n%s", err, out))
 		return
 	}
-	commit, _ := runGitCapture(ctx, a.opts.PluginPlaybooksDir, "rev-parse", "--short", "HEAD")
+	commit, _ := runGitCapture(ctx, gitDir, "rev-parse", "--short", "HEAD")
 	lastSynced := time.Now().UTC().Format(time.RFC3339)
-	if t, ok := gitLastSyncTime(ctx, a.opts.PluginPlaybooksDir); ok {
+	if t, ok := gitLastSyncTime(ctx, gitDir); ok {
 		lastSynced = t.UTC().Format(time.RFC3339)
 	}
 	// Refresh the metaCache so the playbooks tab reflects the new
