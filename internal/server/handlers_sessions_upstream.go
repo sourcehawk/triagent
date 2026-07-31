@@ -45,7 +45,8 @@ func (a *apiHandlers) handleSessionsUpstreamStatus(w http.ResponseWriter, r *htt
 		writeJSON(w, http.StatusOK, status)
 		return
 	}
-	if _, err := os.Stat(filepath.Join(a.opts.SessionsPath, ".git")); err == nil {
+	gitDir := upstreamGitDir(a.opts.SessionsCloneRoot, a.opts.SessionsPath)
+	if _, err := os.Stat(filepath.Join(gitDir, ".git")); err == nil {
 		status.GitCheckout = true
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		status.Error = err.Error()
@@ -53,23 +54,23 @@ func (a *apiHandlers) handleSessionsUpstreamStatus(w http.ResponseWriter, r *htt
 		return
 	}
 	if status.GitCheckout {
-		if commit, err := runGitCapture(r.Context(), a.opts.SessionsPath, "rev-parse", "--short", "HEAD"); err == nil {
+		if commit, err := runGitCapture(r.Context(), gitDir, "rev-parse", "--short", "HEAD"); err == nil {
 			status.Commit = strings.TrimSpace(commit)
 		}
 		// "Last synced" = mtime of .git/FETCH_HEAD; HEAD's committer-date
 		// would freeze when origin doesn't advance, making the sync button
 		// look like a no-op. See gitLastSyncTime in handlers_wiki_upstream.go.
-		if t, ok := gitLastSyncTime(r.Context(), a.opts.SessionsPath); ok {
+		if t, ok := gitLastSyncTime(r.Context(), gitDir); ok {
 			status.LastSynced = t.UTC().Format(time.RFC3339)
 		}
 		fetchCtx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
-		if _, err := runGitCapture(fetchCtx, a.opts.SessionsPath, "fetch", "--quiet", "origin"); err != nil {
+		if _, err := runGitCapture(fetchCtx, gitDir, "fetch", "--quiet", "origin"); err != nil {
 			status.RemoteAheadError = err.Error()
-		} else if out, err := runGitCapture(fetchCtx, a.opts.SessionsPath, "rev-list", "--count", "HEAD..origin/HEAD"); err != nil {
+		} else if out, err := runGitCapture(fetchCtx, gitDir, "rev-list", "--count", "HEAD..origin/HEAD"); err != nil {
 			// Some remotes don't expose origin/HEAD as a symbolic ref;
 			// fall back to origin/main. Still best-effort.
-			if out2, err2 := runGitCapture(fetchCtx, a.opts.SessionsPath, "rev-list", "--count", "HEAD..origin/main"); err2 == nil {
+			if out2, err2 := runGitCapture(fetchCtx, gitDir, "rev-list", "--count", "HEAD..origin/main"); err2 == nil {
 				status.RemoteAhead = atoiOrZero(strings.TrimSpace(out2))
 			} else {
 				status.RemoteAheadError = err.Error()
@@ -117,12 +118,7 @@ func (a *apiHandlers) handleSessionsUpstreamSync(w http.ResponseWriter, r *http.
 	// Git operations run against the clone root (where `.git` lives).
 	// SessionsPath is the work-dir under the clone — fine for reading
 	// per-session files, but `git fetch && reset` needs the root.
-	// SessionsCloneRoot is empty on flat-layout profiles, in which case
-	// it coincides with SessionsPath.
-	cloneRoot := a.opts.SessionsCloneRoot
-	if cloneRoot == "" {
-		cloneRoot = a.opts.SessionsPath
-	}
+	cloneRoot := upstreamGitDir(a.opts.SessionsCloneRoot, a.opts.SessionsPath)
 	if _, err := os.Stat(filepath.Join(cloneRoot, ".git")); err != nil {
 		writeError(w, http.StatusFailedDependency, fmt.Sprintf("sessions dir %s is not a git checkout", cloneRoot))
 		return

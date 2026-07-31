@@ -45,7 +45,8 @@ func (a *apiHandlers) handleWikiUpstreamStatus(w http.ResponseWriter, r *http.Re
 		writeJSON(w, http.StatusOK, status)
 		return
 	}
-	if _, err := os.Stat(filepath.Join(a.opts.WikiPath, ".git")); err == nil {
+	gitDir := upstreamGitDir(a.opts.WikiCloneRoot, a.opts.WikiPath)
+	if _, err := os.Stat(filepath.Join(gitDir, ".git")); err == nil {
 		status.GitCheckout = true
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		status.Error = err.Error()
@@ -56,7 +57,7 @@ func (a *apiHandlers) handleWikiUpstreamStatus(w http.ResponseWriter, r *http.Re
 		// HEAD commit + committer-time. Best-effort: failures populate
 		// Error but still return OK so the header can render with what
 		// we have.
-		if commit, err := runGitCapture(r.Context(), a.opts.WikiPath, "rev-parse", "--short", "HEAD"); err == nil {
+		if commit, err := runGitCapture(r.Context(), gitDir, "rev-parse", "--short", "HEAD"); err == nil {
 			status.Commit = strings.TrimSpace(commit)
 		}
 		// "Last synced" = when we last reconciled with the remote.
@@ -64,19 +65,19 @@ func (a *apiHandlers) handleWikiUpstreamStatus(w http.ResponseWriter, r *http.Re
 		// hasn't moved, so its mtime is the right source. HEAD's
 		// committer-date would otherwise show "42h ago" right after a
 		// successful sync of an unchanged upstream.
-		if t, ok := gitLastSyncTime(r.Context(), a.opts.WikiPath); ok {
+		if t, ok := gitLastSyncTime(r.Context(), gitDir); ok {
 			status.LastSynced = t.UTC().Format(time.RFC3339)
 		}
 		// Remote-ahead probe: quick fetch + rev-list. Bounded so a hung
 		// remote doesn't block the page load.
 		fetchCtx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
-		if _, err := runGitCapture(fetchCtx, a.opts.WikiPath, "fetch", "--quiet", "origin"); err != nil {
+		if _, err := runGitCapture(fetchCtx, gitDir, "fetch", "--quiet", "origin"); err != nil {
 			status.RemoteAheadError = err.Error()
-		} else if out, err := runGitCapture(fetchCtx, a.opts.WikiPath, "rev-list", "--count", "HEAD..origin/HEAD"); err != nil {
+		} else if out, err := runGitCapture(fetchCtx, gitDir, "rev-list", "--count", "HEAD..origin/HEAD"); err != nil {
 			// Some remotes don't expose origin/HEAD as a symbolic ref;
 			// fall back to origin/main. Still best-effort.
-			if out2, err2 := runGitCapture(fetchCtx, a.opts.WikiPath, "rev-list", "--count", "HEAD..origin/main"); err2 == nil {
+			if out2, err2 := runGitCapture(fetchCtx, gitDir, "rev-list", "--count", "HEAD..origin/main"); err2 == nil {
 				status.RemoteAhead = atoiOrZero(strings.TrimSpace(out2))
 			} else {
 				status.RemoteAheadError = err.Error()
@@ -106,23 +107,24 @@ func (a *apiHandlers) handleWikiUpstreamSync(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusServiceUnavailable, "no wiki path configured")
 		return
 	}
-	if _, err := os.Stat(filepath.Join(a.opts.WikiPath, ".git")); err != nil {
-		writeError(w, http.StatusFailedDependency, fmt.Sprintf("wiki dir %s is not a git checkout — sync requires a cloned repo", a.opts.WikiPath))
+	gitDir := upstreamGitDir(a.opts.WikiCloneRoot, a.opts.WikiPath)
+	if _, err := os.Stat(filepath.Join(gitDir, ".git")); err != nil {
+		writeError(w, http.StatusFailedDependency, fmt.Sprintf("wiki dir %s is not a git checkout — sync requires a cloned repo", gitDir))
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
-	if out, err := runGitCapture(ctx, a.opts.WikiPath, "fetch", "origin"); err != nil {
+	if out, err := runGitCapture(ctx, gitDir, "fetch", "origin"); err != nil {
 		writeError(w, http.StatusBadGateway, fmt.Sprintf("git fetch: %v\n%s", err, out))
 		return
 	}
-	if out, err := runGitCapture(ctx, a.opts.WikiPath, "reset", "--hard", "origin/HEAD"); err != nil {
+	if out, err := runGitCapture(ctx, gitDir, "reset", "--hard", "origin/HEAD"); err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("git reset: %v\n%s", err, out))
 		return
 	}
-	commit, _ := runGitCapture(ctx, a.opts.WikiPath, "rev-parse", "--short", "HEAD")
+	commit, _ := runGitCapture(ctx, gitDir, "rev-parse", "--short", "HEAD")
 	lastSynced := time.Now().UTC().Format(time.RFC3339)
-	if t, ok := gitLastSyncTime(ctx, a.opts.WikiPath); ok {
+	if t, ok := gitLastSyncTime(ctx, gitDir); ok {
 		lastSynced = t.UTC().Format(time.RFC3339)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{

@@ -64,12 +64,12 @@ func runMCPProbes(ctx context.Context, inv *Investigation, opts Options) []MCPPr
 
 	// wiki — only when configured.
 	if opts.WikiPath != "" {
-		wikiPath := opts.WikiPath
+		wikiPath, wikiCloneRoot := opts.WikiPath, opts.WikiCloneRoot
 		jobs = append(jobs, job{
 			alias: preflight.MCPAliasWiki,
 			kind:  "wiki",
 			probe: func(c context.Context) error {
-				return probeWikiVault(c, wikiPath)
+				return probeWikiVault(c, wikiCloneRoot, wikiPath)
 			},
 		})
 	}
@@ -158,12 +158,17 @@ func probeGitCache(_ context.Context, cacheDir string, repo repos.LinkedRepo) er
 	return nil
 }
 
-func probeWikiVault(_ context.Context, vaultPath string) error {
+// probeWikiVault checks the wiki clone is present. On subdir-layout
+// profiles the vault work-dir sits under the clone, so `.git` is probed at
+// cloneRoot; flat layouts pass an empty cloneRoot and probe the vault
+// itself.
+func probeWikiVault(_ context.Context, cloneRoot, vaultPath string) error {
 	if vaultPath == "" {
 		return errors.New("wiki vault not configured")
 	}
-	if _, err := os.Stat(filepath.Join(vaultPath, ".git")); err != nil {
-		return fmt.Errorf("wiki vault %s is not a git checkout", vaultPath)
+	gitDir := upstreamGitDir(cloneRoot, vaultPath)
+	if _, err := os.Stat(filepath.Join(gitDir, ".git")); err != nil {
+		return fmt.Errorf("wiki vault %s is not a git checkout", gitDir)
 	}
 	return nil
 }
