@@ -92,6 +92,23 @@ func TestHandlePlaybooksUpstreamSync_SubdirVault(t *testing.T) {
 	require.Equal(t, http.StatusOK, rr.Code, "sync failed: %s", rr.Body)
 }
 
+// A "no clone here" error has to name the dir the operator configured —
+// naming only the probed clone root on a subdir layout points them at a
+// path they never set.
+func TestMissingCheckoutDetail(t *testing.T) {
+	t.Parallel()
+	t.Run("flat layout names the configured dir alone", func(t *testing.T) {
+		t.Parallel()
+		assert.Equal(t, "/vaults/wiki", missingCheckoutDetail("", "/vaults/wiki"))
+	})
+	t.Run("subdir layout names both the configured dir and the clone root", func(t *testing.T) {
+		t.Parallel()
+		got := missingCheckoutDetail("/vaults/wiki", "/vaults/wiki/wikis")
+		assert.Contains(t, got, "/vaults/wiki/wikis", "the operator configured the work-dir")
+		assert.Contains(t, got, "/vaults/wiki", "and needs to know where .git was expected")
+	})
+}
+
 func TestProbeWikiVault_SubdirVault(t *testing.T) {
 	skipIfNoGit(t)
 	clone, vault := initSubdirVault(t, "wikis")

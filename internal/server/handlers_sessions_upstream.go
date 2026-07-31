@@ -120,7 +120,7 @@ func (a *apiHandlers) handleSessionsUpstreamSync(w http.ResponseWriter, r *http.
 	// per-session files, but `git fetch && reset` needs the root.
 	cloneRoot := upstreamGitDir(a.opts.SessionsCloneRoot, a.opts.SessionsPath)
 	if _, err := os.Stat(filepath.Join(cloneRoot, ".git")); err != nil {
-		writeError(w, http.StatusFailedDependency, fmt.Sprintf("sessions dir %s is not a git checkout", cloneRoot))
+		writeError(w, http.StatusFailedDependency, fmt.Sprintf("sessions dir %s is not a git checkout", missingCheckoutDetail(a.opts.SessionsCloneRoot, a.opts.SessionsPath)))
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)

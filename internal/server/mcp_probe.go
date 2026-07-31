@@ -166,9 +166,8 @@ func probeWikiVault(_ context.Context, cloneRoot, vaultPath string) error {
 	if vaultPath == "" {
 		return errors.New("wiki vault not configured")
 	}
-	gitDir := upstreamGitDir(cloneRoot, vaultPath)
-	if _, err := os.Stat(filepath.Join(gitDir, ".git")); err != nil {
-		return fmt.Errorf("wiki vault %s is not a git checkout", gitDir)
+	if _, err := os.Stat(filepath.Join(upstreamGitDir(cloneRoot, vaultPath), ".git")); err != nil {
+		return fmt.Errorf("wiki vault %s is not a git checkout", missingCheckoutDetail(cloneRoot, vaultPath))
 	}
 	return nil
 }

@@ -98,16 +98,32 @@ func (a *apiHandlers) handlePlaybooksUpstreamStatus(w http.ResponseWriter, r *ht
 	writeJSON(w, http.StatusOK, status)
 }
 
-// upstreamGitDir returns the dir git commands must run in for an upstream
-// vault. Subdir-layout profiles put the vault work-dir under the clone
+// upstreamGitDir returns the dir holding an upstream vault's `.git`.
+// Subdir-layout profiles put the vault work-dir under the clone
 // (`<cloneRoot>/<subpath>`) with `.git` at the clone root, so probing the
 // work-dir for `.git` misses. Flat-layout profiles leave cloneRoot empty,
 // where the work-dir is the clone.
+//
+// It answers "where is the repo", not "where should git run". Repo-wide
+// commands (fetch, reset --hard, rev-parse) are safe to run here; ones
+// carrying a cwd-relative pathspec or rev path must stay at the work-dir
+// or they resolve against the wrong directory.
 func upstreamGitDir(cloneRoot, workDir string) string {
 	if cloneRoot != "" {
 		return cloneRoot
 	}
 	return workDir
+}
+
+// missingCheckoutDetail names the paths an operator needs in order to fix
+// a vault that has no clone: the dir they configured, plus where `.git`
+// was expected when a subdir layout puts that somewhere else.
+func missingCheckoutDetail(cloneRoot, workDir string) string {
+	gitDir := upstreamGitDir(cloneRoot, workDir)
+	if gitDir == workDir {
+		return workDir
+	}
+	return fmt.Sprintf("%s (no .git at clone root %s)", workDir, gitDir)
 }
 
 func atoiOrZero(s string) int {
@@ -147,7 +163,7 @@ func (a *apiHandlers) handlePlaybooksUpstreamSync(w http.ResponseWriter, r *http
 	}
 	gitDir := upstreamGitDir(a.opts.PluginPlaybooksCloneRoot, a.opts.PluginPlaybooksDir)
 	if _, err := os.Stat(filepath.Join(gitDir, ".git")); err != nil {
-		writeError(w, http.StatusFailedDependency, fmt.Sprintf("playbooks dir %s is not a git checkout — sync requires a cloned repo", gitDir))
+		writeError(w, http.StatusFailedDependency, fmt.Sprintf("playbooks dir %s is not a git checkout — sync requires a cloned repo", missingCheckoutDetail(a.opts.PluginPlaybooksCloneRoot, a.opts.PluginPlaybooksDir)))
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)

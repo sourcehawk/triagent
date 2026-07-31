@@ -109,7 +109,7 @@ func (a *apiHandlers) handleWikiUpstreamSync(w http.ResponseWriter, r *http.Requ
 	}
 	gitDir := upstreamGitDir(a.opts.WikiCloneRoot, a.opts.WikiPath)
 	if _, err := os.Stat(filepath.Join(gitDir, ".git")); err != nil {
-		writeError(w, http.StatusFailedDependency, fmt.Sprintf("wiki dir %s is not a git checkout — sync requires a cloned repo", gitDir))
+		writeError(w, http.StatusFailedDependency, fmt.Sprintf("wiki dir %s is not a git checkout — sync requires a cloned repo", missingCheckoutDetail(a.opts.WikiCloneRoot, a.opts.WikiPath)))
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
