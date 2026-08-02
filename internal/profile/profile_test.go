@@ -907,8 +907,8 @@ func TestProfile_ApplyDefaults_FillsModelsWhenAbsent(t *testing.T) {
 	t.Parallel()
 	p := &profile.Profile{}
 	p.ApplyDefaults()
-	assert.Equal(t, "claude-sonnet-4-6", p.Models.Investigation)
-	assert.Equal(t, "claude-haiku-4-5-20251001", p.Models.Subagent)
+	assert.Equal(t, "claude-opus-5", p.Models.Investigation)
+	assert.Equal(t, "claude-sonnet-5", p.Models.Subagent)
 }
 
 func TestProfile_ApplyDefaults_PreservesExplicitModels(t *testing.T) {

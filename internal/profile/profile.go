@@ -256,9 +256,9 @@ func Parse(r io.Reader) (*Profile, error) {
 // handed to the launcher.
 func (p *Profile) ApplyDefaults() {
 	if p.Models.Investigation == "" {
-		p.Models.Investigation = "claude-sonnet-4-6"
+		p.Models.Investigation = "claude-opus-5"
 	}
 	if p.Models.Subagent == "" {
-		p.Models.Subagent = "claude-haiku-4-5-20251001"
+		p.Models.Subagent = "claude-sonnet-5"
 	}
 }

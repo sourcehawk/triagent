@@ -379,8 +379,8 @@ for specific sub-agent tools (e.g. `draft_pr`'s Sonnet-grade work) remain availa
 
 ```yaml
 models:
-  investigation: claude-sonnet-4-6         # main agent
-  subagent:      claude-haiku-4-5-20251001 # sub-agent dispatches
+  investigation: claude-opus-5   # main agent
+  subagent:      claude-sonnet-5 # sub-agent dispatches
 ```
 
 Both fields are optional; omitted fields fall back to the baked-in defaults shown above.
