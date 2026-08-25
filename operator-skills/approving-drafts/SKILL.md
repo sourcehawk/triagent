@@ -14,7 +14,7 @@ After you route `wiki`, `playbook`, `all`, or `both`, the investigation agent st
 
 Approve when the draft matches the symptom and resolution narrative that you watched the agent build. Do not second-guess minor wording.
 
-Do not approve when something is missing or wrong: an incident-id placeholder still in the body, a conclusion that contradicts the evidence, a wiki entry that merges two shapes you asked to split. Send the fix with `send_message` and ask for a redraft.
+If something is missing or wrong, do not approve. Examples: an incident-id placeholder still in the body, a conclusion that contradicts the evidence. A wiki entry that merges two shapes you asked to split is another. Send the fix with `send_message` and ask for a redraft.
 
 One session can stage several proposals (`all` stages wiki and playbook). Approve each by its own `proposal_id`. One approval does not cover the set.
 

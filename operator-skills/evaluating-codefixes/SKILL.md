@@ -20,7 +20,7 @@ A recommendation is a `codefix` when all four hold:
 3. Closes this incident class. Nice-to-haves that the investigation passed on the way are wiki material.
 4. A linked repo owns it. If the change lands in customer infrastructure, a third-party tool, or a repo without PR access, it is not actionable.
 
-If tests 1, 3, and 4 hold but test 2 fails, route `bug`: file the issue and let the maintainer decide on the fix. If test 1 or test 3 fails, it is wiki material. If the change is playbook YAML, it is a `playbook` proposal. See `capture-decisions`.
+If tests 1, 3, and 4 hold but test 2 fails, route `bug`: file the issue and let the maintainer decide on the fix. If test 1, test 3, or test 4 fails, it is wiki material. A change that no linked repo owns still helps the next operator as a note. If the change is playbook YAML, it is a `playbook` proposal. See `capture-decisions`.
 
 | Recommendation | Route | Why |
 |---|---|---|

@@ -8,7 +8,7 @@ Search the draft for each pattern. Every hit outside code blocks and quoted text
 
 | Search for | Violation | Fix |
 |---|---|---|
-| `'ll`, `'re`, `'ve`, `n't`, `it's` | Contraction (Rule 4.2) | Expand it. |
+| `'ll`, `'re`, `'ve`, `'m`, `'d`, `n't`, and `'s` used as "is" or "has" (`it's`, `that's`, `there's`) | Contraction (Rule 4.2) | Expand it. |
 | `has been`, `have been`, `had been` | Present/past perfect (Rule 3.4) | Simple past or simple present. |
 | `has` / `have` + past participle | Present perfect (Rule 3.4) | Simple past. |
 | `should`, `would`, `may`, `might`, `could` | Unapproved modal (Rule 3.2) | See the modal ladder in `simple-english.md`. |

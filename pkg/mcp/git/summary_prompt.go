@@ -76,7 +76,7 @@ func ArchitectureSummaryPrompt(args ArchitectureSummaryPromptArgs) string {
 	// The summary is a durable, operator-editable artifact and the
 	// sub-agent has no launcher system prompt, so the writing rules
 	// ride in the prompt itself.
-	b.WriteString("\n\n# Writing style\n\nThe summary is descriptive prose. Every section obeys the rules below.\n\n")
+	b.WriteString("\n\n# Writing style\n\nThe summary is descriptive prose. Every section obeys the rules below, with one exception: a section that has nothing to report is a single sentence, as the output structure above allows.\n\n")
 	b.WriteString(skills.WritingSimply())
 	return b.String()
 }

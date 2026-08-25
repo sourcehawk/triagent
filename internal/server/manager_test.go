@@ -236,6 +236,47 @@ func TestManager_EnableAuto_PublishesStartedEnvelope(t *testing.T) {
 	require.True(t, found, "expected auto_mode_state{started} envelope after EnableAuto")
 }
 
+// A skill-extraction failure must not leave the investigation looking
+// auto-enabled: the started state and its envelope are published only
+// after the operator's cwd is ready, so a failed setup is retryable and
+// the UI never shows an active auto mode with no operator behind it.
+func TestManager_EnableAuto_ExtractFailureDoesNotPublishStarted(t *testing.T) {
+	root := t.TempDir()
+	mgr := NewManager(context.Background(), root)
+	t.Cleanup(mgr.Shutdown)
+	inv := mgr.RegisterForTest("inv-extract-fail")
+	require.NoError(t, os.MkdirAll(inv.SessionDir, 0o700))
+
+	// A regular file where the operator cwd should be: MkdirAll on
+	// <cwd>/.claude/skills fails with ENOTDIR.
+	notADir := filepath.Join(t.TempDir(), "cwd")
+	require.NoError(t, os.WriteFile(notADir, []byte("x"), 0o600))
+
+	factoryCalled := false
+	opts := AutoOptions{
+		OperatorCwd: notADir,
+		Briefing:    "test",
+		BackendFactory: func(_ AutoOptions) (autoBackendish, error) {
+			factoryCalled = true
+			return &fakeAutoBackend{}, nil
+		},
+	}
+	err := mgr.EnableAuto(inv, opts)
+	require.Error(t, err)
+	assert.False(t, factoryCalled, "backend must not be built when the cwd is unusable")
+
+	inv.mu.Lock()
+	state := inv.Auto
+	inFlight := inv.autoEnableInFlight
+	inv.mu.Unlock()
+	assert.False(t, state.Enabled, "Auto.Enabled must stay false after a setup failure")
+	assert.False(t, inFlight, "in-flight sentinel must be cleared so the caller can retry")
+	for _, e := range inv.snapshotEvents() {
+		assert.False(t, e.Kind == envKindAutoModeState && e.AutoMode != nil && e.AutoMode.Phase == "started",
+			"no auto_mode_state{started} envelope may be published on a failed setup")
+	}
+}
+
 // Regression: LastSentSeq is owned by the boundary watcher, but
 // applyAutoState used to blindly assign the operator's State, zeroing
 // LastSentSeq on every phase transition. The next `end` envelope then
