@@ -306,7 +306,7 @@ This step is not optional. Run these four checks on your draft:
 
 1. Count words in your three longest sentences. Over the 20/25 limit → split them.
 2. Search your draft for: `'ll`, `'re`, `'s` (contraction), `has been`, `have been`, `should`, `-ing` verbs after a comma, semicolons.
-3. Search for every `if` and `when`. Each one stands at the START of its sentence, before the command. "Increase the timeout if the network is slow" → "If the network is slow, increase the timeout."
+3. Search for every `if` and `when` that introduces a condition for a command. Each one stands at the START of its sentence, before the command. A `when` that names a time is not a condition. "Increase the timeout if the network is slow" → "If the network is slow, increase the timeout."
 4. Search for the verbs you did NOT pick in Your Task step 3 (the check/verify/confirm set). Replace every hit with your chosen verb.
 
 Fix what you find, then deliver. For a full audit, run `references/checklist.md`.

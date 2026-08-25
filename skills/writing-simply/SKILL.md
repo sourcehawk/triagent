@@ -61,8 +61,8 @@ Leave these exact even when they break a rule:
 Do this before you deliver. It is not optional. Do it silently: the deliverable contains the corrected text only, never the check results.
 
 1. Count the words in your three longest sentences. Split any sentence over the limit.
-2. Search the draft for `'ll`, `'re`, `'ve`, `'m`, `'d`, `'s` as a contraction, `n't`, `has been`, `have been`, `had been`, `is being`, `was being`, `should`, `would`, `may`, `might`, `could`, `;`, `e.g.`, `i.e.`, `etc.`, and `-ing` after a comma. Fix every hit outside the untouchables.
-3. Find every `if` and `when`. Each one starts its sentence.
+2. Search the draft for `'ll`, `'re`, `'ve`, `'m`, `'d`, `'s` as a contraction, `n't`, `has been`, `have been`, `had been`, `is being`, `are being`, `was being`, `were being`, `should`, `would`, `may`, `might`, `could`, `;`, `e.g.`, `i.e.`, `etc.`, and `-ing` after a comma. Fix every hit outside the untouchables.
+3. Find every `if` or `when` clause that states a condition for an instruction. Each one starts its sentence. A `when` that names a time ("record when the pod restarted") is not a condition.
 4. Search for the words you did not pick in step 2 of "Before you draft". Replace every hit.
 5. Read each section once. Cut any sentence that repeats a fact from another section.
 

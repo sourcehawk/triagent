@@ -155,11 +155,10 @@ nodes:
       How the investigation's material maps onto the BODY SHAPE
       sections:
         - **Description** — what the bug/gap/issue is and why it
-          matters. Engineering rationale ("why this rule needs to
-          split, not raise the threshold") belongs here when a
-          non-obvious design choice needs to be flagged for the
-          maintainer. No solution paragraphs: the maintainer decides
-          on the fix.
+          matters. A constraint on the problem that rules out an
+          obvious fix belongs here as a fact ("raising the threshold
+          hides the second cause"), not as a design. No solution
+          paragraphs: the maintainer decides on the fix.
         - **Acceptance Criteria** — the observable outcomes that
           close the problem (the alert fires separately for each
           cause, the docs section exists, the capability is

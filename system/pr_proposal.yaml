@@ -173,9 +173,9 @@ nodes:
       How the investigation's material maps onto the BODY SHAPE
       sections:
         - **Description** — what the bug/gap/improvement is and why
-          it matters. Engineering rationale ("why split, not raise the
-          threshold") belongs here when a non-obvious design choice
-          needs to be justified for human reviewers. No solution
+          it matters. A constraint on the problem that rules out an
+          obvious fix belongs here as a fact ("raising the threshold
+          hides the second cause"), not as a design. No solution
           paragraphs: the codefix sub-agent designs the change from
           the acceptance criteria and the evidence.
         - **Acceptance Criteria** — the observable outcomes the fix

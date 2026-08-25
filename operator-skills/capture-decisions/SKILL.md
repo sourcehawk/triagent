@@ -10,7 +10,7 @@ At the close of every investigation the agent proposes concrete captures, then a
 ## The shape of your reply
 
 1. One opening sentence with the routing decision.
-2. One bullet per category (`Wiki:`, `Playbook:`, `Codefix:`, `Bug:`): accept, refine, or drop, with the reason, in one or two sentences.
+2. One bullet per proposed category (`Wiki:`, `Playbook:`, `Codefix:`): accept, refine, or drop, with the reason, in one or two sentences. Add a `Bug:` bullet when you route a change to `bug`.
 3. The keyword on its own line at the end.
 
 Your bullets name several routes, so the agent needs one unambiguous signal. The keyword on its own line at the end is that signal.
