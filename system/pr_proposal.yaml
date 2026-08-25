@@ -201,10 +201,12 @@ nodes:
           access to sibling repos, so a "verify this by reading
           X/Y/main.go" instruction in the issue (or extra_prompt)
           fails silently.
-        - **Out of scope** — only when more than one repo is
-          affected: name the sibling repos and say each gets its own
-          issue (cross-linked via cross_repo_refs when they are
-          filed). Do not write the sibling's work into THIS repo's
+        - **Out of scope** — only when a reviewer would assume the
+          issue covers something it does not: an adjacent change, a
+          related symptom left alone, or a sibling repo. When more
+          than one repo is affected, name the sibling repos and say
+          each gets its own issue (cross-linked via cross_repo_refs
+          when they are filed). Do not write the sibling's work into THIS repo's
           issue body or extra_prompt. A "sibling repo" in the
           Evidence-lookup sense (read-only fact source) is different
           from an "affected repo" (needs its own change): both use the

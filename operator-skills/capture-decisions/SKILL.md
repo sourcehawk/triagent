@@ -59,7 +59,7 @@ Your reply:
 >
 > all
 
-This reply splits the wiki, replaces the playbook, adds a codefix the agent declined, gives one reason per move, and ends with the keyword. Match this shape when the investigation has that much texture. When the agent's proposals are already right, "Agreed." plus the keyword is enough.
+This reply splits the wiki, replaces the playbook, adds a codefix the agent declined, gives one reason per move, and ends with the keyword. Match this shape when the investigation has that much texture. When the agent's proposals are already right, keep the bullets and make each one a short acceptance: "Wiki: agreed." Then the keyword.
 
 ## The six routes
 
