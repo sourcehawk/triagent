@@ -25,7 +25,7 @@ If the span is longer than 10 envelopes, read the last two or three turns closel
 | "Proposed captures" message pending | Route it (`capture-decisions`) |
 | Summary delivered, no captures proposed | Ask the agent for its capture proposals |
 | Capture completed during the takeover | `finish("Human completed capture during takeover.")` |
-| Agent mid-tool-use, no question | Wait. The next `end` wakes you |
+| Agent mid-tool-use, no question | Send a one-word acknowledgement. The next `end` wakes you |
 
 ## Do not
 
