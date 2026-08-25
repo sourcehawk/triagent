@@ -23,13 +23,13 @@ import (
 // Options describes how to launch one session. They mirror the bits of
 // preflight.Result and program-level Deps that affect what claude sees.
 type Options struct {
-	Namespace        string
-	UserNotes        string
-	IncidentURL      string // operator-supplied incident.io incident URL; empty when not set
-	SlackChannelURL  string // operator-supplied slack channel/thread URL; empty when not set
-	SlackChannelID   string
-	SlackChannelName string
-	MCPConfigPath    string
+	Namespace              string
+	UserNotes              string
+	IncidentURL            string // operator-supplied incident.io incident URL; empty when not set
+	SlackChannelURL        string // operator-supplied slack channel/thread URL; empty when not set
+	SlackChannelID         string
+	SlackChannelName       string
+	MCPConfigPath          string
 	SlackMCPAvailable      bool // triagent-slack MCP wired (slack token linked)
 	IncidentioMCPAvailable bool // triagent-incidentio MCP wired (incidentio token linked)
 	LinkedRepos            []repos.LinkedRepo
@@ -51,7 +51,9 @@ type Options struct {
 	AlertKind string
 	// ProjectID is the deployment / tenant identifier (when known).
 	ProjectID string
-	// Cluster is the kube-context / cluster name (when known).
+	// Cluster is the kubeconfig context name the launcher seeded at
+	// preflight (when known). Rendered as kubernetes-context in the
+	// opening prompt and exposed to namespace_derivation as "cluster".
 	Cluster string
 
 	// Playbook is the playbook id the operator selected at session
@@ -61,10 +63,13 @@ type Options struct {
 }
 
 // promptEnv projects the options into the prompt environment Build
-// renders into the opening system prompt.
+// renders into the opening system prompt. Cluster feeds the
+// Environment block's kubernetes-context line so the agent sees the
+// context the launcher already seeded instead of "<unset>".
 func (o Options) promptEnv() prompts.Env {
 	clusterID := clusterIDFromNamespace(o.Namespace)
 	return prompts.Env{
+		Context:   o.Cluster,
 		UserNotes: o.UserNotes,
 		InputValues: map[string]map[string]any{
 			"cluster_id":    {"value": clusterID},
@@ -208,8 +213,12 @@ func clusterIDFromNamespace(ns string) string {
 // from Options. Events are delivered on the returned channel; the channel
 // closes when claude exits or ctx is cancelled.
 func (s *Session) Start(ctx context.Context) (<-chan claude.Event, error) {
-	prompt := prompts.Build(s.opts.promptEnv(), s.opts.Profile)
-	return s.inner.Start(ctx, prompt)
+	return s.inner.Start(ctx, s.startPrompt())
+}
+
+// startPrompt renders the opening prompt from Options.
+func (s *Session) startPrompt() string {
+	return prompts.Build(s.opts.promptEnv(), s.opts.Profile)
 }
 
 // Resume continues the most-recent conversation with a follow-up prompt.

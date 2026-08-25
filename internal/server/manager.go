@@ -549,6 +549,7 @@ func (i *Investigation) Start() error {
 		LinkedRepos:            i.LinkedRepos,
 		LaunchCwd:              i.LaunchCwd,
 		KubeconfigPath:         i.KubeconfigPath,
+		Cluster:                i.ActiveContext,
 		Profile:                i.Profile,
 		Playbook:               i.Playbook,
 	})
