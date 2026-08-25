@@ -353,12 +353,12 @@ func TestBuild_LinkedRepos_AdvertisesArchitectureSummaryFirstStop(t *testing.T) 
 func TestBuildIncludesAutoTriggerHintWhenSet(t *testing.T) {
 	prof := testProf()
 	plain := Build(Env{}, prof)
-	if strings.Contains(plain, "auto-triggered by signal-watch") {
+	if strings.Contains(plain, "Auto-triggered investigation") {
 		t.Fatal("plain prompt should not include the auto-trigger hint")
 	}
 
 	hinted := Build(Env{OriginatingSignalSet: true}, prof)
-	if !strings.Contains(hinted, "auto-triggered by signal-watch") {
+	if !strings.Contains(hinted, "Auto-triggered investigation") {
 		t.Fatal("hinted prompt should include the auto-trigger hint")
 	}
 	if !strings.Contains(hinted, "choose `wiki`") {
