@@ -39,7 +39,7 @@ Everywhere:
 
 **Investigation summary (`summarize`).** `symptom` and `root_cause` are descriptive, simple past, no bullets. `symptom` is at most two sentences. `root_cause` is two or three. Name the component, the change, and the number. `next_steps` is procedural: one imperative per bullet.
 
-**Wiki entry.** `## Summary` and `## Root cause` are descriptive. `## Fix` states what resolved the incident in the simple past, then what was tried and did not work. `## Lessons` bullets are procedural ("Compare `-Xmx` with the container limit before you restart the pod."). Do not repeat a fact in two sections.
+**Wiki entry.** `## Summary` and `## Root cause` are descriptive. `## Fix` states what resolved the incident in the simple past, then what was tried and did not work. In `## Lessons`, operator takeaways are procedural ("Compare `-Xmx` with the container limit before you restart the pod.") and the agent-workflow retrospective is descriptive, simple past ("The collector check cost three turns and found nothing."). Do not repeat a fact in two sections.
 
 **GitHub issue and PR body.** Descriptive, simple past for the incident and simple present for the code. Acceptance criteria are observable outcomes from the finding. Do not add criteria the investigation did not surface.
 

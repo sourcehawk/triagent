@@ -83,6 +83,6 @@ If the `Notes:` line of your briefing contains "Auto-triggered by signal-watch i
 
 ## When you are not ready to decide
 
-If a codefix proposal names a change but not a repo or file, ask a follow-up instead of guessing. The agent answers, and the capture question reaches you again next turn.
+If you cannot tell whether a codefix proposal is real, fits the root cause, or fits one sub-agent run, ask a follow-up instead of guessing. Do not ask which file or repo owns it. The agent answers, and the capture question reaches you again next turn.
 
-> The `memory_limiter` recommendation is concrete, but which repo owns the collector pipeline config, example-org/service or example-org/platform?
+> Does the `memory_limiter` processor address the root cause (scrape load grows without bound), or does it buffer the symptom until the next spike?
