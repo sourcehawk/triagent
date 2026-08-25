@@ -551,7 +551,7 @@ function Composer({
           disabled={disabled}
           className="w-full resize-y rounded border border-zinc-800 bg-zinc-950 px-3 py-2 pr-11 text-sm text-zinc-100 placeholder-zinc-600 focus:border-zinc-600 focus:outline-none disabled:opacity-60"
         />
-        {streaming && !submitting ? (
+        {streaming ? (
           <button
             type="button"
             data-testid="triagent-editor-chat-stop"
