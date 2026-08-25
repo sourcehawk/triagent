@@ -44,7 +44,7 @@ session. Skip it for trivial chat (a thank-you alone).
 
 - Start log searches broad (`grep=ERROR`) and narrow only if silent. The error line rarely contains the
   operator's symptom keyword.
-- **Pre-flight cheap tools before sub-agents.** Sub-agent tools (`analyze_change`, `correlate_with_findings`, and
+- **Pre-flight cheap tools before sub-agents.** Sub-agent tools (`research_codebase`, `analyze_change`, `correlate_with_findings`, and
   anything that spawns a focused sub-Claude in a cloned repo) are the slowest call type — each boots a separate
   model and runs for tens of seconds. Burn cheap deterministic tools first (`latest_tags`, `commit_summary`,
   `diff_summary`, `search_log`, k8s / docs) so you can ask the sub-agent a *precise* question. A vague question

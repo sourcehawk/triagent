@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/sourcehawk/triagent/pkg/mcp/citations"
 	"github.com/sourcehawk/triagent/pkg/mcp/telemetry"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type analyzeChangeIn struct {
@@ -24,7 +24,6 @@ type analyzeChangeOut struct {
 	Summary             string               `json:"summary"`
 	Citations           []citations.Citation `json:"citations"`
 	CitationsParseError string               `json:"citations_parse_error,omitempty"`
-	PromptSent          string               `json:"prompt_sent"`
 	TimedOut            bool                 `json:"timed_out,omitempty"`
 }
 
@@ -38,7 +37,6 @@ type correlateOut struct {
 	Summary             string               `json:"summary"`
 	Citations           []citations.Citation `json:"citations"`
 	CitationsParseError string               `json:"citations_parse_error,omitempty"`
-	PromptSent          string               `json:"prompt_sent"`
 	TimedOut            bool                 `json:"timed_out,omitempty"`
 }
 
@@ -57,7 +55,7 @@ func (s *Server) analyzeChange(ctx context.Context, _ *mcp.CallToolRequest, in a
 		return errorResult(err.Error()), analyzeChangeOut{Repo: s.repoFull(), Ref: in.Ref, Citations: []citations.Citation{}}, nil
 	}
 	prompt := fmt.Sprintf(
-`You are analysing a single git change in a repository for an incident investigation.
+		`You are analysing a single git change in a repository for an incident investigation.
 The change is at ref: %s
 The investigator wants to know: %s
 
@@ -65,26 +63,8 @@ Use Read, Glob, Grep, and `+"`Bash(git show ...)`"+` to inspect the change and a
 
 Reply with a focused answer under 400 words. Mark each concrete claim with a numeric citation [N] (e.g. "[1]") and add the corresponding entry to the citations block at the end. If the change does not appear relevant to the question, say so directly.
 
-Citation format — REQUIRED. End your response with a block in this exact form:
-
-<<<CITATIONS
-[
-  {"kind":"github_commit","repo":"%s","sha":"<full-40-char-sha>"},
-  {"kind":"github_file","repo":"%s","path":"<relpath>","ref":"<sha-or-ref>","line_start":<n>,"line_end":<m>},
-  {"kind":"github_pr","repo":"%s","pr_num":<n>}
-]
-CITATIONS>>>
-
-Each [N] marker in your prose maps to citations[N-1] (1-based). Cite only artifacts in repo %s — the validator rejects entries pointing elsewhere. line_start/line_end are optional on github_file. github_commit requires the full 40-char sha, never an abbreviation.
-
-Self-verify before emitting the citations block:
-  - github_file: run `+"`Bash(git cat-file -e <ref>:<path>)`"+` to confirm the path exists at that ref. Drop on non-zero exit.
-  - github_commit: run `+"`Bash(git rev-parse <sha>^{commit})`"+` to confirm the sha resolves. Drop on non-zero exit.
-  - github_pr: run `+"`Bash(gh pr view <n> --repo %s)`"+` to confirm. Drop on non-zero exit.`,
-		resolvedRef, in.Question,
-		s.repoFull(), s.repoFull(), s.repoFull(),
-		s.repoFull(),
-		s.repoFull())
+%s`,
+		resolvedRef, in.Question, s.citationInstructions())
 
 	parentID := telemetry.CurrentToolID(ctx)
 	// sessionID is captured from the first sub-agent invocation and
@@ -112,7 +92,6 @@ Self-verify before emitting the citations block:
 		Summary:             out.Prose,
 		Citations:           out.Citations,
 		CitationsParseError: out.CitationsParseError,
-		PromptSent:          prompt,
 		TimedOut:            out.TimedOut,
 	}
 	if runErr != nil {
@@ -134,7 +113,7 @@ func (s *Server) correlateWithFindings(ctx context.Context, _ *mcp.CallToolReque
 		return errorResult(err.Error()), correlateOut{Repo: s.repoFull(), Citations: []citations.Citation{}}, nil
 	}
 	prompt := fmt.Sprintf(
-`You are correlating an incident's findings against recent code changes.
+		`You are correlating an incident's findings against recent code changes.
 
 Findings: %s
 
@@ -187,7 +166,6 @@ Drop any citation whose check fails.`,
 		Summary:             out.Prose,
 		Citations:           out.Citations,
 		CitationsParseError: out.CitationsParseError,
-		PromptSent:          prompt,
 		TimedOut:            out.TimedOut,
 	}
 	if runErr != nil {

@@ -143,7 +143,7 @@ func listCodefixProposals(proposalsDir string) ([]CodefixProposalPayload, error)
 
 // codefixDraftPRResult is the subset of the triagent-git draft_pr tool's
 // JSON output the launcher cares about for persistence. Extra fields
-// (citations, prompt_sent, etc.) are intentionally discarded.
+// (citations, etc.) are intentionally discarded.
 type codefixDraftPRResult struct {
 	ProposalID  string `json:"proposal_id"`
 	Repo        string `json:"repo"`

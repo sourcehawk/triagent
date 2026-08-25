@@ -12,6 +12,7 @@ func TestDefaultAllowlist_AllowsSlowSubagentTools(t *testing.T) {
 	require.True(t, a.Allows("triagent-git-alerts", "analyze_change"))
 	require.True(t, a.Allows("triagent-git-example-operator", "analyze_change"))
 	require.True(t, a.Allows("triagent-git-anything", "correlate_with_findings"))
+	require.True(t, a.Allows("triagent-git-alerts", "research_codebase"))
 	require.True(t, a.Allows("triagent-git-alerts", "draft_pr"))
 	require.True(t, a.Allows("triagent-wiki", "propose_wiki_draft"))
 	require.True(t, a.Allows("triagent-sessions", "propose_session_draft"))

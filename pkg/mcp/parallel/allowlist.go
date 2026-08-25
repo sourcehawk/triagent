@@ -32,6 +32,7 @@ func DefaultAllowlist() Allowlist {
 		// a unique branch so parallel calls don't collide on the same
 		// repo, but be aware that a batch can open multiple PRs at once.
 		{"triagent-git-*", "analyze_change"},
+		{"triagent-git-*", "research_codebase"},
 		{"triagent-git-*", "correlate_with_findings"},
 		{"triagent-git-*", "draft_pr"},
 		// triagent-wiki — proposal drafter.

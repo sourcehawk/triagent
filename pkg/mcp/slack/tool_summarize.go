@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/sourcehawk/triagent/pkg/mcp/citations"
 	"github.com/sourcehawk/triagent/pkg/mcp/telemetry"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type summarizeThreadIn struct {
@@ -21,7 +21,6 @@ type summarizeThreadOut struct {
 	Summary             string               `json:"summary"`
 	Citations           []citations.Citation `json:"citations"`
 	CitationsParseError string               `json:"citations_parse_error,omitempty"`
-	PromptSent          string               `json:"prompt_sent"`
 	TimedOut            bool                 `json:"timed_out,omitempty"`
 	RateLimited         bool                 `json:"rate_limited,omitempty"`
 }
@@ -78,7 +77,6 @@ Self-verify before emitting the citations block: this tool resolved one thread, 
 		return errorResult(runErr.Error()), summarizeThreadOut{
 			Citations:   []citations.Citation{},
 			ThreadTS:    in.ThreadTS,
-			PromptSent:  prompt,
 			RateLimited: rateLimited,
 		}, nil
 	}
@@ -87,7 +85,6 @@ Self-verify before emitting the citations block: this tool resolved one thread, 
 		Summary:             res.Summary,
 		Citations:           res.Citations,
 		CitationsParseError: res.CitationsParseError,
-		PromptSent:          prompt,
 		TimedOut:            res.TimedOut,
 		RateLimited:         rateLimited,
 	}, nil
