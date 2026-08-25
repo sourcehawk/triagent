@@ -109,6 +109,42 @@ func TestResearchCodebase_RefDefaultsToOriginDefaultBranch(t *testing.T) {
 	assert.Equal(t, originSHA, headSHA, "sub-agent worktree must be at origin/main's tip, not stale local main")
 }
 
+// Citations are validated against the same tree the sub-agent inspected.
+// The prompt lets it cite symbolic refs like HEAD; resolving those in the
+// cache clone (stale local main) would reject files that exist only at
+// the resolved ref and burn a futile correction retry.
+func TestResearchCodebase_ValidatesCitationsInWorktree(t *testing.T) {
+	t.Parallel()
+	cacheDir, repoDir, bareDir := staleCacheFixture(t)
+	// Push a file that exists only at origin/main, then fetch it into the cache.
+	pusher := filepath.Join(t.TempDir(), "pusher")
+	runFixtureGit(t, "", "clone", bareDir, pusher)
+	runFixtureGit(t, pusher, "config", "commit.gpgsign", "false")
+	require.NoError(t, os.WriteFile(filepath.Join(pusher, "NEW.md"), []byte("new\n"), 0o600))
+	runFixtureGit(t, pusher, "add", "NEW.md")
+	runFixtureGit(t, pusher, "commit", "-q", "-m", "add NEW.md")
+	runFixtureGit(t, pusher, "push", "origin", "main")
+	runFixtureGit(t, repoDir, "fetch", "--prune", "--tags")
+
+	s := &Server{owner: "o", name: "n", cacheDir: cacheDir, gh: &stubGh{response: []byte("main\n")}}
+	s.worktreeRootOverride = t.TempDir()
+	calls := 0
+	s.runSubAgent = func(_ context.Context, _, _, _, _ string) (subagent.Result, error) {
+		calls++
+		return subagent.Result{Summary: `NEW.md says so [1].
+
+<<<CITATIONS
+[{"kind":"github_file","repo":"o/n","path":"NEW.md","ref":"HEAD"}]
+CITATIONS>>>`}, nil
+	}
+
+	_, out, err := s.researchCodebase(context.Background(), nil, researchCodebaseIn{Question: "what is new?"})
+	require.NoError(t, err)
+	require.Len(t, out.Citations, 1, "HEAD must resolve against the worktree, where NEW.md exists")
+	assert.Equal(t, 1, calls, "a valid citation must not trigger a correction retry")
+	assert.Empty(t, out.CitationsParseError)
+}
+
 func TestResearchCodebase_RequiresQuestion(t *testing.T) {
 	t.Parallel()
 	s := researchFixtureServer(t)

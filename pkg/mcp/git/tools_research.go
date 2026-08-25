@@ -82,7 +82,9 @@ Reply with a focused answer under 600 words. Be exact with identifiers (metric n
 		}
 		return citations.RawResult{Raw: res.Summary, TimedOut: res.TimedOut}, nil
 	}
-	v := &gitValidator{repo: s.repoFull(), repoDir: dir, ctx: ctx}
+	// Validate in the worktree too, so a symbolic ref the sub-agent cites
+	// (HEAD) resolves against the tree it actually read.
+	v := &gitValidator{repo: s.repoFull(), repoDir: wt, ctx: ctx}
 	out, runErr := citations.Run(ctx, citations.RunInput{Run: adapter, Validator: v, Prompt: prompt})
 	res := researchCodebaseOut{
 		Repo:                s.repoFull(),
