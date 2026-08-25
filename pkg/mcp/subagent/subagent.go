@@ -95,7 +95,6 @@ type Options struct {
 // Result is the structured outcome of one Run call.
 type Result struct {
 	Summary    string `json:"summary"`
-	PromptSent string `json:"prompt_sent,omitempty"`
 	ExitCode   int    `json:"exit_code,omitempty"`
 	TimedOut   bool   `json:"timed_out,omitempty"`
 	StderrTail string `json:"stderr_tail,omitempty"`
@@ -181,7 +180,6 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 
 	res := Result{
 		Summary:             relay.finalText,
-		PromptSent:          opts.Prompt,
 		StderrTail:          stderrTail,
 		SessionID:           relay.sessionID,
 		TerminalToolsCalled: sortedCalled(relay.terminalsCalled),
@@ -256,7 +254,14 @@ func relaySubEvents(r io.Reader, parentToolID string, required map[string]struct
 	parser := newStatusMarkerParser(parentToolID, func(parentID, msg string, _ time.Time) {
 		telemetry.SendStatus(parentID, msg)
 	})
-	var finalText strings.Builder
+	// assistantText accumulates every interim assistant turn; resultText
+	// is the stream's terminal `result` event. The result event is the
+	// sub-agent's actual final answer, so it wins as the summary; the
+	// interim text is only a fallback when the run ended without one
+	// (timeout, crash). Both are still posted as nested events so the
+	// activity panel shows the full narration.
+	var assistantText strings.Builder
+	var resultText string
 	var sessionID string
 	// pendingTerminalIDs maps a required terminal tool's tool_use id to its
 	// name, set when the tool_use is seen and consumed when its tool_result
@@ -286,14 +291,14 @@ func relaySubEvents(r io.Reader, parentToolID string, required map[string]struct
 			if text != "" {
 				// Emit status markers as telemetry AND strip them from
 				// the chunk before it lands in the activity panel /
-				// finalText — otherwise each status appears twice
+				// assistantText — otherwise each status appears twice
 				// (once as the styled status line, once verbatim in
 				// the assistant text).
 				text = parser.feedAndStrip(text)
 				if strings.TrimSpace(text) != "" {
 					postNested(parentToolID, "assistant", text)
-					finalText.WriteString(text)
-					finalText.WriteString("\n")
+					assistantText.WriteString(text)
+					assistantText.WriteString("\n")
 				}
 			}
 			// Tool uses inside the message render as their own nested events.
@@ -319,19 +324,22 @@ func relaySubEvents(r io.Reader, parentToolID string, required map[string]struct
 		case "result":
 			if ev.Result != "" {
 				postNested(parentToolID, "result", ev.Result)
-				if finalText.Len() == 0 {
-					finalText.WriteString(ev.Result)
-				}
+				resultText = ev.Result
 			}
 		case "system":
 			// Skip system init noise to keep the activity panel readable —
 			// session_id was captured above.
 		}
 	}
-	if err := scanner.Err(); err != nil {
-		return relayResult{finalText: finalText.String(), sessionID: sessionID, terminalsCalled: terminalsCalled}, err
+	final := strings.TrimSpace(resultText)
+	if final == "" {
+		final = strings.TrimSpace(assistantText.String())
 	}
-	return relayResult{finalText: strings.TrimSpace(finalText.String()), sessionID: sessionID, terminalsCalled: terminalsCalled}, nil
+	res := relayResult{finalText: final, sessionID: sessionID, terminalsCalled: terminalsCalled}
+	if err := scanner.Err(); err != nil {
+		return res, err
+	}
+	return res, nil
 }
 
 // streamEvent is the bare-minimum decoder of claude --output-format
