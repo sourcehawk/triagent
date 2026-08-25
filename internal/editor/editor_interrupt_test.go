@@ -46,6 +46,36 @@ func (c *interruptibleConversation) spawn(ctx context.Context) <-chan claude.Eve
 	return ch
 }
 
+// launchFailConversation blocks inside Resume until its ctx is
+// cancelled, then fails the launch — the shape of an Interrupt racing
+// a turn that never got as far as producing an event channel.
+type launchFailConversation struct {
+	ctxObserved chan struct{}
+}
+
+func (c *launchFailConversation) Start(ctx context.Context, p string) (<-chan claude.Event, error) {
+	return c.Resume(ctx, p)
+}
+
+func (c *launchFailConversation) Resume(ctx context.Context, _ string) (<-chan claude.Event, error) {
+	close(c.ctxObserved)
+	<-ctx.Done()
+	return nil, errors.New("claude exited before first event")
+}
+
+// closedConversation finishes a turn immediately with no events.
+type closedConversation struct{}
+
+func (closedConversation) Start(context.Context, string) (<-chan claude.Event, error) {
+	ch := make(chan claude.Event)
+	close(ch)
+	return ch, nil
+}
+
+func (c closedConversation) Resume(ctx context.Context, p string) (<-chan claude.Event, error) {
+	return c.Start(ctx, p)
+}
+
 func newStartedSession(t *testing.T, conv conversation) *Session {
 	t.Helper()
 	mgr := NewManager(context.Background(), t.TempDir())
@@ -109,4 +139,42 @@ func TestSession_Interrupt_CancelsTurnAndEmitsBreadcrumb(t *testing.T) {
 	sess.mu.Unlock()
 	require.NoError(t, sess.SendFollowUp("again"))
 	require.ErrorContains(t, sess.SendFollowUp("busy"), "streaming")
+}
+
+func TestSession_Interrupt_RacingLaunchFailureDoesNotLeakIntoNextTurn(t *testing.T) {
+	t.Parallel()
+	conv := &launchFailConversation{ctxObserved: make(chan struct{})}
+	sess := newStartedSession(t, conv)
+
+	launchErr := make(chan error, 1)
+	go func() { launchErr <- sess.SendFollowUp("hello") }()
+	select {
+	case <-conv.ctxObserved:
+	case <-time.After(2 * time.Second):
+		t.Fatal("turn never started")
+	}
+	require.NoError(t, sess.Interrupt())
+	select {
+	case err := <-launchErr:
+		require.Error(t, err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("SendFollowUp never returned")
+	}
+
+	// The next turn finishes naturally; it must not inherit the
+	// interrupted flag and print a breadcrumb it didn't earn.
+	sess.mu.Lock()
+	sess.inner = closedConversation{}
+	sess.mu.Unlock()
+	before, _ := sess.TranscriptSnapshot()
+	require.NoError(t, sess.SendFollowUp("again"))
+	waitIdle(t, sess)
+
+	after, _ := sess.TranscriptSnapshot()
+	var kinds []string
+	for _, ev := range after[len(before):] {
+		kinds = append(kinds, ev.Kind)
+		assert.NotEqual(t, "(stopped the agent)", ev.Text)
+	}
+	assert.Equal(t, []string{KindUser, KindEnd}, kinds)
 }

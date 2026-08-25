@@ -245,11 +245,15 @@ func (s *Session) Start() error {
 	return nil
 }
 
-// clearTurn marks the session idle after a turn failed to launch.
+// clearTurn marks the session idle after a turn failed to launch. An
+// Interrupt that raced the launch has nothing left to stop, so the
+// interrupted flag is dropped too rather than leaking into the next
+// turn's drain.
 func (s *Session) clearTurn() {
 	s.mu.Lock()
 	s.streaming = false
 	s.turnCancel = nil
+	s.interrupted = false
 	s.mu.Unlock()
 }
 
