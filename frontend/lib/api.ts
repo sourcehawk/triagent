@@ -1527,6 +1527,12 @@ export const api = {
       }
     }),
 
+  // interruptEditorSession cancels the in-flight editor turn. Same
+  // contract as interruptInvestigation: 202 on success, 409 when
+  // nothing is in flight (callers swallow the 409).
+  interruptEditorSession: (id: string) =>
+    postEmpty(`/api/editor-sessions/${encodeURIComponent(id)}/interrupt`),
+
   // ── Wiki proposals (chat diff card) ─────────────────────────────────
   // approveWikiProposal promotes a draft into the wiki vault and opens
   // a PR. Returns the structured success payload (ok=true with PR URL)

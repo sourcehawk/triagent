@@ -457,6 +457,34 @@ func (a *apiHandlers) handleEditorMessage(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusAccepted)
 }
 
+// handleInterruptEditorSession cancels the editor session's in-flight
+// turn. Same contract as the investigation /interrupt endpoint.
+//
+// POST /api/editor-sessions/{id}/interrupt
+// 202 — interrupt requested; drain will emit the breadcrumb + end events.
+// 404 — unknown session.
+// 409 — no turn currently in flight.
+func (a *apiHandlers) handleInterruptEditorSession(w http.ResponseWriter, r *http.Request) {
+	if a.editorMgr == nil {
+		writeError(w, http.StatusServiceUnavailable, "editor manager not initialised")
+		return
+	}
+	sess := a.editorMgr.Get(r.PathValue("id"))
+	if sess == nil {
+		writeError(w, http.StatusNotFound, "editor session not found")
+		return
+	}
+	if err := sess.Interrupt(); err != nil {
+		if errors.Is(err, editor.ErrNotStreaming) {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusAccepted)
+}
+
 // resolvePlaybookYAML returns the YAML + type for one id.
 // The version parameter is kept for API compatibility but is no longer
 // used to select among sibling files — each id has exactly one file on

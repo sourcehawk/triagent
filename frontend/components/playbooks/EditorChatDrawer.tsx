@@ -29,6 +29,7 @@ import { buildLatestPayloadsByKey } from "@/lib/proposal-projection";
 import { Markdown } from "@/components/shared/Markdown";
 import { ProposalCard, type ProposalDraftPayload } from "@/components/playbooks/ProposalCard";
 import { Spinner } from "@/components/shared/Spinner";
+import { StopIcon } from "@/components/investigations/SessionView.icons";
 import { ToolCard } from "@/components/shared/ToolCard";
 import type { WikiProposalPayload } from "@/components/wiki/WikiProposalCard";
 
@@ -214,6 +215,7 @@ export function EditorChatDrawer({
           disabled={!session.id || session.status === "starting"}
           streaming={session.status === "streaming"}
           onSend={session.send}
+          onInterrupt={session.interrupt}
         />
       </div>
     </aside>
@@ -483,14 +485,31 @@ function Composer({
   disabled,
   streaming,
   onSend,
+  onInterrupt,
 }: {
   disabled: boolean;
   streaming: boolean;
   onSend: (text: string) => Promise<void>;
+  onInterrupt: () => Promise<void>;
 }) {
   const [text, setText] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  // Stop the in-flight turn. Same send↔stop swap as the session chat:
+  // while streaming the chip is a square; clicking it cancels the turn
+  // server-side and the "end" event flips streaming back to false,
+  // which restores the Send chip. 409s are swallowed: the turn already
+  // finished in the gap between click and request.
+  async function interrupt() {
+    setErr(null);
+    try {
+      await onInterrupt();
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) return;
+      setErr(e instanceof ApiError ? e.message : String(e));
+    }
+  }
 
   async function submit(e?: React.FormEvent) {
     e?.preventDefault();
@@ -532,20 +551,35 @@ function Composer({
           disabled={disabled}
           className="w-full resize-y rounded border border-zinc-800 bg-zinc-950 px-3 py-2 pr-11 text-sm text-zinc-100 placeholder-zinc-600 focus:border-zinc-600 focus:outline-none disabled:opacity-60"
         />
-        <button
-          type="submit"
-          data-testid="triagent-editor-chat-send"
-          title="send (Enter)"
-          aria-label="send"
-          disabled={!text.trim() || submitting || disabled || streaming}
-          className="absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full bg-zinc-700 text-zinc-200 transition hover:bg-zinc-600 hover:text-zinc-50 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-600"
-        >
-          {submitting ? (
-            <Spinner className="h-3 w-3" />
-          ) : (
-            <PlayIcon className="h-3 w-3" />
-          )}
-        </button>
+        {streaming ? (
+          <button
+            type="button"
+            data-testid="triagent-editor-chat-stop"
+            title="stop the agent's current turn"
+            aria-label="stop"
+            onClick={() => {
+              void interrupt();
+            }}
+            className="absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full bg-zinc-700 text-zinc-200 transition hover:bg-zinc-600 hover:text-zinc-50"
+          >
+            <StopIcon className="h-3 w-3" />
+          </button>
+        ) : (
+          <button
+            type="submit"
+            data-testid="triagent-editor-chat-send"
+            title="send (Enter)"
+            aria-label="send"
+            disabled={!text.trim() || submitting || disabled || streaming}
+            className="absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full bg-zinc-700 text-zinc-200 transition hover:bg-zinc-600 hover:text-zinc-50 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-600"
+          >
+            {submitting ? (
+              <Spinner className="h-3 w-3" />
+            ) : (
+              <PlayIcon className="h-3 w-3" />
+            )}
+          </button>
+        )}
       </div>
       {err && <div className="text-xs text-red-400">{err}</div>}
     </form>
@@ -838,6 +872,11 @@ function useEditorSession({
     [sessionId],
   );
 
+  const interrupt = useCallback(async () => {
+    if (!sessionId) return;
+    await api.interruptEditorSession(sessionId);
+  }, [sessionId]);
+
   const terminate = useCallback(async () => {
     if (!sessionId) return;
     try {
@@ -856,6 +895,7 @@ function useEditorSession({
     status,
     error,
     send,
+    interrupt,
     terminate,
   };
 }
