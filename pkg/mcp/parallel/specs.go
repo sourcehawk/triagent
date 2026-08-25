@@ -12,7 +12,7 @@ func ToolSpecs() []toolspec.ToolSpec {
 			Server: "triagent-parallel",
 			Name:   "call",
 			Description: "Dispatch 2..8 independent MCP sub-calls in parallel and return their combined results. " +
-				"Use this for batches of slow sub-agent tools (analyze_change, correlate_with_findings, propose_*) " +
+				"Use this for batches of slow sub-agent tools (analyze_change, research_codebase, correlate_with_findings, propose_*) " +
 				"whose answers are independent of each other. Provide a one-line `summary` describing the batch's " +
 				"intent; it renders alongside the call so the operator sees what you're doing. Only allowlisted " +
 				"tools are accepted; rejections come back per-item with rejected=true so other sub-calls still run.",

@@ -18,9 +18,10 @@ tools help:
 
 - **Linked repos** (when registered): read controller reconcile loops, SDK error paths, condition strings, retry
   behavior. The branches you add to a playbook should match the branches that exist in the code. Prefer the
-  sub-agent tools (`analyze_change`, `correlate_with_findings`) when the question is broad — they spawn a focused
-  sub-Claude in the cloned repo and return a summary, instead of you burning context reading the repo file by
-  file.
+  sub-agent tools when the question is broad — they spawn a focused sub-Claude in the cloned repo and return a
+  summary, instead of you burning context reading the repo file by file. `research_codebase` answers questions
+  about the code as it is today (exact metric names, condition reasons, flags, alert rules); `analyze_change` is
+  for one specific commit. Don't point `analyze_change` at `HEAD` to ask about the whole repo.
 - **Docs MCPs** (when wired): pull facts when you'd otherwise be inferring product behaviour from prior
   knowledge — version-specific flags, canonical field names, the meaning of a status value, recommended actions.
 - **Other playbooks** via `list_playbooks` (or `correlate_playbook`) + `get_playbook_raw`: check whether the

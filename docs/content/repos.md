@@ -30,7 +30,7 @@ architecture summary. See [Your description shapes the summary](#your-descriptio
 
 When an investigation needs to consult a linked repo ("did `widget-broker` change recently?", "which file owns the
 condition string the gateway is logging?"), the agent doesn't know the repo's shape. It rediscovers it every session,
-either via expensive sub-agent calls (`analyze_change`, `correlate_with_findings`) or many cheap discovery calls
+either via expensive sub-agent calls (`research_codebase`, `analyze_change`, `correlate_with_findings`) or many cheap discovery calls
 (`commit_summary`, `search_log`, `diff_summary`) that have to find the right thread first. That cost compounds across
 investigations that all touch the same repo for the same reasons.
 
@@ -101,7 +101,7 @@ The same icons show on the **/repos** index page, with the generated-on date nex
 
 Every investigation walks a short orientation step (`git_inspect`) that consults the cached summary first, then falls
 back through a layered ordering: the description in the system prompt, then cheap deterministic git tools
-(`commit_summary`, `search_log`, `diff_summary`), then expensive sub-agent tools (`analyze_change`,
+(`commit_summary`, `search_log`, `diff_summary`), then expensive sub-agent tools (`research_codebase`, `analyze_change`,
 `correlate_with_findings`) only when cheaper layers aren't enough. The structure forces cheap-then-expensive ordering,
 and the audit trail captures what was tried at each layer.
 

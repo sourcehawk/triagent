@@ -322,6 +322,10 @@ nodes:
         - `correlate_with_findings` — given a recorded findings
           set, scan a recent range for changes that match. Ideal
           when you know the symptom but not the candidate ref.
+        - `research_codebase` — question about the code as a
+          whole at a ref, not about one commit. Ideal when you
+          need exact identifiers (metric names, condition
+          reasons, flags) that no single change explains.
 
       Frame the question precisely — sub-agents with sharp
       questions return citation-backed answers in one round-trip;
@@ -339,6 +343,7 @@ nodes:
     suggested_calls:
       - tool: triagent-git/analyze_change
       - tool: triagent-git/correlate_with_findings
+      - tool: triagent-git/research_codebase
     expected_findings:
       - subagent_findings
     next:

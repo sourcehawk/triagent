@@ -207,8 +207,13 @@ func (s *Server) register() {
 
 	mcp.AddTool(s.impl, &mcp.Tool{
 		Name:        "analyze_change",
-		Description: "Spawn a focused sub-agent to read the actual code change at a ref and answer a specific question about it. Use after commit_summary identifies a candidate but you need to know what the change actually does. Returns a natural-language summary; sub-agent's internal tool calls render as collapsed children in the activity panel.",
+		Description: "Spawn a focused sub-agent to read the actual code change at a ref and answer a specific question about it. Use after commit_summary identifies a candidate but you need to know what the change actually does. For questions about the codebase as a whole (what metrics/CRDs/flags exist) use research_codebase instead. Returns a natural-language summary; sub-agent's internal tool calls render as collapsed children in the activity panel.",
 	}, telemetry.Wrap("analyze_change", s.analyzeChange))
+
+	mcp.AddTool(s.impl, &mcp.Tool{
+		Name:        "research_codebase",
+		Description: "Spawn a focused sub-agent to answer a question about the repository's code as it exists at a ref (defaults to the remote default branch): exact metric names, CRD kinds and condition reasons, deployment manifests, alert rules, feature flags. Use when authoring playbooks or when an investigation needs precise identifiers from the code; use analyze_change when the question is about one specific commit.",
+	}, telemetry.Wrap("research_codebase", s.researchCodebase))
 
 	mcp.AddTool(s.impl, &mcp.Tool{
 		Name:        "correlate_with_findings",
