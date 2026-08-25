@@ -342,8 +342,9 @@ func readDraftFromDir(dir, proposalID string) (playbookID, body string, err erro
 }
 
 // loadBaseForID returns the canonical YAML of the playbook the running
-// strategies MCP would resolve for id: the same plugin → system → user
-// merge the MCP loads at startup, re-rendered through the shared
+// strategies MCP would resolve for id: the same plugin → user → system
+// merge the MCP loads at startup (user overrides plugin; the locked
+// system tier wins over both), re-rendered through the shared
 // serialiser so the proposal diff surfaces semantic deltas rather than
 // on-disk formatting. Returns "" for a brand-new id (or when the set
 // can't be loaded); the diff card renders that as a new playbook.
