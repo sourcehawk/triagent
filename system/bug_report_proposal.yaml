@@ -152,17 +152,23 @@ nodes:
       enough context that the reader can decide on a fix without
       re-running the investigation.
 
-      Body MUST include:
-        - **Summary** — what the bug/gap/issue is, and why it
+      How the investigation's material maps onto the BODY SHAPE
+      sections:
+        - **Description** — what the bug/gap/issue is and why it
           matters. Engineering rationale ("why this rule needs to
           split, not raise the threshold") belongs here when a
           non-obvious design choice needs to be flagged for the
-          maintainer.
-        - **Detected via** — link to the wiki incident entry, the
-          slack thread, the incident.io ticket, or the investigation
-          session URL.
-        - **Evidence** — citations from the investigation, rendered
-          as `[short-sha](https://github.com/<o>/<n>/commit/<sha>)`,
+          maintainer. No solution paragraphs: the maintainer decides
+          on the fix.
+        - **Acceptance Criteria** — the observable outcomes that
+          would close the problem (the alert fires separately for
+          each cause, the docs section exists, the capability is
+          reachable). Outcomes, not a design.
+        - **Evidence** — first bullet links where the finding was
+          detected: the wiki entry, the Slack thread, the incident.io
+          ticket, or the investigation session URL. Then citations
+          from the investigation, rendered as
+          `[short-sha](https://github.com/<o>/<n>/commit/<sha>)`,
           file links, PR links. Reuse what the summary already
           contains. **If the framing depends on a fact in a sibling
           repo** (a metric label exposed by service X, an API
@@ -171,16 +177,11 @@ nodes:
           (`analyze_change`, `commit_summary`, `search_log`,
           `correlate_with_findings`) and bake the *verified fact*
           into Evidence with a citation.
-        - **Suggested direction** — sketch the change the maintainer
-          might consider (code area, alert rule shape, docs section).
-          Optional but valuable; less prescriptive than `pr_proposal`'s
-          "Proposed change" because here we're not committing to draft
-          the fix.
-        - **Affected repos** — when more than one is in scope, list
-          the others (they'll be cross-linked via cross_repo_refs
-          when their issues are filed). Each affected repo gets its
-          own iteration of this playbook against its own
-          `triagent-git-<alias>` MCP.
+        - **Out of scope** — only when more than one repo is
+          affected: name the sibling repos and say each gets its own
+          issue (cross-linked via cross_repo_refs when they are
+          filed). Each affected repo gets its own iteration of this
+          playbook against its own `triagent-git-<alias>` MCP.
 
       Then call `triagent-git-<alias>/create_github_issue`. Pass the
       `issue_type` you picked from the previous step (omit when
