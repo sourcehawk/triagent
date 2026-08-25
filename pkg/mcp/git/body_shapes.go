@@ -62,7 +62,7 @@ Freeform prose. What was tested, how, anything reviewers should poke at themselv
 Optional. A hard problem the diff hides and how it was solved — the kind of thing a reviewer would otherwise have to reverse-engineer. Skip the section entirely when there is no story; do not write "N/A".
 
 Rules:
-- Prose obeys the WRITING STYLE section below: sentences under 25 words, simple past for what changed, active voice, no "should".
+- Prose obeys the WRITING STYLE section above: sentences under 25 words, simple past for what changed, active voice, no "should".
 - The PR explains the implementation; the issue explains the problem. Don't restate the issue body — the reviewer has read it.
 - The Description's first token must be ` + "`Fixes #<num>`" + ` — GitHub's auto-close linkage depends on it and the host does not add it.
 - Don't include the 🤖 trailer (the host adds it).

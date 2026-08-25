@@ -28,7 +28,7 @@ func TestIssueBodyShape_Sections(t *testing.T) {
 func TestBodyShapes_NameWritingStyle(t *testing.T) {
 	t.Parallel()
 	require.Contains(t, issueBodyShape, "Writing style section of your system prompt")
-	require.Contains(t, prBodyShape, "WRITING STYLE section below")
+	require.Contains(t, prBodyShape, "WRITING STYLE section above")
 }
 
 func TestPRBodyShape_Sections(t *testing.T) {

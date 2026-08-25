@@ -28,7 +28,7 @@ Mode: descriptive. Simple past only — a timeline in present perfect ("we have 
 > **Before:** We have identified an issue that may have impacted some users' ability to access the service.
 > **After:** Between 14:02 and 14:31 UTC, 12% of requests failed. A deploy at 14:00 removed the cache warmup step.
 
-STE bans hedges ("may have impacted") — the report states what is known and says "unknown" for the rest. This reads more honest because it is.
+STE bans hedges ("may have impacted") — the report states what is known and says "unknown" for the rest. This sounds more honest because it is.
 
 ## Commit messages and PR descriptions
 
