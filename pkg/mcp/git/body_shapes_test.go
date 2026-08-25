@@ -22,6 +22,15 @@ func TestIssueBodyShape_Sections(t *testing.T) {
 	require.NotContains(t, issueBodyShape, "## Why", "Why section should be folded into Description")
 }
 
+// Both body shapes point the author at the writing rules: the issue
+// caller has them in its system prompt, the draft_pr sub-agent gets
+// them appended to its prompt.
+func TestBodyShapes_NameWritingStyle(t *testing.T) {
+	t.Parallel()
+	require.Contains(t, issueBodyShape, "Writing style section of your system prompt")
+	require.Contains(t, prBodyShape, "WRITING STYLE section below")
+}
+
 func TestPRBodyShape_Sections(t *testing.T) {
 	t.Parallel()
 	for _, want := range []string{

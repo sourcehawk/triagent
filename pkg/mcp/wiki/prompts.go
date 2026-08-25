@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+
+	"github.com/sourcehawk/triagent/skills"
 )
 
 // proposeWikiSubAgentPrompt assembles the curated prompt sent to the
@@ -111,6 +113,12 @@ The file must be only a frontmatter block (no markdown sections):
   description: <1-2 sentences describing what this entity is and why it matters for incident investigation — non-empty>
   ---
 
+# Writing style
+
+The body prose and every entity stub description obey these rules.
+
+%[13]s
+
 # Inputs
 
 Investigation summary:
@@ -139,6 +147,7 @@ Use the Write tool. Do not print the content to stdout — the orchestrator read
 		updateClause,           // %[10]s
 		args.DraftPath,         // %[11]s
 		transcriptSection,      // %[12]s
+		skills.WritingSimply(), // %[13]s
 	)
 }
 

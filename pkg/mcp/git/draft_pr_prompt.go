@@ -3,6 +3,8 @@ package git
 import (
 	"fmt"
 	"strings"
+
+	"github.com/sourcehawk/triagent/skills"
 )
 
 // buildDraftPRPrompt assembles the prompt for the draft_pr sub-agent.
@@ -64,6 +66,10 @@ Do NOT invoke these skills even if they appear applicable:
 	if strings.TrimSpace(extraPrompt) != "" {
 		fmt.Fprintf(&sb, "Additional scope refinement from the operator:\n%s\n\n", extraPrompt)
 	}
+
+	sb.WriteString("WRITING STYLE:\n\nThe PR title, PR body, and commit message obey these rules.\n\n")
+	sb.WriteString(skills.WritingSimply())
+	sb.WriteString("\n\n")
 
 	fmt.Fprintf(&sb, `OUTPUT CONTRACT:
 

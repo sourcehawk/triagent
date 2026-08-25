@@ -7,6 +7,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// The sub-agent runs in a fresh claude session with no launcher system
+// prompt, so the writing rules ride inside the prompt itself.
+func TestBuildDraftPRPrompt_AppendsWritingSimply(t *testing.T) {
+	t.Parallel()
+	p := buildDraftPRPrompt("o/n", "https://github.com/o/n/issues/1", 1, "main", "")
+	require.Contains(t, p, "WRITING STYLE")
+	require.Contains(t, p, "## Self-check")
+}
+
 func TestBuildDraftPRPrompt_ContainsKeyDirectives(t *testing.T) {
 	t.Parallel()
 	p := buildDraftPRPrompt("example-org/zeebe", "https://github.com/example-org/zeebe/issues/42", 42, "main", "only the BPMN parser, not DMN")

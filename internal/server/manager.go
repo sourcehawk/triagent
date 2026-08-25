@@ -21,6 +21,7 @@ import (
 	"github.com/sourcehawk/triagent/internal/repos"
 	"github.com/sourcehawk/triagent/internal/sessions"
 	operatorskills "github.com/sourcehawk/triagent/operator-skills"
+	"github.com/sourcehawk/triagent/skills"
 )
 
 // Sentinel errors returned from SendFollowUp's pre-checks. Exposed so
@@ -1661,6 +1662,9 @@ func (m *Manager) EnableAuto(inv *Investigation, opts AutoOptions) error {
 	if opts.OperatorCwd != "" {
 		if err := operatorskills.Extract(opts.OperatorCwd); err != nil {
 			return fmt.Errorf("extract operator skills: %w", err)
+		}
+		if err := skills.Extract(opts.OperatorCwd); err != nil {
+			return fmt.Errorf("extract shared skills: %w", err)
 		}
 	}
 	factory := opts.BackendFactory

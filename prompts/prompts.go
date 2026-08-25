@@ -9,6 +9,7 @@ import (
 
 	"github.com/sourcehawk/triagent/internal/profile"
 	"github.com/sourcehawk/triagent/internal/repos"
+	"github.com/sourcehawk/triagent/skills"
 )
 
 // Env holds the per-session substitutions.
@@ -96,6 +97,7 @@ func Build(env Env, prof *profile.Profile) string {
 	b.WriteString(prof.Prompts["architecture.md"])
 	b.WriteString("\n\n## Investigation strategies\n")
 	b.WriteString(prof.Prompts["strategies.md"])
+	writeWritingStyleSection(&b)
 	b.WriteString("\n\n## Environment\n")
 	b.WriteString("```\n---\n")
 
@@ -375,6 +377,7 @@ func BuildEditor(subject Subject, env BaseEnv, prof *profile.Profile) string {
 func buildPlaybookEditor(subject PlaybookSubject, env BaseEnv, prof *profile.Profile) string {
 	var b strings.Builder
 	b.WriteString(prof.Prompts["editor.md"])
+	writeWritingStyleSection(&b)
 	b.WriteString("\n\n## Environment\n")
 	b.WriteString("- Playbook id: ")
 	b.WriteString(subject.ID)
@@ -404,6 +407,7 @@ func buildPlaybookEditor(subject PlaybookSubject, env BaseEnv, prof *profile.Pro
 func buildWikiEditor(subject WikiSubject, env BaseEnv, prof *profile.Profile) string {
 	var b strings.Builder
 	b.WriteString(prof.Prompts["wiki_editor.md"])
+	writeWritingStyleSection(&b)
 	b.WriteString("\n\n## Environment\n")
 	b.WriteString("- Wiki entry kind: ")
 	b.WriteString(subject.Kind)
@@ -435,6 +439,15 @@ func buildWikiEditor(subject WikiSubject, env BaseEnv, prof *profile.Profile) st
 		b.WriteString("\n## New wiki entry\n\nNo existing entry yet — this session drafts one from whatever the operator provides. Wait for their first request before producing a draft. If they want a backfill, ask them for an incident.io URL or a Slack channel first, or use `slack_get_channel_id` to resolve a name they mention.")
 	}
 	return b.String()
+}
+
+// writeWritingStyleSection appends the writing-simply skill body. The
+// investigation and editor sessions run with the operator's launch
+// directory as cwd, so the claude CLI cannot discover the skill from
+// disk; appending it is the only path that guarantees it loads.
+func writeWritingStyleSection(b *strings.Builder) {
+	b.WriteString("\n\n## Writing style\n\nEvery summary, wiki entry, playbook description, issue, PR body, and chat reply obeys the rules below. Playbook and tool descriptions that ask for prose assume these rules.\n\n")
+	b.WriteString(skills.WritingSimply())
 }
 
 func writeSourcesSection(b *strings.Builder, src Sources, slackAvail, ioAvail bool) {

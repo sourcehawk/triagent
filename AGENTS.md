@@ -44,6 +44,8 @@ docs/
   superpowers/plans/    scratch plans (deleted once shipped)
   content/, site/       public docs site (Next.js static export)
 operator-skills/        skill-style instructions consumed by the operator agent
+skills/                 skills shared by every spawned session (writing-simply); embedded, appended
+                        to system prompts by prompts/ and extracted next to operator-skills/
 prompts/                prompt construction (Go) consumed at session start
 test-profile/           on-disk profile used by tests
 .tool-versions          Go + Node versions

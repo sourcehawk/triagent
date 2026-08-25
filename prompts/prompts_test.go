@@ -365,3 +365,29 @@ func TestBuildIncludesAutoTriggerHintWhenSet(t *testing.T) {
 		t.Fatal("hinted prompt should nudge toward wiki capture decision")
 	}
 }
+
+// Every session the launcher spawns writes prose a human reads later
+// (summaries, wiki entries, playbook YAML). The writing-simply skill
+// rides in the system prompt rather than relying on skill discovery,
+// which the investigation and editor sessions cannot use (their cwd is
+// the operator's launch directory).
+func TestBuild_AppendsWritingStyleSection(t *testing.T) {
+	t.Parallel()
+	out := Build(Env{}, testProf())
+	assert.Contains(t, out, "## Writing style")
+	assert.Contains(t, out, "## Self-check")
+	assert.Less(t, strings.Index(out, "## Writing style"), strings.Index(out, "## Environment"),
+		"writing style is guidance, so it belongs before the Environment block")
+}
+
+func TestBuildEditor_AppendsWritingStyleSection(t *testing.T) {
+	t.Parallel()
+	for _, subject := range []Subject{
+		PlaybookSubject{ID: "pb", Version: "v1"},
+		WikiSubject{Kind: "entry", ID: "inc-x"},
+	} {
+		out := BuildEditor(subject, BaseEnv{}, testProf())
+		assert.Contains(t, out, "## Writing style", "%T", subject)
+		assert.Contains(t, out, "## Self-check", "%T", subject)
+	}
+}

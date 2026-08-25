@@ -26,3 +26,11 @@ func TestWikiSchema_ReturnsAuthoringMarkdown(t *testing.T) {
 		assert.True(t, strings.Contains(out.Schema, want), "schema markdown missing %q", want)
 	}
 }
+
+func TestWikiSchema_NamesProseStyle(t *testing.T) {
+	t.Parallel()
+	srv := newTestServer(t, nil)
+	_, out, err := srv.wikiSchema(context.Background(), nil, wikiSchemaIn{})
+	require.NoError(t, err)
+	assert.Contains(t, out.Schema, "## Prose style")
+}

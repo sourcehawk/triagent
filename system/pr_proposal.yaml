@@ -154,7 +154,10 @@ nodes:
   draft_issue:
     description: |
       Compose the issue title (concise, actionable, ≤80 chars) and
-      body markdown.
+      body markdown. Follow the BODY SHAPE in the `create_github_issue`
+      tool description and the Writing style rules in your system
+      prompt: simple past for the incident, simple present for the
+      code, sentences under 25 words, no "should".
 
       **Audience is the human reviewer + sibling-repo authors — not
       the codefix sub-agent.** The body is a well-composed engineering
