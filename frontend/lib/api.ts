@@ -327,6 +327,10 @@ export type PreflightRequest = {
   // Omitted on the wire when false thanks to `auto,omitempty` on the
   // server-side struct.
   auto?: boolean;
+  // playbook: optional playbook id to walk instead of the profile's
+  // guided investigation flow. Omitted when the operator keeps the
+  // default.
+  playbook?: string;
 };
 
 export type LinkedRepo = {
@@ -479,6 +483,9 @@ export type Investigation = {
   slackChannelUrl?: string;
   notes?: string;
   label?: string;
+  // playbook: the id the operator selected at session start; absent
+  // when the session runs the guided investigation flow.
+  playbook?: string;
   mcpConfigPath: string;
   docsPrefix?: string;
   sessionDir: string;

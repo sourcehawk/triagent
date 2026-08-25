@@ -44,6 +44,7 @@ type persistedMetadata struct {
 	SlackChannelName string `json:"slackChannelName,omitempty"`
 	Notes            string `json:"notes,omitempty"`
 	Label            string `json:"label,omitempty"`
+	Playbook         string `json:"playbook,omitempty"`
 	MCPConfigPath   string `json:"mcpConfigPath"`
 	DocsPrefix      string `json:"docsPrefix,omitempty"`
 	SessionDir      string `json:"sessionDir"`
@@ -196,6 +197,7 @@ func (s *store) writeMetadata(dto InvestigationDTO) error {
 		SlackChannelName: dto.SlackChannelName,
 		Notes:            dto.Notes,
 		Label:            dto.Label,
+		Playbook:         dto.Playbook,
 		MCPConfigPath:   dto.MCPConfigPath,
 		DocsPrefix:      dto.DocsPrefix,
 		SessionDir:      dto.SessionDir,
@@ -335,6 +337,7 @@ func loadInvestigation(dir string) (*Investigation, error) {
 		SlackChannelName: meta.SlackChannelName,
 		Notes:            meta.Notes,
 		Label:            meta.Label,
+		Playbook:         meta.Playbook,
 		MCPConfigPath:   meta.MCPConfigPath,
 		DocsPrefix:      meta.DocsPrefix,
 		SessionDir:      meta.SessionDir,

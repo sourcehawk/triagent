@@ -53,6 +53,30 @@ type Options struct {
 	ProjectID string
 	// Cluster is the kube-context / cluster name (when known).
 	Cluster string
+
+	// Playbook is the playbook id the operator selected at session
+	// start. When set, the session walks that playbook instead of the
+	// profile's guided investigation flow. Empty = profile defaults.
+	Playbook string
+}
+
+// promptEnv projects the options into the prompt environment Build
+// renders into the opening system prompt.
+func (o Options) promptEnv() prompts.Env {
+	clusterID := clusterIDFromNamespace(o.Namespace)
+	return prompts.Env{
+		UserNotes: o.UserNotes,
+		InputValues: map[string]map[string]any{
+			"cluster_id":    {"value": clusterID},
+			"incident_url":  {"value": o.IncidentURL},
+			"slack_channel": {"id": o.SlackChannelID, "name": o.SlackChannelName, "url": o.SlackChannelURL},
+			"notes":         {"value": o.UserNotes},
+		},
+		SlackMCPAvailable:      o.SlackMCPAvailable,
+		IncidentioMCPAvailable: o.IncidentioMCPAvailable,
+		LinkedRepos:            o.LinkedRepos,
+		Playbook:               o.Playbook,
+	}
 }
 
 // Session is a thin wrapper around claude.Session with prompt + allowed-tools
@@ -184,19 +208,7 @@ func clusterIDFromNamespace(ns string) string {
 // from Options. Events are delivered on the returned channel; the channel
 // closes when claude exits or ctx is cancelled.
 func (s *Session) Start(ctx context.Context) (<-chan claude.Event, error) {
-	clusterID := clusterIDFromNamespace(s.opts.Namespace)
-	prompt := prompts.Build(prompts.Env{
-		UserNotes:              s.opts.UserNotes,
-		InputValues: map[string]map[string]any{
-			"cluster_id":    {"value": clusterID},
-			"incident_url":  {"value": s.opts.IncidentURL},
-			"slack_channel": {"id": s.opts.SlackChannelID, "name": s.opts.SlackChannelName, "url": s.opts.SlackChannelURL},
-			"notes":         {"value": s.opts.UserNotes},
-		},
-		SlackMCPAvailable:      s.opts.SlackMCPAvailable,
-		IncidentioMCPAvailable: s.opts.IncidentioMCPAvailable,
-		LinkedRepos:            s.opts.LinkedRepos,
-	}, s.opts.Profile)
+	prompt := prompts.Build(s.opts.promptEnv(), s.opts.Profile)
 	return s.inner.Start(ctx, prompt)
 }
 

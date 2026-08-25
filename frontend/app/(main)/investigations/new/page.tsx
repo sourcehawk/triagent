@@ -58,6 +58,7 @@ function InvestigationsHomeInner() {
         inputs: sub.inputs,
         prom: sub.prom,
         auto: sub.auto || undefined,
+        playbook: sub.playbook,
       });
       router.push(`/investigations/?id=${encodeURIComponent(inv.id)}`);
     } catch (e) {

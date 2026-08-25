@@ -81,6 +81,11 @@ type Investigation struct {
 	IncidentioMCPEnabled bool
 	LinkedRepos          []repos.LinkedRepo
 	Profile              *profile.Profile // investigation profile (prompt content + playbook IDs)
+	// Playbook is the playbook id the operator selected at preflight.
+	// When set, the session walks that playbook instead of the
+	// profile's guided investigation flow. Empty for the default flow
+	// and for signal-watch spawns.
+	Playbook string
 	// PromTarget is the per-investigation Prometheus port-forward target,
 	// resolved from the profile defaults overlaid with any per-investigation
 	// override supplied at preflight time. Nil means no prom target was
@@ -299,6 +304,7 @@ type InvestigationDTO struct {
 	SlackMCPEnabled      bool               `json:"slackMCPEnabled,omitempty"`
 	IncidentioMCPEnabled bool               `json:"incidentioMCPEnabled,omitempty"`
 	LinkedRepos          []repos.LinkedRepo `json:"linkedRepos,omitempty"`
+	Playbook             string             `json:"playbook,omitempty"`
 	// CloudMCPs are the cloud-context MCP servers wired into this session,
 	// derived from the profile's cloud sources. Empty when no cloud sources are
 	// configured, or when the session carries no profile (e.g. an import).
@@ -398,6 +404,7 @@ func (i *Investigation) Snapshot() InvestigationDTO {
 		SlackMCPEnabled:      i.SlackMCPEnabled,
 		IncidentioMCPEnabled: i.IncidentioMCPEnabled,
 		LinkedRepos:          i.LinkedRepos,
+		Playbook:             i.Playbook,
 		CloudMCPs:            cloudMCPsForProfile(i.Profile),
 		CreatedAt:            i.CreatedAt,
 		Started:              i.started,
@@ -542,6 +549,7 @@ func (i *Investigation) Start() error {
 		LaunchCwd:              i.LaunchCwd,
 		KubeconfigPath:         i.KubeconfigPath,
 		Profile:                i.Profile,
+		Playbook:               i.Playbook,
 	})
 	if err != nil {
 		i.mu.Unlock()

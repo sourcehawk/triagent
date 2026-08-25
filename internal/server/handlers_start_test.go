@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,6 +11,8 @@ import (
 	"github.com/sourcehawk/triagent/internal/connections"
 	"github.com/sourcehawk/triagent/internal/preflight"
 	"github.com/sourcehawk/triagent/internal/profile"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // newPreflightAPIWithInputsProfile returns an apiHandlers whose prof field is
@@ -123,4 +126,72 @@ func TestPreflight_InputsMap_EmptyIsOK(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status=%d, body=%s", rr.Code, rr.Body.String())
 	}
+}
+
+// seedPlaybooks populates the handler's meta cache with the given
+// playbooks so preflight's playbook validation has a catalog to check.
+func seedPlaybooks(a *apiHandlers, pbs map[string]MetaPlaybook) {
+	a.metaCache = &metaCache{}
+	a.metaCache.set(&Meta{Playbooks: pbs})
+}
+
+func postPreflight(t *testing.T, a *apiHandlers, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/api/preflight", strings.NewReader(body))
+	rr := httptest.NewRecorder()
+	a.handlePreflight(rr, req)
+	return rr
+}
+
+func TestPreflight_SelectedPlaybookIsRecordedOnInvestigation(t *testing.T) {
+	t.Parallel()
+	a := newPreflightAPIWithInputsProfile(t)
+	seedPlaybooks(a, map[string]MetaPlaybook{
+		"release_verification": {Source: "plugin", Type: "general", YAML: "id: release_verification\nsymptom: x\nentrypoint: n\nnodes:\n  n: {description: d}\n"},
+	})
+
+	rr := postPreflight(t, a, `{"inputs": {}, "playbook": "release_verification"}`)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	var dto InvestigationDTO
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &dto))
+	assert.Equal(t, "release_verification", dto.Playbook)
+	inv := a.manager.Get(dto.ID)
+	require.NotNil(t, inv)
+	assert.Equal(t, "release_verification", inv.Playbook)
+}
+
+func TestPreflight_UnknownPlaybookRejected(t *testing.T) {
+	t.Parallel()
+	a := newPreflightAPIWithInputsProfile(t)
+	seedPlaybooks(a, map[string]MetaPlaybook{})
+
+	rr := postPreflight(t, a, `{"inputs": {}, "playbook": "nope"}`)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "nope", "error must name the offending playbook")
+}
+
+func TestPreflight_DisabledPlaybookRejected(t *testing.T) {
+	t.Parallel()
+	a := newPreflightAPIWithInputsProfile(t)
+	seedPlaybooks(a, map[string]MetaPlaybook{
+		"off": {Source: "plugin", Type: "general", YAML: "id: off\nactive: false\nsymptom: x\nentrypoint: n\nnodes:\n  n: {description: d}\n"},
+	})
+
+	rr := postPreflight(t, a, `{"inputs": {}, "playbook": "off"}`)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "off")
+}
+
+func TestPreflight_NoPlaybookLeavesInvestigationUnset(t *testing.T) {
+	t.Parallel()
+	a := newPreflightAPIWithInputsProfile(t)
+	// No meta cache seeded: the default path must not consult the catalog.
+
+	rr := postPreflight(t, a, `{"inputs": {}}`)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	var dto InvestigationDTO
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &dto))
+	assert.Empty(t, dto.Playbook)
+	assert.NotContains(t, rr.Body.String(), `"playbook"`, "unset playbook must be omitted from the wire DTO")
 }

@@ -343,6 +343,12 @@ func (a *apiHandlers) handlePreflight(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if body.Playbook != "" {
+		if err := a.validateSelectedPlaybook(body.Playbook); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
 
 	// Extract typed values from the generic inputs map.
 	// Canonical input IDs (same for any profile that
@@ -472,6 +478,7 @@ func (a *apiHandlers) handlePreflight(w http.ResponseWriter, r *http.Request) {
 		IncidentioMCPEnabled: ioMCPToken != "",
 		LinkedRepos:          linked,
 		Profile:              a.prof,
+		Playbook:             body.Playbook,
 		PromTarget:           promTarget,
 		PromDisabled:         promDisabled,
 		ActiveContext:        activeContext,
@@ -1030,6 +1037,25 @@ type preflightRequest struct {
 	// turn — EnableAuto runs in a goroutine. Operator-side failures are
 	// logged to stderr and the investigation continues in manual mode.
 	Auto bool `json:"auto,omitempty"`
+	// Playbook is an optional playbook id the session should walk
+	// instead of the profile's guided investigation flow. Must name a
+	// loadable, non-disabled playbook from GET /api/playbooks.
+	Playbook string `json:"playbook,omitempty"`
+}
+
+// validateSelectedPlaybook checks that id names a playbook the session
+// can actually walk: present in the catalog and not disabled.
+func (a *apiHandlers) validateSelectedPlaybook(id string) error {
+	for _, pb := range a.collectPlaybooks() {
+		if pb.ID != id {
+			continue
+		}
+		if pb.Disabled {
+			return fmt.Errorf("playbook %q is disabled", id)
+		}
+		return nil
+	}
+	return fmt.Errorf("playbook %q not found", id)
 }
 
 // promOverrideBody is the per-investigation Prometheus override received

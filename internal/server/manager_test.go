@@ -714,3 +714,20 @@ func TestPersistOriginatingSignalRoundtrips(t *testing.T) {
 		t.Fatalf("unexpected restore: %+v", got.OriginatingSignal)
 	}
 }
+
+func TestLoadInvestigation_RestoresSelectedPlaybook(t *testing.T) {
+	dir := t.TempDir()
+	st := newStore(dir)
+	t.Cleanup(st.close)
+	require.NoError(t, st.writeMetadata(InvestigationDTO{
+		ID:         "rid",
+		SessionDir: dir,
+		CreatedAt:  time.Now().UTC(),
+		Playbook:   "release_verification",
+	}))
+
+	loaded, err := loadInvestigation(dir)
+	require.NoError(t, err)
+	assert.Equal(t, "release_verification", loaded.Playbook)
+	assert.Equal(t, "release_verification", loaded.Snapshot().Playbook)
+}

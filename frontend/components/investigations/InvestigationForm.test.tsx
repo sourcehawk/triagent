@@ -144,4 +144,42 @@ describe("InvestigationForm", () => {
       expect.objectContaining({ auto: false }),
     );
   });
+
+  describe("playbook selection", () => {
+    const synced = { status: "synced", reason: "" } as const;
+    function setup() {
+      vi.spyOn(api, "getProfileInputs").mockResolvedValue([
+        { id: "notes", label: "Notes", type: "textarea", optional: true, placeholder: "enter notes" },
+      ]);
+      vi.spyOn(api, "getConnections").mockResolvedValue({ slack: false, incidentio: false, slack_channel_prefix: "" });
+      vi.spyOn(api, "listPlaybooks").mockResolvedValue([
+        { id: "investigation", source: "system", locked: true, nodeCount: 1, yaml: "", syncState: synced, type: "general" },
+        { id: "release_verification", symptom: "Verify a release", source: "user", nodeCount: 1, yaml: "", syncState: synced, type: "general" },
+      ]);
+    }
+
+    it("submits without a playbook by default", async () => {
+      setup();
+      const onSubmit = vi.fn();
+      render(<InvestigationForm onSubmit={onSubmit} />);
+      await screen.findByPlaceholderText("enter notes");
+      await screen.findByRole("option", { name: /release_verification/ });
+
+      fireEvent.click(screen.getByRole("button", { name: /run preflight/i }));
+      expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ playbook: undefined }));
+    });
+
+    it("submits the chosen playbook id and hides locked entries", async () => {
+      setup();
+      const onSubmit = vi.fn();
+      render(<InvestigationForm onSubmit={onSubmit} />);
+      await screen.findByPlaceholderText("enter notes");
+      await screen.findByRole("option", { name: /release_verification/ });
+      expect(screen.queryByRole("option", { name: /^investigation/ })).toBeNull();
+
+      fireEvent.change(screen.getByLabelText(/Playbook/i), { target: { value: "release_verification" } });
+      fireEvent.click(screen.getByRole("button", { name: /run preflight/i }));
+      expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ playbook: "release_verification" }));
+    });
+  });
 });

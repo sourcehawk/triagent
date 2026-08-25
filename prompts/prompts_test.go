@@ -365,3 +365,24 @@ func TestBuildIncludesAutoTriggerHintWhenSet(t *testing.T) {
 		t.Fatal("hinted prompt should nudge toward wiki capture decision")
 	}
 }
+
+func TestBuild_SelectedPlaybookReplacesEntrypointAndDropsClosing(t *testing.T) {
+	t.Parallel()
+	out := Build(Env{Context: "ctx-A", Playbook: "release_verification"}, testProf())
+
+	assert.Contains(t, out, "suggested-entrypoint-playbook: release_verification")
+	assert.NotContains(t, out, "suggested-entrypoint-playbook: investigation")
+	assert.NotContains(t, out, "suggested-closing-playbook")
+	assert.NotContains(t, out, "capture_offer")
+	assert.Contains(t, out, "operator selected this playbook",
+		"the tool bullet must tell the agent the playbook was chosen by the operator and no closing playbook follows")
+}
+
+func TestBuild_NoSelectedPlaybookKeepsProfileDefaults(t *testing.T) {
+	t.Parallel()
+	out := Build(Env{Context: "ctx-A"}, testProf())
+
+	assert.Contains(t, out, "suggested-entrypoint-playbook: investigation")
+	assert.Contains(t, out, "suggested-closing-playbook: capture_offer")
+	assert.NotContains(t, out, "operator selected this playbook")
+}
