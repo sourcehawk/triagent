@@ -115,12 +115,30 @@ type Session struct {
 
 	// Mutable state behind mu.
 	mu        sync.Mutex
-	inner     *claude.Session
+	inner     conversation
 	started   bool
 	streaming bool
 	events    []Event
 	nextSeq   int
+	// turnCancel cancels the in-flight turn's context (a child of ctx)
+	// without touching the session lifetime. Nil when no turn is in
+	// flight. interrupted marks that the current turn was stopped by
+	// the operator, so drain swaps claude's post-kill error for a
+	// breadcrumb.
+	turnCancel  context.CancelFunc
+	interrupted bool
 }
+
+// conversation is the claude-conversation surface Session drives.
+// *claude.Session satisfies it; tests substitute a fake so they can
+// observe per-turn context cancellation without spawning the binary.
+type conversation interface {
+	Start(ctx context.Context, prompt string) (<-chan claude.Event, error)
+	Resume(ctx context.Context, prompt string) (<-chan claude.Event, error)
+}
+
+// ErrNotStreaming is returned by Interrupt when no turn is in flight.
+var ErrNotStreaming = errors.New("session is not currently streaming; nothing to interrupt")
 
 // DTO is the JSON-safe projection returned by the HTTP layer. The
 // shape carries enough subject info for the frontend to wire its
@@ -201,7 +219,8 @@ func (s *Session) Start() error {
 	s.inner = inner
 	s.started = true
 	s.streaming = true
-	ctx := s.ctx
+	ctx, cancel := context.WithCancel(s.ctx)
+	s.turnCancel = cancel
 	// Snapshot Subject under the lock — Manager.Rebind may rewrite
 	// it concurrently after we release s.mu, and the prompt builder
 	// below needs a stable view.
@@ -217,14 +236,21 @@ func (s *Session) Start() error {
 	}, s.Profile)
 	events, err := inner.Start(ctx, prompt)
 	if err != nil {
-		s.mu.Lock()
-		s.streaming = false
-		s.mu.Unlock()
+		s.clearTurn()
+		cancel()
 		s.publishError(err)
 		return err
 	}
 	go s.drain(events)
 	return nil
+}
+
+// clearTurn marks the session idle after a turn failed to launch.
+func (s *Session) clearTurn() {
+	s.mu.Lock()
+	s.streaming = false
+	s.turnCancel = nil
+	s.mu.Unlock()
 }
 
 // SendFollowUp resumes the conversation with a follow-up prompt. The
@@ -242,20 +268,40 @@ func (s *Session) SendFollowUp(text string) error {
 	}
 	s.streaming = true
 	inner := s.inner
-	ctx := s.ctx
+	ctx, cancel := context.WithCancel(s.ctx)
+	s.turnCancel = cancel
 	s.mu.Unlock()
 
 	s.publish(Event{Kind: KindUser, Text: text})
 
 	events, err := inner.Resume(ctx, text)
 	if err != nil {
-		s.mu.Lock()
-		s.streaming = false
-		s.mu.Unlock()
+		s.clearTurn()
+		cancel()
 		s.publishError(err)
 		return err
 	}
 	go s.drain(events)
+	return nil
+}
+
+// Interrupt cancels the in-flight turn. Only the per-turn context is
+// cancelled (which SIGKILLs the claude subprocess); the session's
+// lifetime context is untouched, so the next SendFollowUp resumes the
+// same claude session id. drain finishes when the event channel
+// closes, replaces claude's post-kill error with a "(stopped the
+// agent)" breadcrumb, and emits KindEnd. Returns ErrNotStreaming when
+// no turn is in flight.
+func (s *Session) Interrupt() error {
+	s.mu.Lock()
+	if !s.streaming || s.turnCancel == nil {
+		s.mu.Unlock()
+		return ErrNotStreaming
+	}
+	s.interrupted = true
+	cancel := s.turnCancel
+	s.mu.Unlock()
+	cancel()
 	return nil
 }
 
@@ -302,12 +348,33 @@ func (s *Session) drain(events <-chan claude.Event) {
 		if !ok {
 			continue
 		}
+		// Checked per-event: Interrupt flips the flag while drain is
+		// mid-loop, and the error it must swallow arrives after that.
+		s.mu.Lock()
+		suppressErr := s.interrupted && env.Kind == KindError
+		s.mu.Unlock()
+		if suppressErr {
+			continue
+		}
 		s.publish(env)
 	}
 	s.mu.Lock()
+	interrupted := s.interrupted
+	s.interrupted = false
+	s.turnCancel = nil
+	s.mu.Unlock()
+	if interrupted {
+		// Audit-trail breadcrumb so the transcript shows this turn
+		// ended because the operator hit stop, not because claude
+		// finished on its own.
+		s.publish(Event{Kind: KindUser, Text: "(stopped the agent)"})
+	}
+	s.publish(Event{Kind: KindEnd})
+	// streaming flips false last so observers polling on !streaming
+	// see the breadcrumb and end events by the time the flag clears.
+	s.mu.Lock()
 	s.streaming = false
 	s.mu.Unlock()
-	s.publish(Event{Kind: KindEnd})
 }
 
 func (s *Session) publish(env Event) {
