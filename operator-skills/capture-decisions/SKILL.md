@@ -79,7 +79,7 @@ If the `Notes:` line of your briefing contains "Auto-triggered by signal-watch i
 - Between `wiki` and `all`: pick `wiki`. The others can be requested later.
 - Between `wiki` and `no`: pick `wiki` if there is a real narrative. Pick `no` if the customer fixed their own config.
 - Between `playbook` and `wiki`: pick `wiki` unless you can state the repeatable procedure in one sentence.
-- Between `codefix` and `bug`: pick `bug` if the change is too large for one sub-agent run, or if a reviewer is likely to reject a fix written by the agent. Which file changes is the codefix agent's job, not a reason to pick `bug`.
+- Between `codefix` and `bug`: if the change is too large for one sub-agent run, pick `bug`. If a reviewer is likely to reject a fix written by the agent, pick `bug`. Which file changes is the codefix agent's job, not a reason to pick `bug`.
 
 ## When you are not ready to decide
 

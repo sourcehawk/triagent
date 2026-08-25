@@ -115,7 +115,7 @@ Branch:
 
 ## Prose style
 
-Playbook prose obeys the Writing style section of your system prompt. ` + "`description`" + ` and ` + "`terminal_advice`" + ` are procedural: imperative, one instruction per sentence, condition before command, sentences under 20 words. ` + "`symptom`" + ` is one descriptive sentence. A branch ` + "`condition`" + ` is a short predicate the agent can test against what it observed.
+Playbook prose obeys the Writing style section of your system prompt. Node ` + "`description`" + ` fields and ` + "`terminal_advice`" + ` are procedural: imperative, one instruction per sentence, condition before command, sentences under 20 words. The top-level ` + "`description`" + ` and ` + "`symptom`" + ` are descriptive: simple present, sentences under 25 words. A branch ` + "`condition`" + ` is a short predicate the agent can test against what it observed.
 
 ## Worked example
 

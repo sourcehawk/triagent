@@ -248,9 +248,10 @@ nodes:
           on terminal nodes (a list of target playbook ids); the prose
           in `terminal_advice` carries the *why*
 
-      Draft the playbook YAML. Write `description` and `terminal_advice`
-      prose with the Writing style rules in your prompt:
-      imperative, condition first, sentences under 20 words.
+      Draft the playbook YAML. Write node `description` and
+      `terminal_advice` prose with the Writing style rules in your
+      prompt: imperative, condition first, sentences under 20 words.
+      The top-level `description` and `symptom` are descriptive.
       Submit it via playbook_proposal_draft —
       the tool validates structurally and, on failure, returns
       validation_errors in the response. If you get validation_errors,

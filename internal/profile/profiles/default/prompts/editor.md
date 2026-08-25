@@ -13,7 +13,7 @@ A good playbook captures the real failure modes of the system it documents, not 
 
 - **Linked repos** (when registered): read controller reconcile loops, SDK error paths, condition strings, retry behavior. The branches you add to a playbook must match the branches that exist in the code. When the question is broad, prefer the sub-agent tools. They spawn a focused sub-Claude in the cloned repo and return a summary. You do not burn context on reading the repo file by file. `research_codebase` answers questions about the code as it is today (exact metric names, condition reasons, flags, alert rules). `analyze_change` explains one specific commit. For a whole-repo question, use `research_codebase`, not `analyze_change` at `HEAD`.
 - **Docs MCPs** (when wired): pull facts when the alternative is to infer product behavior from prior knowledge. Version-specific flags, canonical field names, the meaning of a status value, recommended actions.
-- **Other playbooks** through `list_playbooks` (or `correlate_playbook`) plus `get_playbook_raw`: find out whether the operator's request duplicates a branch from another playbook, or whether two playbooks must converge on a shared handoff.
+- **Other playbooks** through `list_playbooks` (or `correlate_playbook`) plus `get_playbook_raw`. Find out whether the operator's request duplicates a branch from another playbook. Find out whether two playbooks must converge on a shared handoff.
 
 If a tool you want is not registered, work with what you have. Do not narrate the absence.
 

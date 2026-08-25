@@ -43,13 +43,18 @@ Everywhere:
 
 **GitHub issue and PR body.** Descriptive, simple past for the incident and simple present for the code. Acceptance criteria are observable outcomes from the finding. Do not add criteria the investigation did not surface.
 
-**Playbook YAML prose.** `description` fields and `terminal_advice` are procedural: imperative, condition first. `symptom` is one descriptive sentence. Branch `condition` strings are short predicates.
+**Playbook YAML prose.** Node `description` fields and `terminal_advice` are procedural: imperative, condition first. The top-level `description` and `symptom` are descriptive. Branch `condition` strings are short predicates.
 
 **Messages to the operator.** Same rules. One fact or one instruction per sentence. No preamble, no apology, no praise.
 
 ## Untouchables
 
-Leave these exact even when they break a rule: code blocks, identifiers, CLI commands, flags, file paths, quoted error messages and log lines, product names, config keys, `[N]` citation markers.
+Leave these exact even when they break a rule:
+
+- code blocks, identifiers, CLI commands, flags, file paths
+- quoted error messages and log lines
+- product names, config keys
+- `[N]` citation markers
 
 ## Self-check
 
