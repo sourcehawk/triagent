@@ -40,12 +40,7 @@ func RunOneShotDraft(ctx context.Context, opts OneShotDraftOptions) error {
 	if err := os.MkdirAll(proposalsDir, 0o700); err != nil {
 		return err
 	}
-	prompt := fmt.Sprintf(draftPromptTemplate,
-		opts.OutPath,      // %[1]q — primary write target
-		opts.OutPath,      // %[2]q — repeated for the imperative reminder
-		opts.MetadataPath, // %[3]s
-		opts.EventsPath,   // %[4]s
-	)
+	prompt := buildDraftPrompt(opts.OutPath, opts.MetadataPath, opts.EventsPath)
 	res, err := subagent.Run(ctx, subagent.Options{
 		ClaudeBinary: opts.ClaudeBinary,
 		WorkingDir:   proposalsDir,

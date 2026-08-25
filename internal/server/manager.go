@@ -21,6 +21,7 @@ import (
 	"github.com/sourcehawk/triagent/internal/repos"
 	"github.com/sourcehawk/triagent/internal/sessions"
 	operatorskills "github.com/sourcehawk/triagent/operator-skills"
+	"github.com/sourcehawk/triagent/skills"
 )
 
 // Sentinel errors returned from SendFollowUp's pre-checks. Exposed so
@@ -1628,9 +1629,36 @@ func (m *Manager) EnableAuto(inv *Investigation, opts AutoOptions) error {
 		return nil
 	}
 	inv.autoEnableInFlight = true
+	inv.mu.Unlock()
+
+	// Clear the sentinel on every exit path so a failed setup can be
+	// retried. The defer fires before the synchronous op.Start return
+	// at the bottom of the function, which is fine — autoOp is set by
+	// then, so the idempotency check at the top will catch concurrent
+	// callers without needing the sentinel.
+	defer func() {
+		inv.mu.Lock()
+		inv.autoEnableInFlight = false
+		inv.mu.Unlock()
+	}()
+
+	// Prepare the operator's cwd before anything observable changes:
+	// once the started state is published the UI shows auto mode as
+	// active, and a failure after that point leaves it active with no
+	// operator behind it.
+	if opts.OperatorCwd != "" {
+		if err := operatorskills.Extract(opts.OperatorCwd); err != nil {
+			return fmt.Errorf("extract operator skills: %w", err)
+		}
+		if err := skills.Extract(opts.OperatorCwd); err != nil {
+			return fmt.Errorf("extract shared skills: %w", err)
+		}
+	}
+
 	// Preserve LastSentSeq across the Auto state reset so a re-enable
 	// (or a restart on the same Investigation) keeps the boundary
 	// watcher's diff origin.
+	inv.mu.Lock()
 	inv.Auto = auto.State{
 		Enabled:     true,
 		Phase:       auto.PhaseStarted,
@@ -1647,22 +1675,6 @@ func (m *Manager) EnableAuto(inv *Investigation, opts AutoOptions) error {
 		AutoMode: &AutoModePayload{Phase: "started"},
 	})
 
-	// Clear the sentinel on every exit path so a failed setup can be
-	// retried. The defer fires before the synchronous op.Start return
-	// at the bottom of the function, which is fine — autoOp is set by
-	// then, so the idempotency check at the top will catch concurrent
-	// callers without needing the sentinel.
-	defer func() {
-		inv.mu.Lock()
-		inv.autoEnableInFlight = false
-		inv.mu.Unlock()
-	}()
-
-	if opts.OperatorCwd != "" {
-		if err := operatorskills.Extract(opts.OperatorCwd); err != nil {
-			return fmt.Errorf("extract operator skills: %w", err)
-		}
-	}
 	factory := opts.BackendFactory
 	if factory == nil {
 		factory = defaultAutoBackendFactory

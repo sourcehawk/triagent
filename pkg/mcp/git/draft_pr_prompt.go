@@ -3,6 +3,8 @@ package git
 import (
 	"fmt"
 	"strings"
+
+	"github.com/sourcehawk/triagent/skills"
 )
 
 // buildDraftPRPrompt assembles the prompt for the draft_pr sub-agent.
@@ -65,9 +67,13 @@ Do NOT invoke these skills even if they appear applicable:
 		fmt.Fprintf(&sb, "Additional scope refinement from the operator:\n%s\n\n", extraPrompt)
 	}
 
+	sb.WriteString("WRITING STYLE:\n\nThe PR title, PR body, and commit message obey these rules.\n\n")
+	sb.WriteString(skills.WritingSimply())
+	sb.WriteString("\n\n")
+
 	fmt.Fprintf(&sb, `OUTPUT CONTRACT:
 
-You MUST emit three labelled blocks at the end of your reply, in this order: PR_TITLE, PR_BODY, then CITATIONS. The host parses them out to construct the actual GitHub PR. The natural prose you write outside the blocks is what the operator sees in the chat-side summary card — keep it to one sentence describing what your commit changes (under 30 words).
+You MUST emit three labelled blocks at the end of your reply, in this order: PR_TITLE, PR_BODY, then CITATIONS. The host parses them out to construct the actual GitHub PR. The natural prose you write outside the blocks is what the operator sees in the chat-side summary card — keep it to one sentence describing what your commit changes (under 25 words).
 
 The PR title — single line, imperative mood, NO leading "triagent-proposal:" prefix (the host adds it). Under 70 chars. Describes the change, not your reasoning or your conversational framing. Good: `+"`Fix typo: rbase → rebase in README`"+`. Bad: `+"`I'll fix the typo on line 238`"+`.
 
@@ -80,13 +86,13 @@ The PR body — markdown, multi-line. Follow the body shape below. Keep it short
 `+prBodyShape+`
 <<<PR_BODY
 ## Description
-Fixes #%d. The README intro carried a typo where "rbase" should read "rebase". One-character fix.
+Fixes #%d. The README intro spelled "rebase" as "rbase". This is a one-character fix.
 
 ## Changes
 - Corrected the misspelled "rbase" on line 238 of README.
 
 ## Testing
-Visual check of the rendered README in GitHub preview; no code paths affected.
+Visual check of the rendered README in GitHub preview. No code paths are affected.
 PR_BODY>>>
 
 Citations — every concrete claim in your prose marked [N], with the matching entries here. Cite only artifacts in repo %s. github_file paths are validated against your worktree's HEAD. Use an empty array [] if you have nothing to cite (rare — at minimum, cite the file you edited).

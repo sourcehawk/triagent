@@ -113,6 +113,10 @@ Branch:
 - **No version field.** Playbooks no longer carry a ` + "`version`" + ` field — git history is the version record. Omit ` + "`version`" + ` entirely from any YAML you draft or propose.
 - **Entity tags: prefer SPECIFIC names over broad catchalls.** Tags like ` + "`unhealthy`" + `, ` + "`degraded`" + `, ` + "`slow`" + `, ` + "`failing`" + ` match almost any incident and inflate gateway lift signals in ` + "`playbook_correlate`" + ` — they water down match precision. If the precise canonical name doesn't exist yet, coin a narrow new one (e.g. ` + "`zeebe-backpressure`" + ` instead of ` + "`backpressure`" + `, ` + "`elasticsearch-unhealthy`" + ` instead of ` + "`unhealthy`" + `). Reuse names already used by other playbooks or the wiki vault when they fit.
 
+## Prose style
+
+Playbook prose obeys the Writing style section of your system prompt. Node ` + "`description`" + ` fields and ` + "`terminal_advice`" + ` are procedural: imperative, one instruction per sentence, condition before command, sentences under 20 words. The top-level ` + "`description`" + ` and ` + "`symptom`" + ` are descriptive: simple present, sentences under 25 words. A branch ` + "`condition`" + ` is a short predicate the agent can test against what it observed.
+
 ## Worked example
 
 ` + "```yaml" + `

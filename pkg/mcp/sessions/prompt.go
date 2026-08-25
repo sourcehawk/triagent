@@ -1,10 +1,26 @@
 package sessions
 
+import (
+	"fmt"
+
+	"github.com/sourcehawk/triagent/skills"
+)
+
+// buildDraftPrompt renders draftPromptTemplate and appends the
+// writing-simply body. The post-mortem is a durable operator-facing
+// artifact and the sub-agent has no launcher system prompt, so the
+// rules ride in the prompt itself.
+func buildDraftPrompt(outPath, metadataPath, eventsPath string) string {
+	return fmt.Sprintf(draftPromptTemplate, outPath, outPath, metadataPath, eventsPath) +
+		"\n# Writing style\n\nEvery section of the post-mortem obeys the rules below. The Summary, Findings, and Outcome sections are descriptive and active voice. Use the simple past for what happened and the simple present for what is still open (\"the alert remains disabled\").\n\n" +
+		skills.WritingSimply()
+}
+
 // draftPromptTemplate has 4 substitution slots:
-//   1. %q outPath  — repeated for the body's "produce at" instruction
-//   2. %q outPath  — repeated again in the imperative final instruction
-//   3. %s metadataPath
-//   4. %s eventsPath
+//  1. %q outPath  — repeated for the body's "produce at" instruction
+//  2. %q outPath  — repeated again in the imperative final instruction
+//  3. %s metadataPath
+//  4. %s eventsPath
 //
 // The sub-agent runs with WorkingDir=<proposalsDir>, AllowedTools="Read,Glob,
 // Grep,Write,Edit". It reads the metadata + events files via the Read tool,
