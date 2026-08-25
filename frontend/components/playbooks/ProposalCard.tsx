@@ -97,7 +97,13 @@ export function ProposalCard({
         const res = await api.getPlaybookProposal(payload.proposal_id);
         if (cancelled) return;
         if (typeof res.new_yaml === "string") {
-          setBody((prev) => prev ?? { base_yaml: res.base_yaml, new_yaml: res.new_yaml as string });
+          const fetched = { base_yaml: res.base_yaml, new_yaml: res.new_yaml };
+          // A payload that already carried new_yaml keeps it, but a
+          // missing base is filled in from the server so the card
+          // doesn't call an update "new playbook".
+          setBody((prev) =>
+            prev ? { base_yaml: prev.base_yaml ?? fetched.base_yaml, new_yaml: prev.new_yaml } : fetched,
+          );
         }
         if (res.status === "approved") {
           setStatus({
@@ -211,6 +217,14 @@ export function ProposalCard({
         ) : status.kind === "checking" ? (
           <div className="flex items-center gap-2 px-2 py-3 text-xs text-zinc-500">
             <Spinner className="h-3 w-3" /> loading diff…
+          </div>
+        ) : status.kind === "pending" ? (
+          // Still pending but the fetch didn't deliver a body (a
+          // transient error fell back to pending). The draft exists;
+          // only this load failed.
+          <div className="rounded border border-amber-900/60 bg-amber-950/30 px-2 py-1 text-xs text-amber-200/90">
+            Couldn't load the proposal diff. Reload the page to retry; the
+            draft is still pending.
           </div>
         ) : (
           <div className="rounded border border-zinc-800 bg-zinc-900/40 px-2 py-1 text-xs text-zinc-500">

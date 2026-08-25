@@ -80,6 +80,34 @@ describe("ProposalCard body hydration", () => {
     expect(spy).toHaveBeenCalledOnce();
   });
 
+  it("fills in a missing base from the server when the payload only has new_yaml", async () => {
+    vi.spyOn(api, "getPlaybookProposal").mockResolvedValue({
+      proposal_id: payload.proposal_id,
+      status: "pending",
+      playbook_id: "testpb",
+      base_yaml: baseYaml,
+      new_yaml: "id: other\n",
+    });
+    render(
+      <ProposalCard
+        payload={{ ...payload, new_yaml: newYaml }}
+        onSendRefinement={vi.fn()}
+        defaultTab="yaml"
+      />,
+    );
+    expect(await screen.findByText("current → proposed")).toBeInTheDocument();
+    expect(screen.getByTestId("diff-old").textContent).toBe(baseYaml);
+    expect(screen.getByTestId("diff-new").textContent).toBe(newYaml);
+  });
+
+  it("does not call a pending proposal resolved when the fetch fails transiently", async () => {
+    vi.spyOn(api, "getPlaybookProposal").mockRejectedValue(new Error("network down"));
+    render(<ProposalCard payload={payload} onSendRefinement={vi.fn()} />);
+    expect(await screen.findByText(/couldn't load the proposal diff/i)).toBeInTheDocument();
+    expect(screen.queryByText(/no longer available/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /approve/i })).toBeInTheDocument();
+  });
+
   it("explains when a resolved proposal's body is no longer available", async () => {
     vi.spyOn(api, "getPlaybookProposal").mockResolvedValue({
       proposal_id: payload.proposal_id,
