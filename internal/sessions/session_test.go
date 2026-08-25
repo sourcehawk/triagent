@@ -139,3 +139,20 @@ func TestNew_ForwardsProfileInvestigationModel(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "claude-opus-4-7", sess.inner.Model())
 }
+
+func TestStartPrompt_EmitsSeededKubeContext(t *testing.T) {
+	t.Parallel()
+	s := &Session{opts: Options{
+		Cluster: "camunda.teleport.sh-saas-int-worker-3",
+		Profile: &profile.Profile{},
+	}}
+	got := s.startPrompt()
+	assert.Contains(t, got, "kubernetes-context: camunda.teleport.sh-saas-int-worker-3\n")
+	assert.NotContains(t, got, "kubernetes-context: <unset>")
+}
+
+func TestStartPrompt_UnsetWhenNoContextSeeded(t *testing.T) {
+	t.Parallel()
+	s := &Session{opts: Options{Profile: &profile.Profile{}}}
+	assert.Contains(t, s.startPrompt(), "kubernetes-context: <unset>\n")
+}
