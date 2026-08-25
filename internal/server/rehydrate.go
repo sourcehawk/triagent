@@ -141,6 +141,7 @@ func (a *apiHandlers) rehydrate(inv *Investigation) error {
 		LinkedRepos:            linked,
 		LaunchCwd:              inv.LaunchCwd,
 		KubeconfigPath:         inv.KubeconfigPath,
+		Cluster:                inv.ActiveContext,
 		Profile:                a.prof,
 	}
 	priorID := inv.ClaudeSessionID
