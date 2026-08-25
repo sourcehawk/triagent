@@ -40,7 +40,7 @@ export function activeMCPs(inv: Investigation): ActiveMCP[] {
       alias: "triagent-parallel",
       category: "core",
       description:
-        "Dispatch broker — call (fan-out 2..8 allowlisted sub-agent calls in parallel: analyze_change, correlate_with_findings, propose_wiki_draft, propose_playbook_draft).",
+        "Dispatch broker — call (fan-out 2..8 allowlisted sub-agent calls in parallel: analyze_change, research_codebase, correlate_with_findings, propose_wiki_draft, propose_playbook_draft).",
     },
   ];
 

@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/sourcehawk/triagent/pkg/mcp/citations"
 	"github.com/sourcehawk/triagent/pkg/mcp/telemetry"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type analyzeChannelIn struct {
@@ -20,7 +20,6 @@ type analyzeChannelOut struct {
 	Summary             string               `json:"summary"`
 	Citations           []citations.Citation `json:"citations"`
 	CitationsParseError string               `json:"citations_parse_error,omitempty"`
-	PromptSent          string               `json:"prompt_sent"`
 	ParentCount         int                  `json:"parent_count"`
 	Truncated           bool                 `json:"truncated,omitempty"`
 	OldestCovered       string               `json:"oldest_covered,omitempty"`
@@ -76,7 +75,6 @@ Self-verify before emitting the citations block: for each candidate thread_ts, G
 	if runErr != nil {
 		return errorResult(runErr.Error()), analyzeChannelOut{
 			Citations:     []citations.Citation{},
-			PromptSent:    prompt,
 			ParentCount:   syncRes.ParentCount,
 			Truncated:     syncRes.Truncated,
 			OldestCovered: syncRes.OldestTS,
@@ -88,7 +86,6 @@ Self-verify before emitting the citations block: for each candidate thread_ts, G
 		Summary:             res.Summary,
 		Citations:           res.Citations,
 		CitationsParseError: res.CitationsParseError,
-		PromptSent:          prompt,
 		ParentCount:         syncRes.ParentCount,
 		Truncated:           syncRes.Truncated,
 		OldestCovered:       syncRes.OldestTS,

@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/sourcehawk/triagent/pkg/mcp/citations"
 	"github.com/sourcehawk/triagent/pkg/mcp/telemetry"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type draftPRIn struct {
@@ -43,7 +43,6 @@ type draftPROut struct {
 	Summary             string               `json:"summary"`
 	Citations           []citations.Citation `json:"citations"`
 	CitationsParseError string               `json:"citations_parse_error,omitempty"`
-	PromptSent          string               `json:"prompt_sent"`
 	TimedOut            bool                 `json:"timed_out,omitempty"`
 }
 
@@ -144,7 +143,6 @@ func (s *Server) draftPR(ctx context.Context, _ *mcp.CallToolRequest, in draftPR
 
 	parentID := telemetry.CurrentToolID(ctx)
 	prompt := buildDraftPRPrompt(s.repoFull(), in.IssueURL, issueNum, baseRef, in.ExtraPrompt)
-	out.PromptSent = prompt
 
 	// sessionID threads claude's conversation id across sub-agent calls.
 	// Three sources, in order of precedence:
@@ -462,4 +460,3 @@ func firstLine(s string) string {
 	}
 	return s
 }
-

@@ -418,3 +418,30 @@ func toolResult(toolUseID string, isError bool) map[string]any {
 func textBlock(text string) map[string]any {
 	return map[string]any{"type": "text", "text": text}
 }
+
+// The returned summary is the sub-agent's final answer (the stream's
+// `result` event), not the concatenation of every interim assistant turn.
+// Interim narration ("I'll inspect the ref…") still reaches the activity
+// panel as nested events; it must not leak into the parent's tool result.
+func TestRelaySubEvents_SummaryPrefersResultEventOverInterimText(t *testing.T) {
+	t.Parallel()
+	stream := line(map[string]any{"type": "assistant", "message": msg(textBlock("I'll inspect the ref first."))}) +
+		line(map[string]any{"type": "assistant", "message": msg(toolUse("Bash", "tu1"))}) +
+		line(map[string]any{"type": "user", "message": msg(toolResult("tu1", false))}) +
+		line(map[string]any{"type": "assistant", "message": msg(textBlock("The final answer."))}) +
+		line(map[string]any{"type": "result", "result": "The final answer."})
+	res, err := relaySubEvents(strings.NewReader(stream), "", nil)
+	require.NoError(t, err)
+	require.Equal(t, "The final answer.", res.finalText)
+}
+
+// Without a result event (timeout, crash) the concatenated assistant text
+// is the best available answer and is still returned.
+func TestRelaySubEvents_SummaryFallsBackToAssistantTextWithoutResult(t *testing.T) {
+	t.Parallel()
+	stream := line(map[string]any{"type": "assistant", "message": msg(textBlock("Partial progress."))}) +
+		line(map[string]any{"type": "assistant", "message": msg(textBlock("More partial progress."))})
+	res, err := relaySubEvents(strings.NewReader(stream), "", nil)
+	require.NoError(t, err)
+	require.Equal(t, "Partial progress.\nMore partial progress.", res.finalText)
+}

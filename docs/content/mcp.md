@@ -80,6 +80,7 @@ sidebar. Each repo gets its own `triagent-git-<alias>` MCP process.
 **Sub-agent (focused sub-claude in the clone):**
 
 - `analyze_change`: broad question over a single change; returns a short summary so the parent session's context stays clean.
+- `research_codebase`: question about the code as a whole at a ref (exact metric names, CRD condition reasons, flags, alert rules); defaults to the remote default branch. Use this rather than `analyze_change` with `ref=HEAD`.
 - `correlate_with_findings`: given the running session's findings, ranks recent changes by likelihood of correlation.
 - `draft_pr`: opens a draft PR for a linked GH issue. Runs in a fresh `git worktree` with TDD + verification skills;
   the host owns push and `gh pr create` (denied to the sub-agent). Long-running (up to 30 min). See the [Codefix section](/docs/repos#codefix) for the operator flow.
