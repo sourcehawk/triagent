@@ -23,7 +23,7 @@ Your bullets name several routes, so the agent needs one unambiguous signal. The
 >
 > wiki
 
-If the routes you want have no single keyword (for example wiki plus bug), end with the keyword that covers the routes the agent can run now, and state the remaining route in its bullet. After those flows settle, send the remaining keyword in a later turn.
+Some route mixes have no single keyword, for example wiki plus bug. In that case, end with the keyword that covers the routes the agent can run now. State the remaining route in its bullet. After those flows settle, send the remaining keyword in a later turn.
 
 ## Engaging with the agent's proposals
 
@@ -38,7 +38,7 @@ Each category can hold more than one item. Do not pad. Do not collapse two real 
 Watch for these three shapes:
 
 - A wiki proposal that conflates two distinct shapes. If two unrelated root causes hid behind one symptom (one alert that fired for an OOM loop on worker-9 and a conflict-requeue loop on worker-1), ask for two entries. One entry misleads the next reader. The agent often defaults to one entry.
-- A codefix gesture. "Add a circuit breaker" and "harden the pipeline" are not codefixes. If the codefix has no named file, repo, alert rule, or docs section, drop it. The wiki captures the lesson.
+- A codefix gesture. "Add a circuit breaker" and "harden the pipeline" are not codefixes. If the proposal does not name the change (which rule, processor, setting, or docs section, and what changes in it), drop it. The wiki captures the lesson. Which file or repo holds it is the codefix agent's job.
 - A playbook edit labelled as a codefix. Adding a node, renaming a `handoff` target, tightening `expected_findings`: these route through `playbook`, even when the playbook file lives in a linked repo. `codefix` is for application code, infra-as-code, and alert rules.
 
 Add a shape the agent missed. If the agent proposed a wiki entry but the alert rule itself was the bug, propose a codefix on the alert.
@@ -65,7 +65,7 @@ This reply splits the wiki, replaces the playbook, adds a codefix the agent decl
 
 - `wiki`: the symptom and resolution pair helps a future operator on this customer, component, or topology. Bias toward wiki for any incident with a clear narrative. The proposal has a human review gate.
 - `playbook`: the method generalizes into a procedure that the next operator follows step by step. A one-off discovery is not a playbook. A repeatable triage sequence is.
-- `codefix`: you can name the file and the change, and one sub-agent run can land it. This route files an issue and drafts a PR.
+- `codefix`: the change is named, it closes this incident class, and one sub-agent run can land it. This route files an issue and drafts a PR.
 - `bug`: a real, bounded problem surfaced, but drafting the fix is wrong: too large, cross-team, contentious, or outside your remit. This route files the issue only. `bug` is a sibling of `codefix`, not part of `all`.
 - `all`: wiki, playbook, and codefix. Use it only when all three angles are present. `all` on a routine incident creates noise on three review queues.
 - `no`: the investigation was trivial, inconclusive, or so customer-specific that no artifact helps. A noise proposal is worse than none.

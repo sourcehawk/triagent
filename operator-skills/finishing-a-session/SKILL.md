@@ -9,7 +9,7 @@ description: Use when you consider calling `finish`, after the capture flow sett
 
 ## Finish when
 
-1. The capture flow ran to completion. You routed the capture, the flows staged their drafts, proposals, or PRs, you approved what needed approval, and the agent emitted a final `end` with no pending question.
+1. The capture flow ran to completion. You routed the capture. The flows staged their drafts, proposals, or PRs. You approved what needed approval. The agent emitted a final `end` with no pending question.
 2. You routed `no` and the agent emitted its closing summary.
 3. The investigation dead-ended for good. The agent says it cannot proceed, and the reason is terminal, for example "the cluster was deleted". Consider yielding first: a human may know something.
 

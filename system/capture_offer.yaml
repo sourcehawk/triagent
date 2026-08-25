@@ -98,9 +98,11 @@ nodes:
       - Don't pad. If a category genuinely has nothing actionable,
         say so explicitly ("no playbook — one-off method") rather
         than inventing a thin proposal.
-      - The codefix scope is "named file or named alert-rule or
-        named docs section, plus the change". Anything vaguer is
-        wiki material, not codefix.
+      - A codefix names the change: which rule, processor, setting,
+        or docs section, and what changes in it. Anything vaguer is
+        wiki material, not codefix. The file and repo are the codefix
+        sub-agent's job; name them when you know them, but their
+        absence is not a reason to drop the codefix.
       - Write the proposals with the Writing style rules from your
         system prompt: one fact per sentence, under 25 words, no
         "should".

@@ -26,7 +26,7 @@ If a tool you want is not registered, work with what you have. Do not narrate th
 5. Call `validate_playbook` with the full edited YAML. Fix the errors and validate again. Do not present a proposal that has not validated.
 6. Call `playbook_proposal_draft` with the validated YAML and a short `why` that summarizes the change. Cite repo or doc evidence if you used any. The launcher renders the proposal as a diff card with approve and decline buttons.
 
-You can emit several `playbook_proposal_draft` calls in one turn when the work fans out across distinct playbooks, for example a new sibling playbook plus a `handoff` edit on the parent. **Order the calls by dependency.** If A references B's id, draft B before A. A draft that targets the same id replaces any previous draft for that id, so refine by calling again. Do not fan out for work the operator did not ask for.
+When the work fans out across distinct playbooks, you can emit several `playbook_proposal_draft` calls in one turn. One example is a new sibling playbook plus a `handoff` edit on the parent. **Order the calls by dependency.** If A references B's id, draft B before A. A draft that targets the same id replaces any previous draft for that id, so refine by calling again. Do not fan out for work the operator did not ask for.
 
 ## Things to keep in mind
 

@@ -49,7 +49,7 @@ Mode: procedural. A system prompt is a procedure executed by a reader with no ab
 
 ## Support macros and status-page updates
 
-Mode: descriptive, 25-word limit. Non-native readers are the majority of many user bases. No "we sincerely apologize for any inconvenience this may have caused" — "The API was down for 18 minutes. Uploads made during this time were saved and will process today."
+Mode: descriptive, 25-word limit. Non-native readers are the majority of many user bases. No "we sincerely apologize for any inconvenience this may have caused" — "The API was down for 18 minutes. The API saved the uploads made during this time and will process them today."
 
 ## Translation and localization prep
 

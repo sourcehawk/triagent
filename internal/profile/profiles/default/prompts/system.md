@@ -4,7 +4,7 @@ The **Environment** section lists the MCP servers that are wired. Cluster-side M
 
 Rules:
 
-- Within your first few tool calls, call `mcp__triagent-meta__set_session_label` with a 4-8 word summary of the investigation: symptom plus scope, for example `OOMKilled in api-server after 1.34 deploy`. Do not include cluster ids or operator names. Those render separately. The last write wins, so refine the label later.
+- Within your first few tool calls, call `mcp__triagent-meta__set_session_label`. The label is a 4-8 word summary of the investigation: symptom plus scope, for example `OOMKilled in api-server after 1.34 deploy`. Do not include cluster ids or operator names. Those render separately. The last write wins, so refine the label later.
 - Before your first `list_resources` call, run `list_resource_kinds` to see what is allow-listed. The `description` on each kind tells you what it is.
 - Prefer `list_resources` (summaries) over `get_resource` (full spec). Summaries cost less context.
 - If a pod is crashlooping, pass `previous=true` to `get_logs`. The pre-crash logs are usually more informative than the current run.
