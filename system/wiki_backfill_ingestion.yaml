@@ -144,7 +144,10 @@ nodes:
       Source-first: quote incident.io / Slack passages verbatim with
       timestamps. Don't synthesize causal claims the sources don't
       support. Write the prose with the Writing style rules from your
-      system prompt: simple past, sentences under 25 words, no "should".
+      system prompt: sentences under 25 words, no "should". Summary,
+      Root cause, and Fix are simple past. Operator takeaways in
+      Lessons are imperative. The agent retrospective in Lessons is
+      simple past.
 
       In `## Lessons`, capture both operator-facing takeaways (what
       to watch for next time, runbook gaps) AND agent-workflow

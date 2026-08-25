@@ -7,7 +7,7 @@ description: Use when writing or revising prose that another person will read la
 
 Write for a tired on-call engineer who reads each sentence once. The rules come from ASD-STE100 Simplified Technical English, the standard for aircraft maintenance manuals. Short sentences with complete grammar. One word for one thing. The condition before the command.
 
-The full rule catalog is in `references/simple-english.md`. This file is the working subset.
+This file is the working subset and stands alone. When the skill is loaded from disk, the full rule catalog is beside it in `references/simple-english.md`. When it is embedded in a prompt, that file is not available.
 
 ## Before you draft
 
@@ -66,4 +66,4 @@ Do this before you deliver. It is not optional. Do it silently: the deliverable 
 4. Search for the words you did not pick in step 2 of "Before you draft". Replace every hit.
 5. Read each section once. Cut any sentence that repeats a fact from another section.
 
-The full audit is `references/checklist.md`. Adaptations for error messages, runbooks, incident reports, and agent instructions are in `references/use-cases.md`.
+When the skill is loaded from disk, the full audit is in `references/checklist.md` and adaptations for error messages, runbooks, incident reports, and agent instructions are in `references/use-cases.md`. When it is embedded in a prompt, the self-check above is the complete audit.
