@@ -235,3 +235,33 @@ func TestHandleGetProposal_PendingHasStatusField(t *testing.T) {
 	assert.Equal(t, "pending", body["status"])
 	assert.Contains(t, body["new_yaml"].(string), "broker-crashloop", "new_yaml missing draft body")
 }
+
+// The chat card diffs against this endpoint's base_yaml (the tool
+// result no longer inlines it), so the base must mirror the strategies
+// MCP's loaded set: a system-tier playbook with no user override is
+// still a real base, and it is rendered canonically so the diff shows
+// semantic deltas rather than the on-disk file's formatting.
+func TestHandleGetProposal_BaseComesFromLoadedSetRenderedCanonically(t *testing.T) {
+	t.Parallel()
+	userDir := t.TempDir()
+	systemDir := t.TempDir()
+	const pb = "id: broker-crashloop\nschema_version: 1\nsymptom:    'broker restarts'\nentrypoint: a\nnodes:\n  a:\n    description: a\n    terminal_advice: done\n"
+	require.NoError(t, os.MkdirAll(filepath.Join(systemDir, "investigation"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(systemDir, "investigation", "broker-crashloop.yaml"), []byte(pb), 0o644))
+	typeDir := filepath.Join(userDir, "proposals", "investigation")
+	require.NoError(t, os.MkdirAll(typeDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(typeDir, "broker-crashloop__prop-ffffffffffff.yaml"), []byte(pb), 0o644))
+
+	a := &apiHandlers{opts: Options{UserPlaybooksDir: userDir, SystemPlaybooksDir: systemDir}}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/playbook-proposals/prop-ffffffffffff", nil)
+	req.SetPathValue("id", "prop-ffffffffffff")
+	a.handleGetProposal(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, "body %s", rec.Body.String())
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	base, _ := body["base_yaml"].(string)
+	assert.Contains(t, base, "broker restarts", "system-tier playbook must serve as the diff base")
+	assert.NotContains(t, base, "symptom:    ", "base must be canonically rendered, not the raw file")
+}

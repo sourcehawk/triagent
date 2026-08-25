@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sourcehawk/triagent/pkg/mcp/strategies"
 	"gopkg.in/yaml.v3"
 )
 
@@ -185,9 +186,9 @@ func (a *apiHandlers) handleGetProposal(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	// Determine base YAML from the currently-loaded playbook set so
-	// the diff renders against what's actually live (system embedded
+	// the diff renders against what's actually live (plugin, system,
 	// or user override).
-	baseYAML := loadBaseForID(a.opts.UserPlaybooksDir, playbookID)
+	baseYAML := loadBaseForID(a.opts, playbookID)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"proposal_id": proposalID,
 		"playbook_id": playbookID,
@@ -340,17 +341,26 @@ func readDraftFromDir(dir, proposalID string) (playbookID, body string, err erro
 	return "", "", os.ErrNotExist
 }
 
-// loadBaseForID returns the YAML of the currently-saved user playbook
-// with the given id (single-file layout: <type>/<id>.yaml). Returns ""
-// for a brand-new id or one that only exists in the system set (no user
-// file yet).
-func loadBaseForID(dir, id string) string {
-	if groups, err := loadUserPlaybookGroups(dir); err == nil {
-		if g, ok := groups[id]; ok {
-			return g.YAML
-		}
+// loadBaseForID returns the canonical YAML of the playbook the running
+// strategies MCP would resolve for id: the same plugin → system → user
+// merge the MCP loads at startup, re-rendered through the shared
+// serialiser so the proposal diff surfaces semantic deltas rather than
+// on-disk formatting. Returns "" for a brand-new id (or when the set
+// can't be loaded); the diff card renders that as a new playbook.
+func loadBaseForID(opts Options, id string) string {
+	books, err := strategies.LoadPlaybooksFrom(opts.PluginPlaybooksDir, opts.SystemPlaybooksDir, opts.UserPlaybooksDir)
+	if err != nil {
+		return ""
 	}
-	return ""
+	pb, ok := books[id]
+	if !ok {
+		return ""
+	}
+	rendered, err := strategies.RenderPlaybookYAML(pb)
+	if err != nil {
+		return ""
+	}
+	return rendered
 }
 
 // proposalResolution is the outcome marker we persist when a playbook

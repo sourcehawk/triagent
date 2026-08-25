@@ -6,17 +6,16 @@ import {
   type PlaybookNode,
 } from "@/lib/playbook";
 
-// Parser for the playbook drawer. Validates the three required fields
-// the editor's UI relies on, dedupes tabs by playbook_id (latest draft
-// for each id wins).
+// Parser for the playbook drawer. Validates the two ids the editor's
+// UI relies on (the card fetches the diff bodies itself), dedupes tabs
+// by playbook_id (latest draft for each id wins).
 export function parsePlaybookProposal(
   raw: unknown,
 ): { key: string; payload: ProposalDraftPayload } | null {
   const r = raw as Partial<ProposalDraftPayload>;
   if (
     typeof r?.proposal_id !== "string" ||
-    typeof r?.playbook_id !== "string" ||
-    typeof r?.new_yaml !== "string"
+    typeof r?.playbook_id !== "string"
   ) {
     return null;
   }

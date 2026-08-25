@@ -190,7 +190,7 @@ func (s *Server) register() {
 
 	mcp.AddTool(s.impl, &mcp.Tool{
 		Name:        "playbook_proposal_draft",
-		Description: "Submit a draft playbook for the operator's inline review. Writes the YAML to a draft store; the launcher's chat UI renders a diff card vs the currently-loaded version, and the operator approves or declines via that card. NO chat-side confirmation is required before this call — the agent should call it as soon as it has a candidate. On approve, the launcher writes the proposal body to <userDir>/<type>/<id>.yaml (overwriting any existing user file) and records a git commit in the user dir's repo with the operator's chosen message (or an auto-generated one). The version field is not stamped — git history is the version axis. Returns the proposal_id (operator-facing UI uses it) and base_yaml/new_yaml (for the diff view).",
+		Description: "Submit a draft playbook for the operator's inline review. Writes the YAML to a draft store; the launcher's chat UI renders a diff card vs the currently-loaded version, and the operator approves or declines via that card. NO chat-side confirmation is required before this call — the agent should call it as soon as it has a candidate. On approve, the launcher writes the proposal body to <userDir>/<type>/<id>.yaml (overwriting any existing user file) and records a git commit in the user dir's repo with the operator's chosen message (or an auto-generated one). The version field is not stamped — git history is the version axis. Returns the proposal_id (operator-facing UI uses it to fetch and render the diff); the YAML bodies are not echoed back.",
 	}, telemetry.Wrap("playbook_proposal_draft", s.proposePlaybookDraft))
 
 	mcp.AddTool(s.impl, &mcp.Tool{

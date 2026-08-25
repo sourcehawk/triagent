@@ -7,14 +7,24 @@ import { ProposalBodyTabs } from "@/components/playbooks/ProposalBodyTabs";
 
 // Payload returned by the triagent-strategies/playbook_proposal_draft tool.
 // Keep this in lockstep with proposePlaybookDraftOut in
-// mcp/internal/strategies/tools_proposal.go.
+// pkg/mcp/strategies/tools_proposal.go. The tool result identifies the
+// draft only; the YAML bodies are optional because the card fetches them
+// from GET /api/playbook-proposals/{id} (the tool result lives in the
+// model's context and is size-capped there). Callers that already hold
+// the bodies (the editor's own fetch) may pass them to skip the wait.
 export type ProposalDraftPayload = {
   proposal_id: string;
   playbook_id: string;
   base_yaml?: string;
-  new_yaml: string;
+  new_yaml?: string;
   why?: string;
   message?: string;
+};
+
+// ProposalBody is the diff pair the card renders once it has it.
+export type ProposalBody = {
+  base_yaml?: string;
+  new_yaml: string;
 };
 
 type Status =
@@ -51,6 +61,8 @@ type Props = {
   // proposal tab, lifted-state surfaces) can clean up. Optional —
   // the chat-only usage doesn't need it.
   onResolved?: (kind: "approved" | "declined") => void;
+  // Initial body tab. Forwarded to ProposalBodyTabs.
+  defaultTab?: "diagram" | "yaml";
 };
 
 export function ProposalCard({
@@ -58,21 +70,35 @@ export function ProposalCard({
   onSendRefinement,
   dismissed = false,
   onResolved,
+  defaultTab,
 }: Props) {
   const [status, setStatus] = useState<Status>({ kind: "checking" });
   const [refinement, setRefinement] = useState("");
-  const isNew = !payload.base_yaml || payload.base_yaml.trim() === "";
+  // The diff pair. Seeded from the payload when the caller already has
+  // it; otherwise filled in by the mount fetch below while the draft is
+  // still pending. Resolved proposals have no draft on disk any more,
+  // so a card re-mounted after approve/decline may never get a body.
+  const [body, setBody] = useState<ProposalBody | null>(() =>
+    typeof payload.new_yaml === "string"
+      ? { base_yaml: payload.base_yaml, new_yaml: payload.new_yaml }
+      : null,
+  );
+  const isNew = !body?.base_yaml || body.base_yaml.trim() === "";
 
   // On mount, ask the server whether this proposal is still pending.
   // Reloading a chat after the operator approved/declined elsewhere
   // would otherwise show stale Approve/Decline buttons; the server
-  // tracks the outcome via a tiny resolution ledger.
+  // tracks the outcome via a tiny resolution ledger. The same response
+  // carries the diff bodies for a pending draft.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const res = await api.getPlaybookProposal(payload.proposal_id);
         if (cancelled) return;
+        if (typeof res.new_yaml === "string") {
+          setBody((prev) => prev ?? { base_yaml: res.base_yaml, new_yaml: res.new_yaml as string });
+        }
         if (res.status === "approved") {
           setStatus({
             kind: "approved",
@@ -180,7 +206,18 @@ export function ProposalCard({
       )}
 
       <div className="mb-2">
-        <ProposalBodyTabs payload={payload} />
+        {body ? (
+          <ProposalBodyTabs body={body} defaultTab={defaultTab} />
+        ) : status.kind === "checking" ? (
+          <div className="flex items-center gap-2 px-2 py-3 text-xs text-zinc-500">
+            <Spinner className="h-3 w-3" /> loading diff…
+          </div>
+        ) : (
+          <div className="rounded border border-zinc-800 bg-zinc-900/40 px-2 py-1 text-xs text-zinc-500">
+            The proposal body is no longer available — the draft was
+            removed when the proposal was resolved.
+          </div>
+        )}
       </div>
 
       {/* Footer: status / actions. Dismissed proposals (handled

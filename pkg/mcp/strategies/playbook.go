@@ -875,7 +875,7 @@ func WriteUserPlaybook(dir, typeName, id, body string, activate bool) (validatio
 	}
 	pb.Version = ""               // strip the legacy field
 	pb.Active = boolPtr(activate) // launcher's intent overrides the body
-	rendered, err := renderPlaybookYAML(pb)
+	rendered, err := RenderPlaybookYAML(pb)
 	if err != nil {
 		return nil, fmt.Errorf("render yaml: %w", err)
 	}
@@ -1053,13 +1053,13 @@ func randRead(b []byte) (int, error) {
 	return cryptoRand.Read(b)
 }
 
-// renderPlaybookYAML re-serialises a parsed Playbook back to YAML.
+// RenderPlaybookYAML re-serialises a parsed Playbook back to YAML.
 // Used by get_playbook_raw for user playbooks (we only kept their raw
 // bytes for the embedded set; user files round-trip through the
 // parser). Lossy on comments/exact whitespace but semantically
 // identical, which is sufficient for an agent reading the current
 // playbook as a base for a proposed update.
-func renderPlaybookYAML(pb *Playbook) (string, error) {
+func RenderPlaybookYAML(pb *Playbook) (string, error) {
 	body, err := yaml.Marshal(pb)
 	if err != nil {
 		return "", fmt.Errorf("marshal playbook: %w", err)

@@ -233,7 +233,7 @@ func (s *Server) getPlaybookRaw(ctx context.Context, req *mcp.CallToolRequest, i
 	}
 	// User playbook: re-serialise the parsed form. Round-trips cleanly
 	// for our own validator but loses comments/exact whitespace.
-	rendered, err := renderPlaybookYAML(pb)
+	rendered, err := RenderPlaybookYAML(pb)
 	if err != nil {
 		return errorResult(fmt.Sprintf("render user playbook %q: %v", in.ID, err)), getPlaybookRawOut{}, nil
 	}
@@ -275,21 +275,18 @@ type proposePlaybookDraftIn struct {
 	Why  string `json:"why,omitempty" jsonschema:"one-sentence justification — surfaced in the diff card so the operator can audit later why the agent thought this was worth proposing"`
 }
 
-// proposePlaybookDraftOut intentionally carries everything the
-// frontend's diff card needs in one round-trip: the proposal id (so
-// the approve/decline POST can target it), the base YAML to diff
-// against, and the new YAML the agent is proposing. The tool result
-// is still the structured-output JSON, which the frontend unwraps
-// (same pattern as summarize). A separate `/api/playbook-proposals/<id>`
-// endpoint exists for refetch, but the inline payload means the diff
-// renders as soon as the tool result lands.
+// proposePlaybookDraftOut identifies the draft; it deliberately does not
+// carry the YAML bodies. The tool result lands in the model's context and
+// is subject to the CLI's per-result size cap, and a real playbook is tens
+// of KB per side, so inlining base + new would blow the cap and replace the
+// JSON with an error string the chat UI can't parse. The frontend's diff
+// card fetches both bodies from `GET /api/playbook-proposals/<id>` using
+// the proposal_id.
 type proposePlaybookDraftOut struct {
 	ProposalID  string `json:"proposal_id"`
 	PlaybookID  string `json:"playbook_id"`
 	Type        string `json:"type"`                   // the type slot the draft was filed under
 	BaseVersion string `json:"base_version,omitempty"` // empty when this is a brand-new id
-	BaseYAML    string `json:"base_yaml,omitempty"`    // empty when no current version exists
-	NewYAML     string `json:"new_yaml"`
 	Why         string `json:"why,omitempty"`
 	Message     string `json:"message"`
 	// ValidationErrors lists structural validator failures when the supplied
@@ -336,7 +333,7 @@ func (s *Server) proposePlaybookDraft(ctx context.Context, req *mcp.CallToolRequ
 	// canonical diff so the operator doesn't see the agent's value
 	// and assume the AI is making that call.
 	pb.Active = nil
-	canonicalNew, err := renderPlaybookYAML(pb)
+	canonicalNew, err := RenderPlaybookYAML(pb)
 	if err != nil {
 		return errorResult(fmt.Sprintf("render canonical proposal yaml: %v", err)), proposePlaybookDraftOut{}, nil
 	}
@@ -348,18 +345,11 @@ func (s *Server) proposePlaybookDraft(ctx context.Context, req *mcp.CallToolRequ
 		return errorResult("validation failed: " + strings.Join(writeErrs, "; ")), proposePlaybookDraftOut{}, nil
 	}
 
-	// Resolve the current loaded version (if any) to feed the diff
-	// view. New ids return empty base fields — the UI handles that.
-	// Both sides go through renderPlaybookYAML so the diff only
-	// surfaces semantic deltas, not formatting / quoting / wrap
-	// noise from the agent's input vs the upstream's on-disk
-	// representation.
-	var baseVersion, baseYAML string
+	// Report the currently loaded version (if any) so the agent knows
+	// whether it proposed an update or a brand-new id.
+	var baseVersion string
 	if existing, ok := s.playbooks[pb.ID]; ok {
 		baseVersion = existing.Version
-		if rendered, err := renderPlaybookYAML(existing); err == nil {
-			baseYAML = rendered
-		}
 	}
 
 	msg := fmt.Sprintf("Proposal %s queued for %s/%s. The operator reviews + approves in the chat panel; nothing is loaded into the running playbook set until then.", proposalID, in.Type, pb.ID)
@@ -371,8 +361,6 @@ func (s *Server) proposePlaybookDraft(ctx context.Context, req *mcp.CallToolRequ
 		PlaybookID:  pb.ID,
 		Type:        in.Type,
 		BaseVersion: baseVersion,
-		BaseYAML:    baseYAML,
-		NewYAML:     canonicalNew,
 		Why:         in.Why,
 		Message:     msg,
 	}, nil

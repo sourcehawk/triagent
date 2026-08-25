@@ -171,7 +171,8 @@ export const SUMMARIZE_TOOL_NAME = "mcp__triagent-strategies__summarize";
 // Wire-format name of the playbook-proposal draft tool. SessionView
 // renders this tool's result inline as a diff card with Approve /
 // Decline controls; the structured-output JSON carries
-// {proposal_id, base_yaml, new_yaml, …}. The agent
+// {proposal_id, playbook_id, …} and the card fetches the diff bodies
+// from GET /api/playbook-proposals/{id}. The agent
 // is instructed (via the playbook_proposal meta-playbook + system
 // prompt) to call this preemptively, no chat-side ask required.
 export const PROPOSE_PLAYBOOK_DRAFT_TOOL_NAME =

@@ -361,7 +361,7 @@ func TestRenderPlaybookYAML_OmitsEmptyVersion(t *testing.T) {
 			"a": {Description: "step"},
 		},
 	}
-	out, err := renderPlaybookYAML(pb)
+	out, err := RenderPlaybookYAML(pb)
 	require.NoError(t, err)
 	// Use "\nversion:" (line-start anchor) to avoid false-matching
 	// "schema_version:" — consistent with TestWriteUserPlaybook_StripsVersion.
