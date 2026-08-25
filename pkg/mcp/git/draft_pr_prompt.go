@@ -86,13 +86,13 @@ The PR body — markdown, multi-line. Follow the body shape below. Keep it short
 `+prBodyShape+`
 <<<PR_BODY
 ## Description
-Fixes #%d. The README intro carried a typo where "rbase" should read "rebase". One-character fix.
+Fixes #%d. The README intro spelled "rebase" as "rbase". This is a one-character fix.
 
 ## Changes
 - Corrected the misspelled "rbase" on line 238 of README.
 
 ## Testing
-Visual check of the rendered README in GitHub preview; no code paths affected.
+Visual check of the rendered README in GitHub preview. No code paths are affected.
 PR_BODY>>>
 
 Citations — every concrete claim in your prose marked [N], with the matching entries here. Cite only artifacts in repo %s. github_file paths are validated against your worktree's HEAD. Use an empty array [] if you have nothing to cite (rare — at minimum, cite the file you edited).

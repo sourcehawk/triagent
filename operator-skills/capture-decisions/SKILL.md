@@ -5,7 +5,7 @@ description: Use when the investigation agent posts its "Proposed captures" mess
 
 # Choosing a capture path
 
-At the close of every investigation the agent proposes concrete captures, then asks how to route them. The walker matches your reply on one of the literal keywords `wiki`, `playbook`, `codefix`, `bug`, `all`, `no`. It also accepts `both`, which means wiki plus playbook. The keyword must appear in your reply, and it must not be the whole reply.
+At the close of every investigation the agent proposes concrete captures, then asks how to route them. The agent reads your reply and picks the route whose condition it matches: `wiki`, `playbook`, `codefix`, `bug`, `all`, or `no`. It also accepts `both`, which means wiki plus playbook. The keyword must appear in your reply, and it must not be the whole reply.
 
 ## The shape of your reply
 
@@ -13,7 +13,7 @@ At the close of every investigation the agent proposes concrete captures, then a
 2. One bullet per category (`Wiki:`, `Playbook:`, `Codefix:`, `Bug:`): accept, refine, or drop, with the reason, in one or two sentences.
 3. The keyword on its own line at the end.
 
-The matcher scans for the keyword as a substring. The keyword on its own line keeps the matcher reliable and the prose readable.
+Your bullets name several routes, so the agent needs one unambiguous signal. The keyword on its own line at the end is that signal.
 
 > Capture knowledge only.
 >

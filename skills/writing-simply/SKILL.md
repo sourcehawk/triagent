@@ -37,7 +37,7 @@ Everywhere:
 
 ## Artifact shapes
 
-**Investigation summary (`summarize`).** `symptom` and `root_cause` are descriptive, simple past, two or three sentences, no bullets. Name the component, the change, and the number. `next_steps` is procedural: one imperative per bullet.
+**Investigation summary (`summarize`).** `symptom` and `root_cause` are descriptive, simple past, no bullets. `symptom` is at most two sentences. `root_cause` is two or three. Name the component, the change, and the number. `next_steps` is procedural: one imperative per bullet.
 
 **Wiki entry.** `## Summary` and `## Root cause` are descriptive. `## Fix` states what resolved the incident in the simple past, then what was tried and did not work. `## Lessons` bullets are procedural ("Compare `-Xmx` with the container limit before you restart the pod."). Do not repeat a fact in two sections.
 
@@ -56,7 +56,7 @@ Leave these exact even when they break a rule: code blocks, identifiers, CLI com
 Do this before you deliver. It is not optional. Do it silently: the deliverable contains the corrected text only, never the check results.
 
 1. Count the words in your three longest sentences. Split any sentence over the limit.
-2. Search the draft for `'ll`, `'re`, `'s` as a contraction, `n't`, `has been`, `have been`, `should`, `would`, `may`, `might`, `could`, `;`, `e.g.`, `i.e.`, `etc.`, and `-ing` after a comma. Fix every hit outside the untouchables.
+2. Search the draft for `'ll`, `'re`, `'ve`, `'m`, `'d`, `'s` as a contraction, `n't`, `has been`, `have been`, `had been`, `is being`, `was being`, `should`, `would`, `may`, `might`, `could`, `;`, `e.g.`, `i.e.`, `etc.`, and `-ing` after a comma. Fix every hit outside the untouchables.
 3. Find every `if` and `when`. Each one starts its sentence.
 4. Search for the words you did not pick in step 2 of "Before you draft". Replace every hit.
 5. Read each section once. Cut any sentence that repeats a fact from another section.

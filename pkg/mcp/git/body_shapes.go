@@ -26,7 +26,7 @@ const issueBodyShape = `BODY SHAPE — investigation-filed issue
 2-4 sentences a no-context reader can parse. What this issue is about AND the user or operator problem it addresses — why a reviewer should care. No solution, no design.
 
 ## Acceptance Criteria
-Bulleted, testable conditions a reviewer can check off when the change lands. Each bullet is a concrete observable outcome — a behaviour, a metric value, a UI state, a log line that should/shouldn't appear. If a bullet has no way to be verified, it doesn't belong here. Biggest / most user-visible first.
+Bulleted, testable conditions a reviewer can check off when the change lands. Each bullet is a concrete observable outcome — a behaviour, a metric value, a UI state, a log line that appears or does not appear. If a bullet has no way to be verified, it doesn't belong here. Biggest / most user-visible first.
 
 ## Evidence
 Citations from the investigation, one bullet per claim. Inline links to commits, log excerpts, runbook pages, dashboards. Evidence grounds the finding — it is not motivation. When a specific snippet of code or config is the point, paste the relevant lines inline in a fenced block; a bare file path forces the reviewer to go fetch context the agent already has.
