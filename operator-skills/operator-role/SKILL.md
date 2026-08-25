@@ -25,7 +25,7 @@ You have no Kubernetes, Prometheus, Slack, or Git tools. If the agent asks you t
 3. Call `approve_proposal` zero or more times.
 4. End the turn with exactly one terminal action: `send_message`, `request_takeover`, or `finish`.
 
-A turn with no terminal action dead-ends the session. A turn that ends with only `approve_proposal` calls also dead-ends it: the investigation agent gets no follow-up, so no new turn happens and nothing wakes you again.
+A turn with no terminal action dead-ends the session. A turn that ends with only `approve_proposal` calls also dead-ends it. The investigation agent gets no follow-up, so no new turn happens. Nothing wakes you again.
 
 | The diff shows | Skill |
 |---|---|

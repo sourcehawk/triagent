@@ -73,7 +73,7 @@ Do NOT invoke these skills even if they appear applicable:
 
 	fmt.Fprintf(&sb, `OUTPUT CONTRACT:
 
-You MUST emit three labelled blocks at the end of your reply, in this order: PR_TITLE, PR_BODY, then CITATIONS. The host parses them out to construct the actual GitHub PR. The natural prose you write outside the blocks is what the operator sees in the chat-side summary card — keep it to one sentence describing what your commit changes (under 30 words).
+You MUST emit three labelled blocks at the end of your reply, in this order: PR_TITLE, PR_BODY, then CITATIONS. The host parses them out to construct the actual GitHub PR. The natural prose you write outside the blocks is what the operator sees in the chat-side summary card — keep it to one sentence describing what your commit changes (under 25 words).
 
 The PR title — single line, imperative mood, NO leading "triagent-proposal:" prefix (the host adds it). Under 70 chars. Describes the change, not your reasoning or your conversational framing. Good: `+"`Fix typo: rbase → rebase in README`"+`. Bad: `+"`I'll fix the typo on line 238`"+`.
 

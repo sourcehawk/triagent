@@ -161,8 +161,8 @@ nodes:
           maintainer. No solution paragraphs: the maintainer decides
           on the fix.
         - **Acceptance Criteria** — the observable outcomes that
-          would close the problem (the alert fires separately for
-          each cause, the docs section exists, the capability is
+          close the problem (the alert fires separately for each
+          cause, the docs section exists, the capability is
           reachable). Outcomes, not a design.
         - **Evidence** — first bullet links where the finding was
           detected: the wiki entry, the Slack thread, the incident.io

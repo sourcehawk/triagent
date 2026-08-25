@@ -179,11 +179,12 @@ nodes:
           paragraphs: the codefix sub-agent designs the change from
           the acceptance criteria and the evidence.
         - **Acceptance Criteria** — the observable outcomes the fix
-          must produce. If the change is contingent on a sibling-repo
-          fact, encode the *resolved* contingency as a criterion
-          ("the rule keys on the `result` label, which the metric
-          exposes; see Evidence"), never "verify the label and
-          decide".
+          must produce ("the alert fires once per failing object",
+          "a 409 loop and an OOM loop page as two alerts"). Outcomes,
+          not a design: which rule, label, or file achieves them is
+          the codefix sub-agent's decision. If the outcome depends on
+          a sibling-repo fact, state the fact in Evidence with its
+          citation, never as "verify X and decide".
         - **Evidence** — first bullet links where the finding was
           detected: the wiki entry, the Slack thread, the incident.io
           ticket, or the investigation session URL. Then citations
