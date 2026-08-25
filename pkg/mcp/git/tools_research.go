@@ -47,12 +47,21 @@ func (s *Server) researchCodebase(ctx context.Context, _ *mcp.CallToolRequest, i
 	if err != nil {
 		return fail(err.Error())
 	}
+	// Read/Glob/Grep see the working tree, and the cache clone's checkout
+	// is whatever was cloned first, not resolvedRef. A detached worktree
+	// at the ref makes the tree and the ref the same thing.
+	wt, err := s.createDetachedWorktree(ctx, dir, resolvedRef)
+	if err != nil {
+		return fail(err.Error())
+	}
+	defer func() { _ = s.removeWorktree(context.WithoutCancel(ctx), dir, wt) }()
+
 	prompt := fmt.Sprintf(
 		`You are researching a repository's codebase to answer a question for an incident-triage playbook or investigation.
-Inspect the tree as it exists at ref: %s
+The working directory is a checkout of ref: %s
 The question: %s
 
-Use Read, Glob, Grep, and `+"`Bash(git ...)`"+` to inspect the code at that ref (e.g. `+"`git show <ref>:<path>`"+`, `+"`git ls-tree -r <ref>`"+`, `+"`git grep <pattern> <ref>`"+`). Stay within this repository — do not request external resources. Do not summarise what the commit at the ref changed; the question is about the codebase as a whole.
+Use Read, Glob, Grep, and `+"`Bash(git ...)`"+` to inspect the code; the files on disk are exactly the tree at that ref. Stay within this repository — do not request external resources. Do not summarise what the commit at the ref changed; the question is about the codebase as a whole.
 
 Reply with a focused answer under 600 words. Be exact with identifiers (metric names, kinds, condition types, flag names, file paths) — the answer feeds PromQL and kubectl queries. Mark each concrete claim with a numeric citation [N] (e.g. "[1]") and add the corresponding entry to the citations block at the end. If the codebase does not contain what was asked about, say so directly.
 
@@ -64,7 +73,7 @@ Reply with a focused answer under 600 words. Be exact with identifiers (metric n
 	// turn into the citation-correction retry — same idea as analyze_change.
 	var sessionID string
 	adapter := func(ctx context.Context, p string) (citations.RawResult, error) {
-		res, err := s.runSubAgent(ctx, dir, p, parentID, sessionID)
+		res, err := s.runSubAgent(ctx, wt, p, parentID, sessionID)
 		if err != nil {
 			return citations.RawResult{}, err
 		}

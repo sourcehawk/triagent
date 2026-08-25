@@ -53,6 +53,27 @@ func (s *Server) createWorktree(ctx context.Context, repoDir, branch, baseRef st
 	return wt, nil
 }
 
+// createDetachedWorktree checks out ref as a detached HEAD in a fresh
+// dir under worktreeRoot, for read-only sub-agents whose Read/Glob/Grep
+// must see the tree at exactly that ref (the cache clone's own checkout
+// is never fast-forwarded, so it is the wrong place to run them). The
+// dir name carries a random suffix so concurrent calls for the same
+// repo don't collide. Caller is responsible for removeWorktree on exit.
+func (s *Server) createDetachedWorktree(ctx context.Context, repoDir, ref string) (string, error) {
+	if err := os.MkdirAll(s.worktreeRoot(), 0o700); err != nil {
+		return "", fmt.Errorf("mkdir worktree root: %w", err)
+	}
+	var suffix [4]byte
+	if _, err := rand.Read(suffix[:]); err != nil {
+		return "", fmt.Errorf("worktree suffix: %w", err)
+	}
+	wt := filepath.Join(s.worktreeRoot(), fmt.Sprintf("%s-%s-research-%x", s.owner, s.name, suffix))
+	if err := runGit(ctx, repoDir, "worktree", "add", "--detach", wt, ref); err != nil {
+		return "", fmt.Errorf("git worktree add --detach %s -> %s: %w", ref, wt, err)
+	}
+	return wt, nil
+}
+
 // removeWorktree tears down the worktree directory and prunes the
 // corresponding bookkeeping in the bare clone. The branch ref on the
 // remote (post-push) is unaffected.
