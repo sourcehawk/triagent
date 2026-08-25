@@ -183,6 +183,18 @@ func TestPreflight_DisabledPlaybookRejected(t *testing.T) {
 	assert.Contains(t, rr.Body.String(), "off")
 }
 
+func TestPreflight_LockedPlaybookRejected(t *testing.T) {
+	t.Parallel()
+	a := newPreflightAPIWithInputsProfile(t)
+	seedPlaybooks(a, map[string]MetaPlaybook{
+		"investigation": {Source: "system", Locked: true, Type: "general", YAML: "id: investigation\nsymptom: x\nentrypoint: n\nnodes:\n  n: {description: d}\n"},
+	})
+
+	rr := postPreflight(t, a, `{"inputs": {}, "playbook": "investigation"}`)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "investigation")
+}
+
 func TestPreflight_NoPlaybookLeavesInvestigationUnset(t *testing.T) {
 	t.Parallel()
 	a := newPreflightAPIWithInputsProfile(t)

@@ -1044,7 +1044,10 @@ type preflightRequest struct {
 }
 
 // validateSelectedPlaybook checks that id names a playbook the session
-// can actually walk: present in the catalog and not disabled.
+// can start on: present in the catalog, not disabled, and not one of
+// the launcher's locked metas (the guided entrypoint, the closing
+// offer, and the sub-flows the walker delegates to are internal, not
+// standalone session entrypoints).
 func (a *apiHandlers) validateSelectedPlaybook(id string) error {
 	for _, pb := range a.collectPlaybooks() {
 		if pb.ID != id {
@@ -1052,6 +1055,9 @@ func (a *apiHandlers) validateSelectedPlaybook(id string) error {
 		}
 		if pb.Disabled {
 			return fmt.Errorf("playbook %q is disabled", id)
+		}
+		if pb.Locked {
+			return fmt.Errorf("playbook %q is a launcher meta and cannot be selected", id)
 		}
 		return nil
 	}
