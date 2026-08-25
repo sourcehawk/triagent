@@ -1,6 +1,10 @@
-// Package skills embeds the skills shared by every Claude session the
-// launcher spawns (investigation, editor, operator, and the sub-agents
-// that draft PRs and wiki entries).
+// Package skills embeds the skills shared by every Claude session and
+// sub-agent the launcher spawns to write a durable artifact: the
+// investigation, editor, and operator sessions, the dispatched proposal
+// playbooks, and the sub-agents that draft PRs, wiki entries, session
+// post-mortems, and repo architecture summaries. Sub-agents whose
+// output is a transient tool result (Slack analysis, change analysis,
+// codebase research) do not carry them.
 //
 // Two delivery paths:
 //
@@ -54,14 +58,32 @@ func Extract(root string) error {
 	})
 }
 
-// WritingSimply returns the writing-simply SKILL.md body with its YAML
-// frontmatter removed, ready to append to a prompt.
+// WritingSimply returns the writing-simply SKILL.md body ready to nest
+// under a caller's "## Writing style" heading: the YAML frontmatter and
+// the H1 are removed, and every remaining heading is demoted one level.
 func WritingSimply() string {
 	data, err := files.ReadFile(writingSimplySlug + "/SKILL.md")
 	if err != nil {
 		panic(fmt.Sprintf("skills: cannot read %s: %v", writingSimplySlug, err))
 	}
-	return stripFrontmatter(string(data))
+	return nestHeadings(stripFrontmatter(string(data)))
+}
+
+// nestHeadings drops the leading H1 and demotes every other ATX heading
+// by one level, so "## Self-check" becomes "### Self-check".
+func nestHeadings(s string) string {
+	lines := strings.Split(s, "\n")
+	out := lines[:0]
+	for i, line := range lines {
+		if i == 0 && strings.HasPrefix(line, "# ") {
+			continue
+		}
+		if strings.HasPrefix(line, "#") && strings.Contains(line, " ") {
+			line = "#" + line
+		}
+		out = append(out, line)
+	}
+	return strings.TrimLeft(strings.Join(out, "\n"), "\n")
 }
 
 func stripFrontmatter(s string) string {

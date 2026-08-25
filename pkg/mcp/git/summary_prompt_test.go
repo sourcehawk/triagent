@@ -7,6 +7,15 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// The summary is a durable artifact written by a fresh sub-agent, so the
+// writing rules must be inside the prompt.
+func TestArchitectureSummaryPrompt_AppendsWritingStyle(t *testing.T) {
+	t.Parallel()
+	got := ArchitectureSummaryPrompt(ArchitectureSummaryPromptArgs{Repo: "o/n", Kind: "freeform"})
+	assert.Contains(t, got, "# Writing style")
+	assert.Contains(t, got, "### Self-check")
+}
+
 func TestArchitectureSummaryPrompt_Freeform_StructureAndConstraints(t *testing.T) {
 	t.Parallel()
 	got := ArchitectureSummaryPrompt(ArchitectureSummaryPromptArgs{

@@ -39,7 +39,7 @@ func TestBuildDispatchPrompt_AppendsWritingStyle(t *testing.T) {
 	}}
 	prompt := BuildDispatchPrompt(DispatchInputs{Playbook: pb, Notes: "the brief"})
 	assert.Contains(t, prompt, "## Writing style")
-	assert.Contains(t, prompt, "## Self-check")
+	assert.Contains(t, prompt, "### Self-check")
 	assert.Less(t, strings.Index(prompt, "## Writing style"), strings.Index(prompt, "## Operator-supplied context"))
 }
 

@@ -7,8 +7,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/sourcehawk/triagent/pkg/mcp/telemetry"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/sourcehawk/triagent/pkg/mcp/telemetry"
 )
 
 type proposeDraftInput struct {
@@ -58,7 +58,7 @@ func (s *Server) proposeDraftInternal(ctx context.Context, in proposeDraftInput,
 	}
 	outPath := filepath.Join(s.proposalsPath, in.ProposalID+".md")
 
-	prompt := fmt.Sprintf(draftPromptTemplate, outPath, outPath, in.MetadataPath, in.EventsPath)
+	prompt := buildDraftPrompt(outPath, in.MetadataPath, in.EventsPath)
 	if _, err := s.runSubAgent(ctx, prompt, parentToolID); err != nil {
 		return nil, fmt.Errorf("sub-agent: %w", err)
 	}

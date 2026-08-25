@@ -420,7 +420,7 @@ func buildWikiEditor(subject WikiSubject, env BaseEnv, prof *profile.Profile) st
 		// No specific scope attached. Even when slack/incidentio MCPs
 		// are wired (token linked), nothing is pre-pinned, so don't
 		// auto-walk the backfill playbook — wait for the operator.
-		b.WriteString("\n## New wiki entry\n\nThere is no existing entry yet. This session drafts one from whatever the operator provides. Wait for their first request before you produce a draft. If they want a backfill, ask them for an incident.io URL or a Slack channel first, or use `slack_get_channel_id` to resolve a name they mention.")
+		b.WriteString("\n## New wiki entry\n\nThere is no existing entry yet. This session drafts one from whatever the operator provides. Wait for their first request before you produce a draft. If they want a backfill, ask them for an incident.io URL or a Slack channel first. If they mention a channel by name, resolve it with `slack_get_channel_id`.")
 	}
 	return b.String()
 }

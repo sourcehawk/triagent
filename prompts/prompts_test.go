@@ -375,7 +375,7 @@ func TestBuild_AppendsWritingStyleSection(t *testing.T) {
 	t.Parallel()
 	out := Build(Env{}, testProf())
 	assert.Contains(t, out, "## Writing style")
-	assert.Contains(t, out, "## Self-check")
+	assert.Contains(t, out, "### Self-check")
 	assert.Less(t, strings.Index(out, "## Writing style"), strings.Index(out, "## Environment"),
 		"writing style is guidance, so it belongs before the Environment block")
 }
@@ -388,6 +388,6 @@ func TestBuildEditor_AppendsWritingStyleSection(t *testing.T) {
 	} {
 		out := BuildEditor(subject, BaseEnv{}, testProf())
 		assert.Contains(t, out, "## Writing style", "%T", subject)
-		assert.Contains(t, out, "## Self-check", "%T", subject)
+		assert.Contains(t, out, "### Self-check", "%T", subject)
 	}
 }

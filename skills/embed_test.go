@@ -10,11 +10,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestWritingSimply_StripsFrontmatter(t *testing.T) {
+// Callers wrap the body in their own "## Writing style" section, so the
+// body must carry no H1 and its sections must sit one level below.
+func TestWritingSimply_NestsUnderCallerHeading(t *testing.T) {
 	body := WritingSimply()
 	assert.False(t, strings.HasPrefix(body, "---"), "frontmatter must be stripped so the body can be embedded mid-prompt")
-	assert.True(t, strings.HasPrefix(body, "# "), "body must start at the H1 heading, got %q", firstLine(body))
-	assert.Contains(t, body, "## Self-check", "the self-check section is the load-bearing part for agents")
+	assert.True(t, strings.HasPrefix(body, "Write for"), "body must start at the first paragraph, got %q", firstLine(body))
+	assert.NotContains(t, body, "\n# ", "no H1 may remain")
+	assert.NotContains(t, body, "\n## ", "H2 headings must be demoted so they nest under the caller's H2")
+	assert.Contains(t, body, "### Self-check", "the self-check section is the load-bearing part for agents")
 }
 
 func TestExtract_WritesSkillsWithReferences(t *testing.T) {

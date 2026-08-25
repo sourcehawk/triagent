@@ -13,7 +13,7 @@ func TestBuildDraftPRPrompt_AppendsWritingSimply(t *testing.T) {
 	t.Parallel()
 	p := buildDraftPRPrompt("o/n", "https://github.com/o/n/issues/1", 1, "main", "")
 	require.Contains(t, p, "WRITING STYLE")
-	require.Contains(t, p, "## Self-check")
+	require.Contains(t, p, "### Self-check")
 }
 
 func TestBuildDraftPRPrompt_ContainsKeyDirectives(t *testing.T) {

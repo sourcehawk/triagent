@@ -12,5 +12,5 @@ func TestProposeWikiSubAgentPrompt_AppendsWritingSimply(t *testing.T) {
 	t.Parallel()
 	p := proposeWikiSubAgentPrompt(proposeWikiPromptArgs{Slug: "inc-x", Date: "2026-01-01", Status: "resolved", DraftPath: "/tmp/x.md", ProposalID: "prop-1"})
 	assert.Contains(t, p, "# Writing style")
-	assert.Contains(t, p, "## Self-check")
+	assert.Contains(t, p, "### Self-check")
 }

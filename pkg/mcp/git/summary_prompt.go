@@ -4,6 +4,8 @@ import (
 	_ "embed"
 	"strings"
 	"text/template"
+
+	"github.com/sourcehawk/triagent/skills"
 )
 
 // ArchitectureSummaryPromptArgs configures the freeform prompt for v1.
@@ -71,5 +73,10 @@ func ArchitectureSummaryPrompt(args ArchitectureSummaryPromptArgs) string {
 		// than ship a half-rendered prompt to the sub-agent.
 		panic("architecture summary template execute: " + err.Error())
 	}
+	// The summary is a durable, operator-editable artifact and the
+	// sub-agent has no launcher system prompt, so the writing rules
+	// ride in the prompt itself.
+	b.WriteString("\n\n# Writing style\n\nThe summary is descriptive prose. Every section obeys the rules below.\n\n")
+	b.WriteString(skills.WritingSimply())
 	return b.String()
 }
