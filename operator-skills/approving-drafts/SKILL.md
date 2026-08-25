@@ -1,74 +1,41 @@
 ---
 name: approving-drafts
-description: Use when a wiki or playbook draft envelope lands in the transcript after you chose wiki/playbook on the capture_offer. Approves the draft via the agent-operator MCP's approve_proposal tool.
+description: Use when a `propose_wiki_draft` or `playbook_proposal_draft` result with a `proposal_id` appears in the transcript diff.
 ---
 
 # Approving drafts
 
-When you answer the capture_offer with `wiki` or `playbook`, the
-investigation agent stages a draft as a tool result envelope. You'll
-see one of these in your next wake-up's transcript diff:
+After you route `wiki`, `playbook`, `all`, or `both`, the investigation agent stages a draft. The tool result is JSON with a `proposal_id` like `prop-42ec5c16c183`.
 
-- `propose_wiki_draft` → result is JSON with a `proposal_id` field like
-  `prop-42ec5c16c183`. Approve with `kind: "wiki"`.
-- `playbook_proposal_draft` → result is JSON with `proposal_id`. Approve
-  with `kind: "playbook"`.
+- `propose_wiki_draft` result: approve with `kind: "wiki"`.
+- `playbook_proposal_draft` result: approve with `kind: "playbook"`.
 
-## When to approve
+## Approve or send back
 
-- **Approve** when the draft looks reasonable given the investigation —
-  i.e. matches the symptom + resolution narrative you saw the agent
-  build. Don't second-guess minor wording.
-- **Don't approve** when something is missing or obviously wrong
-  (incident ID placeholder still in there, conclusion contradicts the
-  evidence). In that case send a refinement message with `send_message`
-  asking the agent to redraft.
-- A single session can produce multiple proposals (e.g. answering `all`
-  to capture_offer → wiki + playbook). Approve each with its own
-  `proposal_id`; do not assume "approve" means "approve all".
+Approve when the draft matches the symptom and resolution narrative that you watched the agent build. Do not second-guess minor wording.
 
-## How to approve
+Do not approve when something is missing or wrong: an incident-id placeholder still in the body, a conclusion that contradicts the evidence, a wiki entry that merges two shapes you asked to split. Send the fix with `send_message` and ask for a redraft.
 
-```
-approve_proposal(kind="wiki", proposal_id="prop-42ec5c16c183")
-```
+One session can stage several proposals (`all` stages wiki and playbook). Approve each by its own `proposal_id`. One approval does not cover the set.
 
-The launcher routes this through the same path the human Approve button
-uses — wiki draft becomes a local vault commit; playbook draft promotes
-to a versioned YAML and bumps the active pointer. Treat it as a real
-write, not a no-op.
+Never approve a `proposal_id` that you did not see in the transcript. An invented id returns 400.
 
-## Close the turn after approving
+Codefix proposals have no approve step. They open as draft PRs on GitHub.
 
-`approve_proposal` is **not** a terminal action. It writes the resolution
-locally but does not send any follow-up to the investigation agent, so it
-will not produce a new turn or wake you again. If you end the turn with
-only `approve_proposal` calls, the session dangles forever in the
-`started` phase.
+## Close the turn
 
-Every turn that calls `approve_proposal` must still end with one of:
+`approve_proposal` is not a terminal action. It records the approval and sends nothing to the investigation agent, so no new turn happens and nothing wakes you again. A turn that ends with only `approve_proposal` calls leaves the session in the `started` phase forever.
 
-- `finish(reason)` — the usual choice. Approving the draft(s) at the end
-  of the capture flow is the last operator action needed; close the
-  session in the same turn. See `finishing-a-session` for when this
-  applies.
-- `send_message(text)` — only if there's a real follow-up to send (e.g.
-  the agent staged a wiki but also asked a clarifying question you can
-  answer now).
-- `request_takeover(reason)` — if approving exposed something a human
-  needs to decide.
+After the approvals, end the turn with one of:
 
-Typical end-of-capture shape, all in one turn:
+- `finish(reason)`: the usual choice. Approving the last draft completes the capture flow.
+- `send_message(text)`: only when there is a real follow-up, for example the agent also asked a question that you can answer now.
+- `request_takeover(reason)`: when the draft exposed a decision that a human must make.
+
+The usual end-of-capture turn:
 
 ```
 approve_proposal(kind="wiki",     proposal_id="prop-...")
 approve_proposal(kind="playbook", proposal_id="prop-...")
-finish(reason="Capture flow complete — wiki and playbook approved.")
+finish(reason="Capture flow complete. Wiki and playbook approved.")
 ```
-
-## Don't approve
-
-- Codefix proposals — they auto-open PRs from the investigation agent;
-  there's no approve action.
-- Any draft you didn't see in the transcript — proposal_ids you make up
-  will return 400.
