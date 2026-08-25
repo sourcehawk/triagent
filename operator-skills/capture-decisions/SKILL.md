@@ -72,7 +72,7 @@ This reply splits the wiki, replaces the playbook, adds a codefix the agent decl
 
 ### Auto-triggered investigations
 
-If the briefing starts with "Auto-triggered by signal-watch ingestion", a noop or false-positive outcome must become a wiki entry, not `no`. Reply `wiki` and ask for `status: wontfix` plus enough symptom keywords (services, error strings, timing) for `wiki_correlate` to find it. That entry is what lets the ingestion agent dismiss the same signal next time.
+If the `Notes:` line of your briefing contains "Auto-triggered by signal-watch ingestion", a noop or false-positive outcome must become a wiki entry, not `no`. Reply `wiki` and ask for `status: wontfix` plus enough symptom keywords (services, error strings, timing) for `wiki_correlate` to find it. That entry is what lets the ingestion agent dismiss the same signal next time.
 
 ## When you are unsure
 
