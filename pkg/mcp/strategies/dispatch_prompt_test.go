@@ -29,6 +29,20 @@ func TestBuildDispatchPrompt_IncludesPlaybookNodesInOrder(t *testing.T) {
 	assert.True(t, strings.Contains(prompt, "the summary"))
 }
 
+// Dispatched playbooks refer to "the Writing style rules in your prompt";
+// the sub-agent has no launcher system prompt, so the section must be in
+// the dispatch prompt itself, before the operator context it applies to.
+func TestBuildDispatchPrompt_AppendsWritingStyle(t *testing.T) {
+	t.Parallel()
+	pb := &Playbook{ID: "wiki_proposal", Entrypoint: "a", Nodes: map[string]Node{
+		"a": {ID: "a", Description: "draft"},
+	}}
+	prompt := BuildDispatchPrompt(DispatchInputs{Playbook: pb, Notes: "the brief"})
+	assert.Contains(t, prompt, "## Writing style")
+	assert.Contains(t, prompt, "### Self-check")
+	assert.Less(t, strings.Index(prompt, "## Writing style"), strings.Index(prompt, "## Operator-supplied context"))
+}
+
 func TestBuildDispatchPrompt_NamesTerminalToolWhenSet(t *testing.T) {
 	t.Parallel()
 	pb := &Playbook{ID: "playbook_proposal", Entrypoint: "a", Nodes: map[string]Node{

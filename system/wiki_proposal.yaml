@@ -172,6 +172,8 @@ nodes:
         - status (REQUIRED): one of `resolved` | `open` | `wontfix`.
         - severity (OPTIONAL): one of `sev1` | `sev2` | `sev3`.
         - additional_context (OPTIONAL): any specific tool results or findings worth highlighting.
+          Write it with the Writing style rules in your prompt: the sub-agent
+          reuses your sentences in the entry body.
         - investigation_url (OPTIONAL): the launcher URL for this investigation.
         - incidentio_url (OPTIONAL): if the operator shared one.
         - slack_channel_url (OPTIONAL): if the operator shared a channel.

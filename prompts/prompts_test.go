@@ -353,12 +353,12 @@ func TestBuild_LinkedRepos_AdvertisesArchitectureSummaryFirstStop(t *testing.T) 
 func TestBuildIncludesAutoTriggerHintWhenSet(t *testing.T) {
 	prof := testProf()
 	plain := Build(Env{}, prof)
-	if strings.Contains(plain, "auto-triggered by signal-watch") {
+	if strings.Contains(plain, "Auto-triggered investigation") {
 		t.Fatal("plain prompt should not include the auto-trigger hint")
 	}
 
 	hinted := Build(Env{OriginatingSignalSet: true}, prof)
-	if !strings.Contains(hinted, "auto-triggered by signal-watch") {
+	if !strings.Contains(hinted, "Auto-triggered investigation") {
 		t.Fatal("hinted prompt should include the auto-trigger hint")
 	}
 	if !strings.Contains(hinted, "choose `wiki`") {
@@ -385,4 +385,30 @@ func TestBuild_NoSelectedPlaybookKeepsProfileDefaults(t *testing.T) {
 	assert.Contains(t, out, "suggested-entrypoint-playbook: investigation")
 	assert.Contains(t, out, "suggested-closing-playbook: capture_offer")
 	assert.NotContains(t, out, "operator selected this playbook")
+}
+
+// Every session the launcher spawns writes prose a human reads later
+// (summaries, wiki entries, playbook YAML). The writing-simply skill
+// rides in the system prompt rather than relying on skill discovery,
+// which the investigation and editor sessions cannot use (their cwd is
+// the operator's launch directory).
+func TestBuild_AppendsWritingStyleSection(t *testing.T) {
+	t.Parallel()
+	out := Build(Env{}, testProf())
+	assert.Contains(t, out, "## Writing style")
+	assert.Contains(t, out, "### Self-check")
+	assert.Less(t, strings.Index(out, "## Writing style"), strings.Index(out, "## Environment"),
+		"writing style is guidance, so it belongs before the Environment block")
+}
+
+func TestBuildEditor_AppendsWritingStyleSection(t *testing.T) {
+	t.Parallel()
+	for _, subject := range []Subject{
+		PlaybookSubject{ID: "pb", Version: "v1"},
+		WikiSubject{Kind: "entry", ID: "inc-x"},
+	} {
+		out := BuildEditor(subject, BaseEnv{}, testProf())
+		assert.Contains(t, out, "## Writing style", "%T", subject)
+		assert.Contains(t, out, "### Self-check", "%T", subject)
+	}
 }

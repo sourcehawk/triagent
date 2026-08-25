@@ -9,6 +9,7 @@ import (
 
 	"github.com/sourcehawk/triagent/internal/profile"
 	"github.com/sourcehawk/triagent/internal/repos"
+	"github.com/sourcehawk/triagent/skills"
 )
 
 // Env holds the per-session substitutions.
@@ -18,7 +19,7 @@ type Env struct {
 	// InputValues carries operator-supplied values for the profile's
 	// InvestigationInputs, keyed by input ID then by template field
 	// (e.g. {"cluster_id": {"value": "abc"}, "slack_channel": {"id": "C1", ...}}).
-	InputValues            map[string]map[string]any
+	InputValues map[string]map[string]any
 	// SlackMCPAvailable reports whether the triagent-slack MCP server is wired
 	// in this session (operator pasted a channel id AND a slack token is
 	// configured on the launcher's connections panel). The agent uses
@@ -102,6 +103,7 @@ func Build(env Env, prof *profile.Profile) string {
 	b.WriteString(prof.Prompts["architecture.md"])
 	b.WriteString("\n\n## Investigation strategies\n")
 	b.WriteString(prof.Prompts["strategies.md"])
+	writeWritingStyleSection(&b)
 	b.WriteString("\n\n## Environment\n")
 	b.WriteString("```\n---\n")
 
@@ -148,25 +150,25 @@ func Build(env Env, prof *profile.Profile) string {
 
 	b.WriteString("---\n```\n")
 	if env.OriginatingSignalSet {
-		b.WriteString("\n> **Auto-triggered investigation — capture_offer hint:**  ")
-		b.WriteString("This investigation was auto-triggered by signal-watch ingestion. ")
-		b.WriteString("If the conclusion is a known false-positive / noop, choose `wiki` ")
-		b.WriteString("at capture_offer time (not `no`) — the entry lets the ingestion ")
-		b.WriteString("agent dismiss similar signals automatically next time. ")
-		b.WriteString("Author the wiki entry with `status: wontfix` and include enough ")
+		b.WriteString("\n> **Auto-triggered investigation, capture hint:** ")
+		b.WriteString("Signal-watch ingestion started this investigation. ")
+		b.WriteString("If the conclusion is a known false positive or a noop, choose `wiki` ")
+		b.WriteString("at capture time, not `no`. The entry lets the ingestion ")
+		b.WriteString("agent dismiss similar signals next time. ")
+		b.WriteString("Write the wiki entry with `status: wontfix` and include enough ")
 		b.WriteString("symptom keywords for `wiki_correlate` to find it.\n")
 	}
 	if env.Playbook != "" {
-		b.WriteString("- Investigation playbooks: mcp__triagent-strategies__*   (the operator selected this playbook for the session: start with `walk_playbook` against the `suggested-entrypoint-playbook` from the parameter block and follow it to completion; there is no closing playbook to walk afterwards)")
+		b.WriteString("- Investigation playbooks: mcp__triagent-strategies__*   (the operator selected this playbook for the session. Start with `walk_playbook` against the `suggested-entrypoint-playbook` from the parameter block and follow it to completion. There is no closing playbook to walk afterwards.)")
 	} else {
-		b.WriteString("- Investigation playbooks: mcp__triagent-strategies__*   (start with `walk_playbook` against the `suggested-entrypoint-playbook` from the parameter block; walk `suggested-closing-playbook` after every `summarize`)")
+		b.WriteString("- Investigation playbooks: mcp__triagent-strategies__*   (start with `walk_playbook` against the `suggested-entrypoint-playbook` from the parameter block. Walk `suggested-closing-playbook` after every `summarize`.)")
 	}
-	b.WriteString("\n- Cluster-inspection tools: mcp__triagent-k8s__*   (read-only: list_resource_kinds, list_resources, get_resource, get_logs, list_events, list_namespaces, trace_crossplane). Pass `namespace` per call; default to `cluster-resource-namespace` from the parameter block, or call `list_namespaces` if it is `<unset>`.")
+	b.WriteString("\n- Cluster-inspection tools: mcp__triagent-k8s__*   (read-only: list_resource_kinds, list_resources, get_resource, get_logs, list_events, list_namespaces, trace_crossplane). Pass `namespace` on every call. Default to `cluster-resource-namespace` from the parameter block. If it is `<unset>`, call `list_namespaces`.")
 	if env.IncidentioMCPAvailable {
 		b.WriteString("\n- incident.io tools: mcp__triagent-incidentio__*   (incidentio_get_incident, incidentio_get_timeline, incidentio_get_postmortem, incidentio_search_related). Pass `incident_id` on every call.")
 	}
 	if env.SlackMCPAvailable {
-		b.WriteString("\n- Slack tools: mcp__triagent-slack__*   (slack_get_channel_id, slack_channel_overview, slack_search_messages, summarize_thread, analyze_channel). Pass `channel_id` on every channel-aware call; resolve a channel name with slack_get_channel_id first.")
+		b.WriteString("\n- Slack tools: mcp__triagent-slack__*   (slack_get_channel_id, slack_channel_overview, slack_search_messages, summarize_thread, analyze_channel). Pass `channel_id` on every channel-aware call. If you only have a channel name, call `slack_get_channel_id` first.")
 	}
 	for _, m := range prof.ExtraMCPs {
 		b.WriteString("\n- mcp__")
@@ -174,23 +176,7 @@ func Build(env Env, prof *profile.Profile) string {
 		b.WriteString("__*: ")
 		b.WriteString(strings.TrimSpace(m.Description))
 	}
-	if len(env.LinkedRepos) > 0 {
-		b.WriteString("\n\n## Linked repositories\n")
-		b.WriteString("Each linked GitHub repo is exposed via its own MCP server. **Always call `mcp__triagent-git-<alias>__get_repo_architecture_summary` first** when investigating a question that touches the repo — it's a cached digest the launcher generated upfront, free at retrieval, and falls through to the description below when no summary is yet cached. Discovery tools (`latest_tags`, `commit_summary`, `diff_summary`, `search_log`) are cheap deterministic git plumbing; sub-agent tools spawn a focused sub-Claude in the cloned repo and return a summary so this session's context stays clean: `research_codebase` answers questions about the code as a whole at a ref (exact metric names, CRD conditions, flags, alert rules), `analyze_change` explains one specific commit, `correlate_with_findings` ranks recent commits against symptoms. Don't use `analyze_change` with `ref=HEAD` to ask whole-repo questions — that's `research_codebase`. Tools are addressable as `mcp__triagent-git-<alias>__<tool>`.\n")
-		for _, r := range env.LinkedRepos {
-			b.WriteString("- `")
-			b.WriteString(r.EffectiveAlias())
-			b.WriteString("` — ")
-			b.WriteString(r.Owner)
-			b.WriteString("/")
-			b.WriteString(r.Name)
-			if r.Description != "" {
-				b.WriteString(" — ")
-				b.WriteString(r.Description)
-			}
-			b.WriteString("\n")
-		}
-	}
+	writeLinkedReposSection(&b, env.LinkedRepos)
 
 	incidentURL := inputStr(env.InputValues, "incident_url", "value")
 	slackChannelURL := inputStr(env.InputValues, "slack_channel", "url")
@@ -202,7 +188,7 @@ func Build(env Env, prof *profile.Profile) string {
 	if hasIncidentScope {
 		b.WriteString("\n\n## Incident identifiers\n")
 		b.WriteString("The operator supplied these at investigation start.\n")
-		b.WriteString("- For `mcp__triagent-wiki__propose_wiki_draft`: pass `slack_link` and `incidentio_link` verbatim. The required `slug` argument is a free-form lowercase-with-hyphens filename slug (`inc-` for incident.io tickets, `inv-` for investigation-only, `alert-` for alerts/Slack threads — the orchestrator picks the right prefix) — derive it from the strongest source plus a kebab-case description.\n")
+		b.WriteString("- For `mcp__triagent-wiki__propose_wiki_draft`: pass `slack_link` and `incidentio_link` verbatim. The required `slug` argument is a lowercase-with-hyphens filename slug. Derive it from the strongest source plus a kebab-case description. Prefix `inc-` for incident.io tickets, `inv-` for investigation-only, `alert-` for alerts and Slack threads.\n")
 		if env.IncidentioMCPAvailable && incidentURL != "" {
 			ref := incidentioRefFromURL(incidentURL)
 			b.WriteString("- For `mcp__triagent-incidentio__*`: pass `incident_id`")
@@ -243,16 +229,16 @@ func Build(env Env, prof *profile.Profile) string {
 				b.WriteString(slackChannelName)
 				b.WriteString("\n")
 			}
-			b.WriteString("- (no Slack URL available for this investigation; pass slack_link omitted to propose_wiki_draft)\n")
+			b.WriteString("- (no Slack URL available for this investigation. Omit slack_link on propose_wiki_draft.)\n")
 		}
 	}
 	b.WriteString("\n## User-supplied context\n")
 	if strings.TrimSpace(userNotes) == "" {
-		b.WriteString("(none provided — start by asking the operator what they observed, or explore broadly.)")
+		b.WriteString("(none provided. Ask the operator what they observed, or explore broadly.)")
 	} else {
 		b.WriteString(userNotes)
 	}
-	b.WriteString("\n\nBegin by forming a hypothesis from the user-supplied context (or ask a single clarifying question if empty), then gather targeted evidence using the MCP tools. Produce a final summary when done.")
+	b.WriteString("\n\nIf the user-supplied context is empty, ask one clarifying question. Otherwise, form a hypothesis from it. Then gather targeted evidence with the MCP tools. Produce a final summary when you are done.")
 	return b.String()
 }
 
@@ -332,9 +318,9 @@ func (s Sources) HasInvestigation() bool { return s.InvestigationID != "" }
 // linked-repo MCP set, full tool catalog, the Sources block
 // (operator-attached scope), and which MCPs are wired.
 type BaseEnv struct {
-	LinkedRepos    []repos.LinkedRepo // each → mcp__triagent-git-<alias>__*
-	ToolCatalog    []ToolCatalogEntry // full triagent-mcp catalog for `suggested_calls` references
-	Sources        Sources
+	LinkedRepos []repos.LinkedRepo // each → mcp__triagent-git-<alias>__*
+	ToolCatalog []ToolCatalogEntry // full triagent-mcp catalog for `suggested_calls` references
+	Sources     Sources
 	// SlackMCPAvailable is true when triagent-slack is registered in the
 	// session's mcp.json (slack token linked). Independent of whether
 	// Sources.HasSlack() is true: an operator can have the token linked
@@ -389,6 +375,7 @@ func BuildEditor(subject Subject, env BaseEnv, prof *profile.Profile) string {
 func buildPlaybookEditor(subject PlaybookSubject, env BaseEnv, prof *profile.Profile) string {
 	var b strings.Builder
 	b.WriteString(prof.Prompts["editor.md"])
+	writeWritingStyleSection(&b)
 	b.WriteString("\n\n## Environment\n")
 	b.WriteString("- Playbook id: ")
 	b.WriteString(subject.ID)
@@ -399,7 +386,7 @@ func buildPlaybookEditor(subject PlaybookSubject, env BaseEnv, prof *profile.Pro
 		b.WriteString(subject.Type)
 	}
 	b.WriteString("\n- Authoring tools: mcp__triagent-strategies__*   (")
-	b.WriteString("playbook_schema, list_playbooks, get_playbook_raw, validate_playbook, playbook_proposal_draft are the ones you'll actually use)")
+	b.WriteString("playbook_schema, list_playbooks, get_playbook_raw, validate_playbook, playbook_proposal_draft are the ones you use)")
 	for _, m := range prof.ExtraMCPs {
 		b.WriteString("\n- mcp__")
 		b.WriteString(m.Alias)
@@ -411,20 +398,21 @@ func buildPlaybookEditor(subject PlaybookSubject, env BaseEnv, prof *profile.Pro
 	writeToolCatalogSection(&b, env.ToolCatalog)
 	b.WriteString("\n## Current playbook\n\n```yaml\n")
 	b.WriteString(strings.TrimRight(subject.YAML, "\n"))
-	b.WriteString("\n```\n\nWait for the operator's first request. Do not propose anything proactively.")
+	b.WriteString("\n```\n\nWait for the operator's first request. Do not propose anything before that.")
 	return b.String()
 }
 
 func buildWikiEditor(subject WikiSubject, env BaseEnv, prof *profile.Profile) string {
 	var b strings.Builder
 	b.WriteString(prof.Prompts["wiki_editor.md"])
+	writeWritingStyleSection(&b)
 	b.WriteString("\n\n## Environment\n")
 	b.WriteString("- Wiki entry kind: ")
 	b.WriteString(subject.Kind)
 	b.WriteString("\n- Wiki entry id: ")
 	b.WriteString(subject.ID)
 	b.WriteString("\n- Authoring tools: mcp__triagent-wiki__*   (wiki_search, wiki_get, wiki_list_entities, wiki_correlate, validate_wiki, propose_wiki_draft)")
-	b.WriteString("\n- Investigation playbooks: mcp__triagent-strategies__*   (list_playbooks, walk_playbook, get_state, step_complete — call list_playbooks first to see what's available)")
+	b.WriteString("\n- Investigation playbooks: mcp__triagent-strategies__*   (list_playbooks, walk_playbook, get_state, step_complete. Call list_playbooks first to see what is available.)")
 	for _, m := range prof.ExtraMCPs {
 		b.WriteString("\n- mcp__")
 		b.WriteString(m.Alias)
@@ -437,18 +425,27 @@ func buildWikiEditor(subject WikiSubject, env BaseEnv, prof *profile.Profile) st
 	if strings.TrimSpace(subject.ExistingMarkdown) != "" {
 		b.WriteString("\n## Existing wiki entry\n\n```markdown\n")
 		b.WriteString(strings.TrimRight(subject.ExistingMarkdown, "\n"))
-		b.WriteString("\n```\n\nThe operator wants to revise this. Read it first; preserve structure and prior wording where the new sources don't change it. Wait for their first request before modifying anything.")
+		b.WriteString("\n```\n\nThe operator wants to revise this entry. Read it first. Keep the structure and the prior wording where the new sources do not change them. Wait for their first request before you modify anything.")
 	} else if env.Sources.HasSlack() || env.Sources.HasIncidentio() || env.Sources.HasInvestigation() {
 		// Backfill mode: operator attached at least one specific source.
 		// Walk the meta-playbook end-to-end without confirmation.
-		b.WriteString("\n## Backfill resolved incident\n\nThis session was created from the homepage's *New wiki entry* modal, with sources attached. Walk the `wiki_backfill_ingestion` meta-playbook end-to-end via `mcp__triagent-strategies__walk_playbook` — ingest the sources, draft, validate, and propose. Don't ask the operator to confirm; the modal already did. Begin now by calling `mcp__triagent-strategies__list_playbooks` to confirm the playbook is loaded, then `mcp__triagent-strategies__walk_playbook` with id `wiki_backfill_ingestion`.")
+		b.WriteString("\n## Backfill resolved incident\n\nThe homepage's *New wiki entry* modal created this session with sources attached. Walk the `wiki_backfill_ingestion` meta-playbook end-to-end through `mcp__triagent-strategies__walk_playbook`: ingest the sources, draft, validate, and propose. Do not ask the operator to confirm. The modal already did. Begin now. First call `mcp__triagent-strategies__list_playbooks` to make sure that the playbook is loaded. Then call `mcp__triagent-strategies__walk_playbook` with id `wiki_backfill_ingestion`.")
 	} else {
 		// No specific scope attached. Even when slack/incidentio MCPs
 		// are wired (token linked), nothing is pre-pinned, so don't
 		// auto-walk the backfill playbook — wait for the operator.
-		b.WriteString("\n## New wiki entry\n\nNo existing entry yet — this session drafts one from whatever the operator provides. Wait for their first request before producing a draft. If they want a backfill, ask them for an incident.io URL or a Slack channel first, or use `slack_get_channel_id` to resolve a name they mention.")
+		b.WriteString("\n## New wiki entry\n\nThere is no existing entry yet. This session drafts one from whatever the operator provides. Wait for their first request before you produce a draft. If they want a backfill, ask them for an incident.io URL or a Slack channel first. If they mention a channel by name, resolve it with `slack_get_channel_id`.")
 	}
 	return b.String()
+}
+
+// writeWritingStyleSection appends the writing-simply skill body. The
+// investigation and editor sessions run with the operator's launch
+// directory as cwd, so the claude CLI cannot discover the skill from
+// disk; appending it is the only path that guarantees it loads.
+func writeWritingStyleSection(b *strings.Builder) {
+	b.WriteString("\n\n## Writing style\n\nEvery summary, wiki entry, playbook description, issue, PR body, and chat reply obeys the rules below. Playbook and tool descriptions that ask for prose assume these rules.\n\n")
+	b.WriteString(skills.WritingSimply())
 }
 
 func writeSourcesSection(b *strings.Builder, src Sources, slackAvail, ioAvail bool) {
@@ -458,14 +455,14 @@ func writeSourcesSection(b *strings.Builder, src Sources, slackAvail, ioAvail bo
 	hasScope := src.HasSlack() || src.HasIncidentio() || src.HasInvestigation()
 	b.WriteString("\n\n## Sources\n")
 	if hasScope {
-		b.WriteString("The operator linked these as primary evidence for this session — start here, but you can investigate any channel/incident the operator's tokens grant access to.\n")
+		b.WriteString("The operator linked these as the primary evidence for this session. Start here. You can also investigate any channel or incident that the operator's tokens grant access to.\n")
 	} else {
-		b.WriteString("Slack and incident.io tools are wired (the operator linked their tokens) but the session is not pinned to a specific channel or incident. Ask the operator which one to look at, or use `slack_get_channel_id` to resolve a channel by name.\n")
+		b.WriteString("Slack and incident.io tools are wired (the operator linked their tokens), but the session is not pinned to a specific channel or incident. Ask the operator which one to look at, or use `slack_get_channel_id` to resolve a channel by name.\n")
 	}
 	if src.HasInvestigation() {
 		b.WriteString("- Investigation transcript: the session that produced this entry is at `")
 		b.WriteString(src.InvestigationDir)
-		b.WriteString("/events.jsonl`. Read it with the Read tool when drafting — it's a JSON-lines transcript (one event per line: assistant turns, tool calls, results). For long files, use offset+limit.\n")
+		b.WriteString("/events.jsonl`. Read it with the Read tool before you draft. It is a JSON-lines transcript, one event per line: assistant turns, tool calls, results. For long files, use offset and limit.\n")
 	}
 	if ioAvail {
 		b.WriteString("- incident.io tools: `mcp__triagent-incidentio__*` (incidentio_get_incident, incidentio_get_timeline, incidentio_get_postmortem, incidentio_search_related). Pass `incident_id` on every call.")
@@ -508,7 +505,7 @@ func writeLinkedReposSection(b *strings.Builder, linked []repos.LinkedRepo) {
 		return
 	}
 	b.WriteString("\n\n## Linked repositories\n")
-	b.WriteString("Each linked GitHub repo is exposed via its own MCP server. **Always call `mcp__triagent-git-<alias>__get_repo_architecture_summary` first** when investigating a question that touches the repo — it's a cached digest the launcher generated upfront, free at retrieval, and falls through to the description below when no summary is yet cached. Use them to read controller/SDK code when you need code-level evidence. Discovery tools (`latest_tags`, `commit_summary`, `diff_summary`, `search_log`) are cheap deterministic git plumbing; sub-agent tools spawn a focused sub-Claude in the cloned repo and return a summary so this session's context stays clean: `research_codebase` answers questions about the code as a whole at a ref (exact metric names, CRD conditions, flags, alert rules), `analyze_change` explains one specific commit, `correlate_with_findings` ranks recent commits against symptoms. Don't use `analyze_change` with `ref=HEAD` to ask whole-repo questions — that's `research_codebase`. Tools are addressable as `mcp__triagent-git-<alias>__<tool>`.\n")
+	b.WriteString("Each linked GitHub repo is exposed through its own MCP server. Tools are addressable as `mcp__triagent-git-<alias>__<tool>`. **When a question touches a repo, call `mcp__triagent-git-<alias>__get_repo_architecture_summary` first.** It returns a cached digest that the launcher generated upfront, so it is free to call. When no summary is cached yet, it falls back to the description below. Discovery tools (`latest_tags`, `commit_summary`, `diff_summary`, `search_log`) are cheap deterministic git plumbing. Sub-agent tools spawn a focused sub-Claude in the cloned repo and return a summary, so this session's context stays clean. `research_codebase` answers questions about the code as a whole at a ref (exact metric names, CRD conditions, flags, alert rules). `analyze_change` explains one specific commit. `correlate_with_findings` ranks recent commits against symptoms. For a whole-repo question, use `research_codebase`, not `analyze_change` with `ref=HEAD`.\n")
 	for _, r := range linked {
 		b.WriteString("- `")
 		b.WriteString(r.EffectiveAlias())
@@ -529,7 +526,7 @@ func writeToolCatalogSection(b *strings.Builder, catalog []ToolCatalogEntry) {
 		return
 	}
 	b.WriteString("\n\n## Tool catalog (referenceable in `suggested_calls`)\n")
-	b.WriteString("Every tool below is callable from a real investigation session. The editor session may not have all of these MCP servers registered (k8s/prom need cluster context the editor lacks), but you can — and should — reference them by `<server>/<tool>` in any playbook node's `suggested_calls`. Required arg names are marked with `*`; everything else is optional.\n")
+	b.WriteString("Every tool below is callable from a real investigation session. The editor session does not have all of these MCP servers registered (k8s and prom need cluster context that the editor lacks). Reference them anyway, as `<server>/<tool>`, in any playbook node's `suggested_calls`. Required arg names are marked with `*`. Everything else is optional.\n")
 	var lastServer string
 	for _, t := range catalog {
 		if t.Server != lastServer {

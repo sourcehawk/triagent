@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/sourcehawk/triagent/skills"
 )
 
 // DispatchInputs carries every input BuildDispatchPrompt needs. The caller
@@ -42,6 +44,8 @@ type DispatchInputs struct {
 //  1. Role: one paragraph naming what playbook the sub-agent is executing.
 //  2. Playbook instructions: each node's description in entrypoint-first
 //     traversal order, separated by a horizontal-rule line.
+//     2a. Writing style: the writing-simply skill body, because the
+//     sub-agent has no launcher system prompt to carry it.
 //  3. Operator-supplied context: the free-form notes passed to walk_playbook
 //     — the parent agent's deliberate brief for the sub-agent.
 //  4. Findings: pretty-printed JSON of the parent session's findings map.
@@ -59,6 +63,11 @@ func BuildDispatchPrompt(in DispatchInputs) string {
 			fmt.Fprintf(&b, "### %s\n\n%s\n\n", id, strings.TrimSpace(node.Description))
 		}
 	}
+	// The sub-agent is a fresh session with no launcher system prompt,
+	// so the writing rules the playbook nodes refer to ride here.
+	b.WriteString("## Writing style\n\nEvery draft, issue body, and chat reply you produce obeys the rules below.\n\n")
+	b.WriteString(skills.WritingSimply())
+	b.WriteString("\n\n")
 	if strings.TrimSpace(in.Notes) != "" {
 		b.WriteString("## Operator-supplied context\n\n")
 		b.WriteString(strings.TrimSpace(in.Notes))

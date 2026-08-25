@@ -212,6 +212,7 @@ func (a *apiHandlers) register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/editor-sessions/{id}", a.handleGetEditorSession)
 	mux.HandleFunc("DELETE /api/editor-sessions/{id}", a.handleDeleteEditorSession)
 	mux.HandleFunc("POST /api/editor-sessions/{id}/messages", a.handleEditorMessage)
+	mux.HandleFunc("POST /api/editor-sessions/{id}/interrupt", a.handleInterruptEditorSession)
 	mux.HandleFunc("POST /api/editor-sessions/{id}/rebind", a.handleRebindEditorSession)
 	mux.HandleFunc("GET /api/editor-sessions/{id}/transcript", a.handleEditorTranscript)
 	mux.HandleFunc("GET /api/investigations/{id}/mcp-health", a.handleMCPHealth)

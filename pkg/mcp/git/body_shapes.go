@@ -26,7 +26,7 @@ const issueBodyShape = `BODY SHAPE — investigation-filed issue
 2-4 sentences a no-context reader can parse. What this issue is about AND the user or operator problem it addresses — why a reviewer should care. No solution, no design.
 
 ## Acceptance Criteria
-Bulleted, testable conditions a reviewer can check off when the change lands. Each bullet is a concrete observable outcome — a behaviour, a metric value, a UI state, a log line that should/shouldn't appear. If a bullet has no way to be verified, it doesn't belong here. Biggest / most user-visible first.
+Bulleted, testable conditions a reviewer can check off when the change lands. Each bullet is a concrete observable outcome — a behaviour, a metric value, a UI state, a log line that appears or does not appear. If a bullet has no way to be verified, it doesn't belong here. Biggest / most user-visible first.
 
 ## Evidence
 Citations from the investigation, one bullet per claim. Inline links to commits, log excerpts, runbook pages, dashboards. Evidence grounds the finding — it is not motivation. When a specific snippet of code or config is the point, paste the relevant lines inline in a fenced block; a bare file path forces the reviewer to go fetch context the agent already has.
@@ -35,6 +35,7 @@ Citations from the investigation, one bullet per claim. Inline links to commits,
 Include ONLY when a reviewer would reasonably assume the issue covers something it doesn't — a tempting adjacent change, a sibling repo, a related symptom that's deliberately being left alone. There must be clear value in pre-empting that assumption. Skip the section entirely otherwise; do not write "N/A" and do not pad with non-goals nobody would have inferred.
 
 Rules:
+- Prose obeys the Writing style section of your system prompt: sentences under 25 words, simple past for what happened, active voice, no "should".
 - Plain-English title; a human-readable sentence, not a slug. Reviewers match issues across repos by eye.
 - No approach / design / code paragraphs in the body. Implementation belongs in the PR description.
 - Don't restate Evidence in the Description — Evidence grounds the finding; the Description names the problem.
@@ -61,6 +62,7 @@ Freeform prose. What was tested, how, anything reviewers should poke at themselv
 Optional. A hard problem the diff hides and how it was solved — the kind of thing a reviewer would otherwise have to reverse-engineer. Skip the section entirely when there is no story; do not write "N/A".
 
 Rules:
+- Prose obeys the WRITING STYLE section above: sentences under 25 words, simple past for what changed, active voice, no "should".
 - The PR explains the implementation; the issue explains the problem. Don't restate the issue body — the reviewer has read it.
 - The Description's first token must be ` + "`Fixes #<num>`" + ` — GitHub's auto-close linkage depends on it and the host does not add it.
 - Don't include the 🤖 trailer (the host adds it).

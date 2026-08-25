@@ -56,6 +56,8 @@ const wikiSchemaMarkdown = "# Wiki entry schema\n\n" +
 	"- `## Root cause` — prose with `[[wikilink]]` entity references\n" +
 	"- `## Fix` — what resolved it, plus things tried that didn't work\n\n" +
 	"Optional but encouraged: `## Lessons` (operator-facing + agent-retrospective).\n\n" +
+	"## Prose style\n\n" +
+	"Body prose obeys the Writing style section of your system prompt. `## Summary` and `## Root cause` are descriptive: simple past, sentences under 25 words, active voice. `## Fix` states what resolved the incident, then what was tried and did not work. In `## Lessons`, operator takeaways are imperative (\"Compare `-Xmx` with the container limit before you restart the pod.\") and the agent-workflow retrospective is descriptive, simple past (\"The collector check cost three turns and found nothing.\"). Do not repeat a fact in two sections.\n\n" +
 	"## Entity stubs\n\n" +
 	"Every new `[[wikilink]]` requires a sibling stub at `<vault>/entities/<type>/<name>.md`. Stub frontmatter:\n\n" +
 	"```yaml\n" +
