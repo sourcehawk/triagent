@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, type InputSchema, type PromOverride } from "@/lib/api";
+import { api, type InputSchema, type PlaybookListItem, type PromOverride } from "@/lib/api";
+import { selectablePlaybooks } from "@/lib/playbook-select";
 import { ArrowRightIcon } from "@/components/shared/Icons";
 import { Spinner } from "@/components/shared/Spinner";
 import { TextInput } from "@/components/inputs/TextInput";
@@ -14,6 +15,9 @@ export type FormSubmission = {
   inputs: Record<string, Record<string, unknown>>;
   prom: PromOverride;
   auto: boolean;
+  // playbook: id of the playbook the operator picked, or undefined for
+  // the profile's guided investigation flow.
+  playbook?: string;
 };
 
 type Props = {
@@ -24,6 +28,8 @@ export function InvestigationForm({ onSubmit }: Props) {
   const [schema, setSchema] = useState<InputSchema[] | null>(null);
   const [values, setValues] = useState<Record<string, Record<string, unknown>>>({});
   const [auto, setAuto] = useState(false);
+  const [playbooks, setPlaybooks] = useState<PlaybookListItem[]>([]);
+  const [playbook, setPlaybook] = useState("");
 
   // Prom override panel state — unchanged from today.
   const [showPromOverrides, setShowPromOverrides] = useState(false);
@@ -34,6 +40,12 @@ export function InvestigationForm({ onSubmit }: Props) {
 
   useEffect(() => {
     api.getProfileInputs().then(setSchema).catch(() => setSchema([]));
+    // The picker degrades to "default flow only" when the catalog
+    // can't be fetched; the operator can still start a session.
+    api
+      .listPlaybooks()
+      .then((items) => setPlaybooks(selectablePlaybooks(items)))
+      .catch(() => setPlaybooks([]));
     // Pre-populate prom override fields with the profile's defaults so the
     // operator sees what's currently configured. Functional setters so a
     // late-arriving fetch can't overwrite values the operator typed while
@@ -64,7 +76,7 @@ export function InvestigationForm({ onSubmit }: Props) {
       const portNum = parseInt(promPort, 10);
       if (!Number.isNaN(portNum) && portNum > 0) prom.port = portNum;
     }
-    onSubmit({ inputs: values, prom, auto });
+    onSubmit({ inputs: values, prom, auto, playbook: playbook || undefined });
   }
 
   function setValue(id: string, next: Record<string, unknown>) {
@@ -124,6 +136,28 @@ export function InvestigationForm({ onSubmit }: Props) {
             );
         }
       })}
+
+      {playbooks.length > 0 && (
+        <label className="block">
+          <span className="font-medium">Playbook</span>
+          <span className="block text-sm text-zinc-500">
+            Walk a specific playbook instead of the guided investigation flow.
+          </span>
+          <select
+            value={playbook}
+            onChange={(e) => setPlaybook(e.target.value)}
+            className={inputClass + " mt-2"}
+          >
+            <option value="">Guided investigation (default)</option>
+            {playbooks.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.id}
+                {p.symptom ? ` — ${p.symptom}` : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
 
       <label className="flex items-start gap-2 cursor-pointer">
         <input

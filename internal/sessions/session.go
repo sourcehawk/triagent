@@ -55,6 +55,33 @@ type Options struct {
 	// preflight (when known). Rendered as kubernetes-context in the
 	// opening prompt and exposed to namespace_derivation as "cluster".
 	Cluster string
+
+	// Playbook is the playbook id the operator selected at session
+	// start. When set, the session walks that playbook instead of the
+	// profile's guided investigation flow. Empty = profile defaults.
+	Playbook string
+}
+
+// promptEnv projects the options into the prompt environment Build
+// renders into the opening system prompt. Cluster feeds the
+// Environment block's kubernetes-context line so the agent sees the
+// context the launcher already seeded instead of "<unset>".
+func (o Options) promptEnv() prompts.Env {
+	clusterID := clusterIDFromNamespace(o.Namespace)
+	return prompts.Env{
+		Context:   o.Cluster,
+		UserNotes: o.UserNotes,
+		InputValues: map[string]map[string]any{
+			"cluster_id":    {"value": clusterID},
+			"incident_url":  {"value": o.IncidentURL},
+			"slack_channel": {"id": o.SlackChannelID, "name": o.SlackChannelName, "url": o.SlackChannelURL},
+			"notes":         {"value": o.UserNotes},
+		},
+		SlackMCPAvailable:      o.SlackMCPAvailable,
+		IncidentioMCPAvailable: o.IncidentioMCPAvailable,
+		LinkedRepos:            o.LinkedRepos,
+		Playbook:               o.Playbook,
+	}
 }
 
 // Session is a thin wrapper around claude.Session with prompt + allowed-tools
@@ -189,24 +216,9 @@ func (s *Session) Start(ctx context.Context) (<-chan claude.Event, error) {
 	return s.inner.Start(ctx, s.startPrompt())
 }
 
-// startPrompt renders the opening prompt from Options. Cluster feeds the
-// Environment block's kubernetes-context line so the agent sees the
-// context the launcher already seeded instead of "<unset>".
+// startPrompt renders the opening prompt from Options.
 func (s *Session) startPrompt() string {
-	clusterID := clusterIDFromNamespace(s.opts.Namespace)
-	return prompts.Build(prompts.Env{
-		Context:   s.opts.Cluster,
-		UserNotes: s.opts.UserNotes,
-		InputValues: map[string]map[string]any{
-			"cluster_id":    {"value": clusterID},
-			"incident_url":  {"value": s.opts.IncidentURL},
-			"slack_channel": {"id": s.opts.SlackChannelID, "name": s.opts.SlackChannelName, "url": s.opts.SlackChannelURL},
-			"notes":         {"value": s.opts.UserNotes},
-		},
-		SlackMCPAvailable:      s.opts.SlackMCPAvailable,
-		IncidentioMCPAvailable: s.opts.IncidentioMCPAvailable,
-		LinkedRepos:            s.opts.LinkedRepos,
-	}, s.opts.Profile)
+	return prompts.Build(s.opts.promptEnv(), s.opts.Profile)
 }
 
 // Resume continues the most-recent conversation with a follow-up prompt.

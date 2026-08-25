@@ -74,6 +74,7 @@ the token falls out of the address bar. The launcher stays alive in the terminal
 3. **Spawn the agent.** Claude is launched with that `mcp.json` plus a system prompt that points the agent at the
    `investigation` playbook. The agent is told nothing product-specific in prose; the playbooks carry the procedural
    knowledge.
+   The form's optional **Playbook** picker overrides this: when the operator selects a playbook (a release-verification runbook, say), the system prompt points the agent at that playbook instead, and the guided flow, including the closing `capture_offer` step, is skipped. The session header shows which playbook was selected.
 4. **Walk the playbook.** The agent calls `list_playbooks`, picks a matching domain playbook, and walks it: read step
    description, make suggested calls, call `step_complete` with findings and the matching goto. The activity panel
    renders every tool call live.

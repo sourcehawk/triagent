@@ -38,6 +38,12 @@ type Env struct {
 	// known-noop outcomes so the ingestion agent can dismiss similar
 	// signals on the next poll.
 	OriginatingSignalSet bool
+	// Playbook, when non-empty, is the playbook id the operator picked
+	// at session start. It replaces the profile's entrypoint playbook
+	// and suppresses the closing playbook: the session walks only the
+	// selected playbook, without the guided investigation flow around
+	// it. Empty means the profile defaults apply.
+	Playbook string
 }
 
 // incidentioRefFromURL extracts the trailing path segment of an
@@ -105,9 +111,13 @@ func Build(env Env, prof *profile.Profile) string {
 	b.WriteString("kubernetes-context: ")
 	b.WriteString(orUnset(env.Context))
 	b.WriteString("\nsuggested-entrypoint-playbook: ")
-	b.WriteString(prof.Playbooks.Entrypoint)
-	b.WriteString("\nsuggested-closing-playbook: ")
-	b.WriteString(prof.Playbooks.Closing)
+	if env.Playbook != "" {
+		b.WriteString(env.Playbook)
+	} else {
+		b.WriteString(prof.Playbooks.Entrypoint)
+		b.WriteString("\nsuggested-closing-playbook: ")
+		b.WriteString(prof.Playbooks.Closing)
+	}
 	b.WriteString("\n")
 
 	// Dynamic section: walk profile inputs in declaration order.
@@ -148,7 +158,11 @@ func Build(env Env, prof *profile.Profile) string {
 		b.WriteString("Write the wiki entry with `status: wontfix` and include enough ")
 		b.WriteString("symptom keywords for `wiki_correlate` to find it.\n")
 	}
-	b.WriteString("- Investigation playbooks: mcp__triagent-strategies__*   (start with `walk_playbook` against the `suggested-entrypoint-playbook` from the parameter block. Walk `suggested-closing-playbook` after every `summarize`.)")
+	if env.Playbook != "" {
+		b.WriteString("- Investigation playbooks: mcp__triagent-strategies__*   (the operator selected this playbook for the session. Start with `walk_playbook` against the `suggested-entrypoint-playbook` from the parameter block and follow it to completion. There is no closing playbook to walk afterwards.)")
+	} else {
+		b.WriteString("- Investigation playbooks: mcp__triagent-strategies__*   (start with `walk_playbook` against the `suggested-entrypoint-playbook` from the parameter block. Walk `suggested-closing-playbook` after every `summarize`.)")
+	}
 	b.WriteString("\n- Cluster-inspection tools: mcp__triagent-k8s__*   (read-only: list_resource_kinds, list_resources, get_resource, get_logs, list_events, list_namespaces, trace_crossplane). Pass `namespace` on every call. Default to `cluster-resource-namespace` from the parameter block. If it is `<unset>`, call `list_namespaces`.")
 	if env.IncidentioMCPAvailable {
 		b.WriteString("\n- incident.io tools: mcp__triagent-incidentio__*   (incidentio_get_incident, incidentio_get_timeline, incidentio_get_postmortem, incidentio_search_related). Pass `incident_id` on every call.")

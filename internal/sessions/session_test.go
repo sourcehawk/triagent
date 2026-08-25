@@ -140,6 +140,13 @@ func TestNew_ForwardsProfileInvestigationModel(t *testing.T) {
 	assert.Equal(t, "claude-opus-4-7", sess.inner.Model())
 }
 
+func TestPromptEnv_ForwardsSelectedPlaybook(t *testing.T) {
+	t.Parallel()
+	env := Options{Namespace: "abc-zeebe", Playbook: "release_verification"}.promptEnv()
+	assert.Equal(t, "release_verification", env.Playbook)
+	assert.Equal(t, "abc", env.InputValues["cluster_id"]["value"])
+}
+
 func TestStartPrompt_EmitsSeededKubeContext(t *testing.T) {
 	t.Parallel()
 	s := &Session{opts: Options{

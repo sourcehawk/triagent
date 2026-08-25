@@ -165,6 +165,14 @@ function HeaderTitle({ investigation }: { investigation: Investigation }) {
           {investigation.namespace}
         </p>
       )}
+      {investigation.playbook && (
+        <p
+          className="truncate text-xs text-zinc-500"
+          title="Playbook selected at session start"
+        >
+          playbook: <span className="font-mono">{investigation.playbook}</span>
+        </p>
+      )}
     </>
   );
 }
