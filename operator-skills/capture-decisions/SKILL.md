@@ -19,7 +19,7 @@ Your bullets name several routes, so the agent needs one unambiguous signal. The
 >
 > - Wiki: agreed, one entry. The symptom-to-resolution narrative is clear.
 > - Playbook: agreed, none. The triage steps do not repeat.
-> - Codefix: agreed, none. There is no named file to change.
+> - Codefix: agreed, none. The investigation surfaced no concrete change to any code, rule, or docs.
 >
 > wiki
 
