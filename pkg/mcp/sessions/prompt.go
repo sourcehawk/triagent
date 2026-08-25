@@ -12,7 +12,7 @@ import (
 // rules ride in the prompt itself.
 func buildDraftPrompt(outPath, metadataPath, eventsPath string) string {
 	return fmt.Sprintf(draftPromptTemplate, outPath, outPath, metadataPath, eventsPath) +
-		"\n# Writing style\n\nEvery section of the post-mortem obeys the rules below. The Summary, Findings, and Outcome sections are descriptive: simple past, active voice.\n\n" +
+		"\n# Writing style\n\nEvery section of the post-mortem obeys the rules below. The Summary, Findings, and Outcome sections are descriptive and active voice. Use the simple past for what happened and the simple present for what is still open (\"the alert remains disabled\").\n\n" +
 		skills.WritingSimply()
 }
 

@@ -56,6 +56,8 @@ Leave these exact even when they break a rule:
 - product names, config keys
 - `[N]` citation markers
 
+Redaction overrides this list. If a quoted line contains a token, password, or key, replace that value with `<redacted>` and keep the rest exact.
+
 ## Self-check
 
 Do this before you deliver. It is not optional. Do it silently: the deliverable contains the corrected text only, never the check results.
