@@ -25,7 +25,7 @@ description: Use when you consider calling `finish`, after the capture flow sett
 One sentence. It stays in the activity log. Write it for the person who reads this session in a month.
 
 > `finish("Capture flow complete. Wiki approved, codefix PR pending review.")`
-> `finish("Closed without findings. The symptom resolved before we could capture it.")`
+> `finish("Closed without findings. The symptom resolved before capture.")`
 > `finish("Dead end: the cluster was deleted mid-investigation.")`
 
 Do not summarize the investigation again. The agent's summary is the record.

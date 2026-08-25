@@ -12,7 +12,7 @@ Investigation playbooks live as structured data in `mcp__triagent-strategies__*`
 
 3. **Handoffs.** When a terminal step has a `handoff` array, call `walk_playbook` with that id and with `parent_session_id` set to the current session id. The parent link rejects circular handoffs (A to B to A). Always pass `parent_session_id` on a handoff. Omit it only for a new top-level investigation.
 
-4. **Conclusion.** When you reach a `terminal_advice` node in the final domain playbook of the chain, call `summarize`. The frontend renders the verdict (symptom, root cause, next steps, confidence) and the evidence as two separate cards. `symptom` and `root_cause` are Slack-shareable TL;DRs: no bullets, no log citations. `symptom` is at most two sentences. `root_cause` is two or three. All bullets, log lines, timestamps, and citations belong in `evidence`. Do not restate every tool call. The activity panel is the audit trail. You can add a one-line postscript in chat ("Anything else you'd like me to dig into?") and stop.
+4. **Conclusion.** When you reach a `terminal_advice` node in the final domain playbook of the chain, call `summarize`. The frontend renders the verdict (symptom, root cause, next steps, confidence) and the evidence as two separate cards. `symptom` and `root_cause` are Slack-shareable summaries: no bullets, no log citations. `symptom` is at most two sentences. `root_cause` is two or three. All bullets, log lines, timestamps, and citations belong in `evidence`. Do not restate every tool call. The activity panel is the audit trail. You can add a one-line postscript in chat ("Is there anything else to look into?") and stop.
 
 ## Follow-up turns
 

@@ -415,7 +415,7 @@ func buildWikiEditor(subject WikiSubject, env BaseEnv, prof *profile.Profile) st
 	} else if env.Sources.HasSlack() || env.Sources.HasIncidentio() || env.Sources.HasInvestigation() {
 		// Backfill mode: operator attached at least one specific source.
 		// Walk the meta-playbook end-to-end without confirmation.
-		b.WriteString("\n## Backfill resolved incident\n\nThe homepage's *New wiki entry* modal created this session with sources attached. Walk the `wiki_backfill_ingestion` meta-playbook end-to-end through `mcp__triagent-strategies__walk_playbook`: ingest the sources, draft, validate, and propose. Do not ask the operator to confirm. The modal already did. Begin now: call `mcp__triagent-strategies__list_playbooks` to make sure that the playbook is loaded, then call `mcp__triagent-strategies__walk_playbook` with id `wiki_backfill_ingestion`.")
+		b.WriteString("\n## Backfill resolved incident\n\nThe homepage's *New wiki entry* modal created this session with sources attached. Walk the `wiki_backfill_ingestion` meta-playbook end-to-end through `mcp__triagent-strategies__walk_playbook`: ingest the sources, draft, validate, and propose. Do not ask the operator to confirm. The modal already did. Begin now. First call `mcp__triagent-strategies__list_playbooks` to make sure that the playbook is loaded. Then call `mcp__triagent-strategies__walk_playbook` with id `wiki_backfill_ingestion`.")
 	} else {
 		// No specific scope attached. Even when slack/incidentio MCPs
 		// are wired (token linked), nothing is pre-pinned, so don't

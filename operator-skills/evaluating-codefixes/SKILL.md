@@ -41,7 +41,7 @@ Ask whether the fix is real, whether it addresses the root cause, and whether th
 
 > Is the circuit breaker a known pattern here, or speculative? If speculative, I prefer a wiki note to a PR draft.
 
-> Would the alert have fired early enough to shorten triage? If the OOM follows the scrape spike within 30 seconds, a 1-minute window does not help.
+> Does the alert fire early enough to shorten triage? If the OOM follows the scrape spike within 30 seconds, a 1-minute window does not help.
 
 The agent's answer tells you the route.
 
