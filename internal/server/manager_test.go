@@ -247,14 +247,17 @@ func TestManager_EnableAuto_ExtractFailureDoesNotPublishStarted(t *testing.T) {
 	inv := mgr.RegisterForTest("inv-extract-fail")
 	require.NoError(t, os.MkdirAll(inv.SessionDir, 0o700))
 
-	// A regular file where the operator cwd should be: MkdirAll on
-	// <cwd>/.claude/skills fails with ENOTDIR.
-	notADir := filepath.Join(t.TempDir(), "cwd")
-	require.NoError(t, os.WriteFile(notADir, []byte("x"), 0o600))
+	// Let the operator skills extract, then block the shared-skill slug
+	// with a regular file so skills.Extract fails on MkdirAll with
+	// ENOTDIR. This pins the shared-skill failure path specifically.
+	cwd := t.TempDir()
+	skillsDir := filepath.Join(cwd, ".claude", "skills")
+	require.NoError(t, os.MkdirAll(skillsDir, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(skillsDir, "writing-simply"), []byte("x"), 0o600))
 
 	factoryCalled := false
 	opts := AutoOptions{
-		OperatorCwd: notADir,
+		OperatorCwd: cwd,
 		Briefing:    "test",
 		BackendFactory: func(_ AutoOptions) (autoBackendish, error) {
 			factoryCalled = true
