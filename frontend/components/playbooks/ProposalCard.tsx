@@ -83,7 +83,9 @@ export function ProposalCard({
       ? { base_yaml: payload.base_yaml, new_yaml: payload.new_yaml }
       : null,
   );
-  const isNew = !body?.base_yaml || body.base_yaml.trim() === "";
+  // Unknown until the body is known: the header shows no
+  // new-vs-update label while hydrating rather than guessing "new".
+  const isNew = body ? !body.base_yaml || body.base_yaml.trim() === "" : null;
 
   // On mount, ask the server whether this proposal is still pending.
   // Reloading a chat after the operator approved/declined elsewhere
@@ -201,9 +203,11 @@ export function ProposalCard({
           <span className="font-mono text-xs text-zinc-100">
             {payload.playbook_id}
           </span>
-          <span className="font-mono text-xs text-zinc-500">
-            {isNew ? "new playbook" : "current → proposed"}
-          </span>
+          {isNew !== null && (
+            <span className="font-mono text-xs text-zinc-500">
+              {isNew ? "new playbook" : "current → proposed"}
+            </span>
+          )}
         </div>
       </div>
 

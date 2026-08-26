@@ -53,6 +53,14 @@ describe("ProposalCard body hydration", () => {
     expect(screen.getByRole("button", { name: /approve/i })).toBeInTheDocument();
   });
 
+  it("shows no new-vs-update label while the body is still loading", async () => {
+    vi.spyOn(api, "getPlaybookProposal").mockReturnValue(new Promise(() => {}));
+    render(<ProposalCard payload={payload} onSendRefinement={vi.fn()} />);
+    expect(await screen.findByText(/loading diff/i)).toBeInTheDocument();
+    expect(screen.queryByText("new playbook")).not.toBeInTheDocument();
+    expect(screen.queryByText("current → proposed")).not.toBeInTheDocument();
+  });
+
   it("treats an empty fetched base as a new playbook", async () => {
     vi.spyOn(api, "getPlaybookProposal").mockResolvedValue({
       proposal_id: payload.proposal_id,
