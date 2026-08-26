@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, type InputSchema, type PlaybookListItem, type PromOverride } from "@/lib/api";
-import { selectablePlaybooks } from "@/lib/playbook-select";
+import { api, type InputSchema, type PlaybookListItem, type PlaybookTypeItem, type PromOverride } from "@/lib/api";
+import { groupPlaybooks } from "@/lib/playbook-select";
 import { ArrowRightIcon } from "@/components/shared/Icons";
 import { Spinner } from "@/components/shared/Spinner";
 import { TextInput } from "@/components/inputs/TextInput";
@@ -29,6 +29,8 @@ export function InvestigationForm({ onSubmit }: Props) {
   const [values, setValues] = useState<Record<string, Record<string, unknown>>>({});
   const [auto, setAuto] = useState(false);
   const [playbooks, setPlaybooks] = useState<PlaybookListItem[]>([]);
+  const [playbookTypes, setPlaybookTypes] = useState<PlaybookTypeItem[]>([]);
+  const [category, setCategory] = useState("");
   const [playbook, setPlaybook] = useState("");
 
   // Prom override panel state — unchanged from today.
@@ -44,8 +46,14 @@ export function InvestigationForm({ onSubmit }: Props) {
     // can't be fetched; the operator can still start a session.
     api
       .listPlaybooks()
-      .then((items) => setPlaybooks(selectablePlaybooks(items)))
+      .then(setPlaybooks)
       .catch(() => setPlaybooks([]));
+    // Type descriptions only decorate the category picker; a failed
+    // fetch leaves the groups undescribed, not the picker empty.
+    api
+      .listPlaybookTypes()
+      .then(setPlaybookTypes)
+      .catch(() => setPlaybookTypes([]));
     // Pre-populate prom override fields with the profile's defaults so the
     // operator sees what's currently configured. Functional setters so a
     // late-arriving fetch can't overwrite values the operator typed while
@@ -81,6 +89,23 @@ export function InvestigationForm({ onSubmit }: Props) {
 
   function setValue(id: string, next: Record<string, unknown>) {
     setValues((prev) => ({ ...prev, [id]: next }));
+  }
+
+  const groups = groupPlaybooks(playbooks, playbookTypes);
+  const activeGroup = groups.find((g) => g.name === category);
+  const visiblePlaybooks = activeGroup ? activeGroup.playbooks : groups.flatMap((g) => g.playbooks);
+  const chosenPlaybook = visiblePlaybooks.find((p) => p.id === playbook);
+
+  function pickCategory(next: string) {
+    setCategory(next);
+    const stillVisible = groups.find((g) => g.name === next)?.playbooks.some((p) => p.id === playbook);
+    if (next && !stillVisible) setPlaybook("");
+  }
+
+  function pickPlaybook(next: string) {
+    setPlaybook(next);
+    const owner = groups.find((g) => g.playbooks.some((p) => p.id === next));
+    if (owner) setCategory(owner.name);
   }
 
   return (
@@ -137,26 +162,55 @@ export function InvestigationForm({ onSubmit }: Props) {
         }
       })}
 
-      {playbooks.length > 0 && (
-        <label className="block">
+      {groups.length > 0 && (
+        <div>
           <span className="font-medium">Playbook</span>
           <span className="block text-sm text-zinc-500">
             Walk a specific playbook instead of the guided investigation flow.
           </span>
-          <select
-            value={playbook}
-            onChange={(e) => setPlaybook(e.target.value)}
-            className={inputClass + " mt-2"}
-          >
-            <option value="">Guided investigation (default)</option>
-            {playbooks.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.id}
-                {p.symptom ? ` — ${p.symptom}` : ""}
-              </option>
-            ))}
-          </select>
-        </label>
+          <div className="mt-2 grid max-w-2xl gap-3 sm:grid-cols-2">
+            <label className="block min-w-0">
+              <span className="block text-sm font-medium">Category</span>
+              <select
+                value={category}
+                onChange={(e) => pickCategory(e.target.value)}
+                className={inputClass + " mt-1"}
+              >
+                <option value="">All categories</option>
+                {groups.map((g) => (
+                  <option key={g.name} value={g.name}>
+                    {g.name}
+                  </option>
+                ))}
+              </select>
+              {activeGroup?.description && (
+                <span className="mt-1 block break-words text-sm text-zinc-500">
+                  {activeGroup.description}
+                </span>
+              )}
+            </label>
+            <label className="block min-w-0">
+              <span className="block text-sm font-medium">Playbook</span>
+              <select
+                value={playbook}
+                onChange={(e) => pickPlaybook(e.target.value)}
+                className={inputClass + " mt-1"}
+              >
+                <option value="">Guided investigation (default)</option>
+                {visiblePlaybooks.map((p) => (
+                  <option key={p.id} value={p.id} title={p.symptom || p.description}>
+                    {p.id}
+                  </option>
+                ))}
+              </select>
+              {chosenPlaybook && (chosenPlaybook.symptom || chosenPlaybook.description) && (
+                <span className="mt-1 block break-words text-sm text-zinc-500">
+                  {chosenPlaybook.symptom || chosenPlaybook.description}
+                </span>
+              )}
+            </label>
+          </div>
+        </div>
       )}
 
       <label className="flex items-start gap-2 cursor-pointer">
