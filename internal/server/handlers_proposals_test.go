@@ -265,3 +265,26 @@ func TestHandleGetProposal_BaseComesFromLoadedSetRenderedCanonically(t *testing.
 	assert.Contains(t, base, "broker restarts", "system-tier playbook must serve as the diff base")
 	assert.NotContains(t, base, "symptom:    ", "base must be canonically rendered, not the raw file")
 }
+
+// A playbook set that fails to load must surface as an error, not as an
+// empty base: an empty base renders the proposal as a brand-new playbook,
+// which would silently mislabel an update.
+func TestHandleGetProposal_LoadFailureIsAnError(t *testing.T) {
+	t.Parallel()
+	userDir := t.TempDir()
+	typeDir := filepath.Join(userDir, "proposals", "investigation")
+	require.NoError(t, os.MkdirAll(typeDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(typeDir, "broker-crashloop__prop-aaaaaaaaaaaa.yaml"), []byte("id: broker-crashloop\n"), 0o644))
+	// A YAML at the user dir root violates the <type>/<id>.yaml layout and
+	// makes the loader fail.
+	require.NoError(t, os.WriteFile(filepath.Join(userDir, "stray.yaml"), []byte("id: stray\n"), 0o644))
+
+	a := &apiHandlers{opts: Options{UserPlaybooksDir: userDir}}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/playbook-proposals/prop-aaaaaaaaaaaa", nil)
+	req.SetPathValue("id", "prop-aaaaaaaaaaaa")
+	a.handleGetProposal(rec, req)
+
+	assert.Equal(t, http.StatusInternalServerError, rec.Code, "body %s", rec.Body.String())
+	assert.Contains(t, rec.Body.String(), "load playbook set")
+}

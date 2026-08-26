@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -188,7 +189,11 @@ func (a *apiHandlers) handleGetProposal(w http.ResponseWriter, r *http.Request) 
 	// Determine base YAML from the currently-loaded playbook set so
 	// the diff renders against what's actually live (plugin, system,
 	// or user override).
-	baseYAML := loadBaseForID(a.opts, playbookID)
+	baseYAML, err := loadBaseForID(a.opts, playbookID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"proposal_id": proposalID,
 		"playbook_id": playbookID,
@@ -346,22 +351,23 @@ func readDraftFromDir(dir, proposalID string) (playbookID, body string, err erro
 // merge the MCP loads at startup (user overrides plugin; the locked
 // system tier wins over both), re-rendered through the shared
 // serialiser so the proposal diff surfaces semantic deltas rather than
-// on-disk formatting. Returns "" for a brand-new id (or when the set
-// can't be loaded); the diff card renders that as a new playbook.
-func loadBaseForID(opts Options, id string) string {
+// on-disk formatting. Returns "" for a brand-new id, which the diff card
+// renders as a new playbook; a set that fails to load is an error, not an
+// empty base, so an update is never mislabelled as new.
+func loadBaseForID(opts Options, id string) (string, error) {
 	books, err := strategies.LoadPlaybooksFrom(opts.PluginPlaybooksDir, opts.SystemPlaybooksDir, opts.UserPlaybooksDir)
 	if err != nil {
-		return ""
+		return "", fmt.Errorf("load playbook set: %w", err)
 	}
 	pb, ok := books[id]
 	if !ok {
-		return ""
+		return "", nil
 	}
 	rendered, err := strategies.RenderPlaybookYAML(pb)
 	if err != nil {
-		return ""
+		return "", fmt.Errorf("render base playbook %s: %w", id, err)
 	}
-	return rendered
+	return rendered, nil
 }
 
 // proposalResolution is the outcome marker we persist when a playbook
