@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { InvestigationForm } from "@/components/investigations/InvestigationForm";
 import { api } from "@/lib/api";
 
@@ -155,6 +155,11 @@ describe("InvestigationForm", () => {
       vi.spyOn(api, "listPlaybooks").mockResolvedValue([
         { id: "investigation", source: "system", locked: true, nodeCount: 1, yaml: "", syncState: synced, type: "general" },
         { id: "release_verification", symptom: "Verify a release", source: "user", nodeCount: 1, yaml: "", syncState: synced, type: "general" },
+        { id: "pod_crashloop", symptom: "Pods restart in a loop", source: "plugin", nodeCount: 1, yaml: "", syncState: synced, type: "investigation" },
+      ]);
+      vi.spyOn(api, "listPlaybookTypes").mockResolvedValue([
+        { name: "investigation", description: "Hunt a live incident", source: "system", tracked: true },
+        { name: "general", description: "Routine operational work", source: "system", tracked: true },
       ]);
     }
 
@@ -175,11 +180,40 @@ describe("InvestigationForm", () => {
       render(<InvestigationForm onSubmit={onSubmit} />);
       await screen.findByPlaceholderText("enter notes");
       await screen.findByRole("option", { name: /release_verification/ });
-      expect(screen.queryByRole("option", { name: /^investigation/ })).toBeNull();
+      expect(within(screen.getByLabelText(/^Playbook/i)).queryByRole("option", { name: /^investigation/ })).toBeNull();
 
-      fireEvent.change(screen.getByLabelText(/Playbook/i), { target: { value: "release_verification" } });
+      fireEvent.change(screen.getByLabelText(/^Playbook/i), { target: { value: "release_verification" } });
       fireEvent.click(screen.getByRole("button", { name: /run preflight/i }));
       expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ playbook: "release_verification" }));
+    });
+
+    it("filters playbooks by category and describes both picks", async () => {
+      setup();
+      render(<InvestigationForm onSubmit={() => {}} />);
+      await screen.findByRole("option", { name: /release_verification/ });
+
+      fireEvent.change(screen.getByLabelText(/Category/i), { target: { value: "general" } });
+      expect(screen.getByText("Routine operational work")).toBeInTheDocument();
+      expect(screen.queryByRole("option", { name: /pod_crashloop/ })).toBeNull();
+      expect(screen.getByRole("option", { name: /release_verification/ })).toBeInTheDocument();
+
+      fireEvent.change(screen.getByLabelText(/^Playbook/i), { target: { value: "release_verification" } });
+      expect(screen.getByText("Verify a release")).toBeInTheDocument();
+    });
+
+    it("clears a chosen playbook when the category no longer contains it", async () => {
+      setup();
+      const onSubmit = vi.fn();
+      render(<InvestigationForm onSubmit={onSubmit} />);
+      await screen.findByRole("option", { name: /release_verification/ });
+
+      fireEvent.change(screen.getByLabelText(/^Playbook/i), { target: { value: "release_verification" } });
+      // Picking a playbook snaps the category to its type.
+      expect((screen.getByLabelText(/Category/i) as HTMLSelectElement).value).toBe("general");
+
+      fireEvent.change(screen.getByLabelText(/Category/i), { target: { value: "investigation" } });
+      fireEvent.click(screen.getByRole("button", { name: /run preflight/i }));
+      expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ playbook: undefined }));
     });
   });
 });
