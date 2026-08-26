@@ -165,16 +165,15 @@ export function InvestigationForm({ onSubmit }: Props) {
       {groups.length > 0 && (
         <div>
           <span className="font-medium">Playbook</span>
-          <span className="block text-sm text-zinc-500">
+          <span className="block text-xs text-zinc-500">
             Walk a specific playbook instead of the guided investigation flow.
           </span>
-          <div className="mt-2 grid max-w-2xl gap-3 sm:grid-cols-2">
-            <label className="block min-w-0">
-              <span className="block text-sm font-medium">Category</span>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <Field label="Category">
               <select
                 value={category}
                 onChange={(e) => pickCategory(e.target.value)}
-                className={inputClass + " mt-1"}
+                className={inputClass}
               >
                 <option value="">All categories</option>
                 {groups.map((g) => (
@@ -184,17 +183,14 @@ export function InvestigationForm({ onSubmit }: Props) {
                 ))}
               </select>
               {activeGroup?.description && (
-                <span className="mt-1 block break-words text-sm text-zinc-500">
-                  {activeGroup.description}
-                </span>
+                <p className="mt-1 break-words text-xs text-zinc-500">{activeGroup.description}</p>
               )}
-            </label>
-            <label className="block min-w-0">
-              <span className="block text-sm font-medium">Playbook</span>
+            </Field>
+            <Field label="Playbook">
               <select
                 value={playbook}
                 onChange={(e) => pickPlaybook(e.target.value)}
-                className={inputClass + " mt-1"}
+                className={inputClass}
               >
                 <option value="">Guided investigation (default)</option>
                 {visiblePlaybooks.map((p) => (
@@ -204,11 +200,11 @@ export function InvestigationForm({ onSubmit }: Props) {
                 ))}
               </select>
               {chosenPlaybook && (chosenPlaybook.symptom || chosenPlaybook.description) && (
-                <span className="mt-1 block break-words text-sm text-zinc-500">
+                <p className="mt-1 break-words text-xs text-zinc-500">
                   {chosenPlaybook.symptom || chosenPlaybook.description}
-                </span>
+                </p>
               )}
-            </label>
+            </Field>
           </div>
         </div>
       )}
