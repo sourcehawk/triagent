@@ -2,6 +2,7 @@ package strategies
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -75,4 +76,39 @@ nodes:
 	require.NoError(t, err)
 	assert.Empty(t, out.ValidationErrors)
 	assert.NotEmpty(t, out.ProposalID)
+}
+
+func TestProposePlaybookDraft_ResultOmitsYAMLBodies(t *testing.T) {
+	t.Parallel()
+	srv := newServerWithUserPlaybooksDir(t)
+	yaml := `id: testpb
+schema_version: 1
+symptom: test
+entrypoint: a
+nodes:
+  a:
+    description: a
+    terminal_advice: done
+`
+	_, out, err := srv.proposePlaybookDraft(context.Background(), nil, proposePlaybookDraftIn{
+		YAML: yaml,
+		Type: "investigation",
+		Why:  "test",
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, out.ProposalID)
+
+	// The tool result lands in the model's context. A real playbook is
+	// tens of KB per side, and inlining both diff bodies pushed the result
+	// past the CLI's per-result cap, which replaces the JSON with an error
+	// string the chat UI can't parse. The launcher serves the bodies via
+	// GET /api/playbook-proposals/{id}; the result only identifies the draft.
+	raw, err := json.Marshal(out)
+	require.NoError(t, err)
+	var keys map[string]any
+	require.NoError(t, json.Unmarshal(raw, &keys))
+	assert.NotContains(t, keys, "new_yaml")
+	assert.NotContains(t, keys, "base_yaml")
+	assert.Equal(t, "testpb", keys["playbook_id"])
+	assert.Equal(t, "investigation", keys["type"])
 }

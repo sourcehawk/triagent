@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sourcehawk/triagent/pkg/mcp/strategies"
 	"gopkg.in/yaml.v3"
 )
 
@@ -185,9 +187,13 @@ func (a *apiHandlers) handleGetProposal(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	// Determine base YAML from the currently-loaded playbook set so
-	// the diff renders against what's actually live (system embedded
+	// the diff renders against what's actually live (plugin, system,
 	// or user override).
-	baseYAML := loadBaseForID(a.opts.UserPlaybooksDir, playbookID)
+	baseYAML, err := loadBaseForID(a.opts, playbookID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"proposal_id": proposalID,
 		"playbook_id": playbookID,
@@ -340,17 +346,28 @@ func readDraftFromDir(dir, proposalID string) (playbookID, body string, err erro
 	return "", "", os.ErrNotExist
 }
 
-// loadBaseForID returns the YAML of the currently-saved user playbook
-// with the given id (single-file layout: <type>/<id>.yaml). Returns ""
-// for a brand-new id or one that only exists in the system set (no user
-// file yet).
-func loadBaseForID(dir, id string) string {
-	if groups, err := loadUserPlaybookGroups(dir); err == nil {
-		if g, ok := groups[id]; ok {
-			return g.YAML
-		}
+// loadBaseForID returns the canonical YAML of the playbook the running
+// strategies MCP would resolve for id: the same plugin → user → system
+// merge the MCP loads at startup (user overrides plugin; the locked
+// system tier wins over both), re-rendered through the shared
+// serialiser so the proposal diff surfaces semantic deltas rather than
+// on-disk formatting. Returns "" for a brand-new id, which the diff card
+// renders as a new playbook; a set that fails to load is an error, not an
+// empty base, so an update is never mislabelled as new.
+func loadBaseForID(opts Options, id string) (string, error) {
+	books, err := strategies.LoadPlaybooksFrom(opts.PluginPlaybooksDir, opts.SystemPlaybooksDir, opts.UserPlaybooksDir)
+	if err != nil {
+		return "", fmt.Errorf("load playbook set: %w", err)
 	}
-	return ""
+	pb, ok := books[id]
+	if !ok {
+		return "", nil
+	}
+	rendered, err := strategies.RenderPlaybookYAML(pb)
+	if err != nil {
+		return "", fmt.Errorf("render base playbook %s: %w", id, err)
+	}
+	return rendered, nil
 }
 
 // proposalResolution is the outcome marker we persist when a playbook

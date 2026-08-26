@@ -683,10 +683,10 @@ nodes:
 	require.Empty(t, errs)
 	require.Equal(t, "round_trip_target", pb.Nodes["a"].DelegateTo)
 
-	rendered, err := renderPlaybookYAML(pb)
+	rendered, err := RenderPlaybookYAML(pb)
 	require.NoError(t, err)
 	assert.Contains(t, rendered, "delegate_to: round_trip_target",
-		"renderPlaybookYAML must preserve delegate_to")
+		"RenderPlaybookYAML must preserve delegate_to")
 
 	// And the rendered output must itself parse + validate cleanly.
 	pb2, errs2 := ParseAndValidatePlaybookYAML([]byte(rendered))

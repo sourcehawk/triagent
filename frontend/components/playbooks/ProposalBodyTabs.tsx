@@ -10,7 +10,7 @@ import {
 import dynamic from "next/dynamic";
 import { parsePlaybookYAML, type Playbook } from "@/lib/playbook";
 import { PlaybookGraph } from "@/components/playbooks/PlaybookGraph";
-import type { ProposalDraftPayload } from "@/components/playbooks/ProposalCard";
+import type { ProposalBody } from "@/components/playbooks/ProposalCard";
 
 // react-diff-viewer-continued is client-only and pulls in
 // styled-components. Dynamic import keeps SSR clean.
@@ -24,14 +24,14 @@ const DiffViewer = dynamic(() => import("react-diff-viewer-continued"), {
 type Tab = "diagram" | "yaml";
 
 type Props = {
-  payload: ProposalDraftPayload;
+  body: ProposalBody;
   // Initial tab. Auto-overridden to "yaml" if proposed YAML fails to
   // parse. Default: "diagram".
   defaultTab?: Tab;
 };
 
-export function ProposalBodyTabs({ payload, defaultTab = "diagram" }: Props) {
-  const parsed = useMemo(() => parseSides(payload), [payload]);
+export function ProposalBodyTabs({ body, defaultTab = "diagram" }: Props) {
+  const parsed = useMemo(() => parseSides(body), [body]);
   const proposedBroken = parsed.proposed === null;
   const baseBroken = parsed.base === "error";
 
@@ -73,7 +73,7 @@ export function ProposalBodyTabs({ payload, defaultTab = "diagram" }: Props) {
           baseBroken={baseBroken}
         />
       ) : (
-        <YamlPane payload={payload} />
+        <YamlPane body={body} />
       )}
     </div>
   );
@@ -149,13 +149,13 @@ function DiagramPane({
   );
 }
 
-function YamlPane({ payload }: { payload: ProposalDraftPayload }) {
-  const isNew = !payload.base_yaml || payload.base_yaml.trim() === "";
+function YamlPane({ body }: { body: ProposalBody }) {
+  const isNew = !body.base_yaml || body.base_yaml.trim() === "";
   return (
     <div className="max-h-[60vh] overflow-y-auto rounded border border-zinc-800 bg-zinc-950/60">
       <DiffViewer
-        oldValue={payload.base_yaml ?? ""}
-        newValue={payload.new_yaml}
+        oldValue={body.base_yaml ?? ""}
+        newValue={body.new_yaml}
         splitView
         useDarkTheme
         hideLineNumbers={false}
@@ -219,16 +219,16 @@ type ParsedSides = {
   base: Playbook | undefined | "error";
 };
 
-function parseSides(payload: ProposalDraftPayload): ParsedSides {
+function parseSides(body: ProposalBody): ParsedSides {
   let proposed: Playbook | null = null;
   try {
-    proposed = parsePlaybookYAML(payload.new_yaml);
+    proposed = parsePlaybookYAML(body.new_yaml);
   } catch {
     proposed = null;
   }
 
   let base: Playbook | undefined | "error";
-  const raw = payload.base_yaml ?? "";
+  const raw = body.base_yaml ?? "";
   if (raw.trim() === "") {
     base = undefined;
   } else {
