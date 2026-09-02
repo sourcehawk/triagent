@@ -192,3 +192,32 @@ nodes:
 	assert.Contains(t, out.YAML, "local override")
 	assert.NotContains(t, out.YAML, "upstream copy")
 }
+
+// TestGetPlaybookRaw_LockedReadsSystemDirBytes: locked metas live at
+// <systemPlaybooksDir>/<type>/<id>.yaml; the raw bytes come from there
+// (comments intact) and the source is reported as "system".
+func TestGetPlaybookRaw_LockedReadsSystemDirBytes(t *testing.T) {
+	t.Parallel()
+	systemDir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(systemDir, "system"), 0o755))
+	body := `# keep this comment
+id: locked_meta
+schema_version: 1
+symptom: locked
+entrypoint: a
+nodes:
+  a:
+    description: a
+    terminal_advice: done
+`
+	require.NoError(t, os.WriteFile(filepath.Join(systemDir, "system", "locked_meta.yaml"), []byte(body), 0o644))
+
+	srv, err := New(Options{SystemPlaybooksDir: systemDir})
+	require.NoError(t, err)
+	res, out, err := srv.getPlaybookRaw(context.Background(), nil, getPlaybookRawIn{ID: "locked_meta"})
+	require.NoError(t, err)
+	require.Nil(t, res)
+	assert.Equal(t, "system", out.Type)
+	assert.Equal(t, "system", out.Source)
+	assert.Equal(t, body, out.YAML)
+}

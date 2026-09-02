@@ -227,11 +227,17 @@ func (s *Server) getPlaybookRaw(ctx context.Context, req *mcp.CallToolRequest, i
 		return errorResult(fmt.Sprintf("playbook %q not found; call list_playbooks for valid ids", in.ID)), getPlaybookRawOut{}, nil
 	}
 	out := getPlaybookRawOut{ID: in.ID, Type: pb.Type}
-	// The active copy wins. A user-dir file overrides the plugin
-	// tier, so a revision has to start from it or the operator's
-	// local edits vanish on approve. Raw bytes keep comments and
-	// formatting intact.
-	if !pb.Locked && pb.Type != "" && s.userPlaybooksDir != "" {
+	// Raw bytes come from the tier the loaded copy was read from, so
+	// comments and formatting survive. Locked metas live under the
+	// launcher-bundled dir; for the rest the active copy wins — a
+	// user-dir file overrides the plugin tier, so a revision has to
+	// start from it or the operator's local edits vanish on approve.
+	if pb.Locked {
+		if data, err := os.ReadFile(filepath.Join(s.systemPlaybooksDir, pb.Type, in.ID+".yaml")); err == nil {
+			out.YAML, out.Source = string(data), "system"
+			return nil, out, nil
+		}
+	} else if pb.Type != "" && s.userPlaybooksDir != "" {
 		if data, err := os.ReadFile(filepath.Join(s.userPlaybooksDir, pb.Type, in.ID+".yaml")); err == nil {
 			out.YAML, out.Source = string(data), "user"
 			return nil, out, nil
@@ -245,9 +251,9 @@ func (s *Server) getPlaybookRaw(ctx context.Context, req *mcp.CallToolRequest, i
 		out.YAML, out.Source = raw.YAML, "system"
 		return nil, out, nil
 	}
-	// Loaded from memory only (locked metas): re-serialise the parsed
-	// form. Round-trips cleanly for our own validator but loses
-	// comments/exact whitespace.
+	// No file on disk to hand back (in-memory fixtures): re-serialise
+	// the parsed form. Round-trips cleanly for our own validator but
+	// loses comments/exact whitespace.
 	rendered, err := RenderPlaybookYAML(pb)
 	if err != nil {
 		return errorResult(fmt.Sprintf("render user playbook %q: %v", in.ID, err)), getPlaybookRawOut{}, nil
