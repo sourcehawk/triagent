@@ -74,7 +74,7 @@ export function ToolPicker({ value, onChange, catalog, disabled }: Props) {
         <span className="flex items-center gap-1.5">
           {value && !known && (
             <span
-              title="Tool not in current catalog — typo, renamed, or from a newer triagent-mcp version"
+              title="Tool not in current catalog — typo, renamed, a repo that isn't linked, or from a newer triagent-mcp version"
               className="rounded bg-amber-900/60 px-1 text-xs text-amber-200"
             >
               unknown
