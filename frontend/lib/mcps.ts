@@ -145,12 +145,8 @@ export function logicalServer(wireAlias: string): string {
 // written against the template form still resolve; one copy per alias
 // follows in repo order, deduped when two repos resolve to one alias.
 export function expandRepoAliases(tools: ToolEntry[], repos: LinkedRepo[]): ToolEntry[] {
-  const aliases: string[] = [];
-  for (const r of repos) {
-    const alias = r.alias || r.name;
-    if (!aliases.includes(alias)) aliases.push(alias);
-  }
-  if (aliases.length === 0) return tools;
+  const aliases = new Set(repos.map((r) => r.alias || r.name));
+  if (aliases.size === 0) return tools;
   const gitTools = tools.filter((t) => t.server === "triagent-git");
   const out = [...tools];
   for (const alias of aliases) {
