@@ -339,8 +339,10 @@ func LoadPlaybooksFrom(pluginDir, systemDir string, userDirs ...string) (map[str
 // playbook they don't want.
 //
 // Per-id invariant: an id may NOT span multiple type directories in
-// the same user dir. The loader rejects collisions so the type of an
-// id stays unambiguous.
+// the same user dir. WriteUserPlaybook refuses to create a second slot;
+// if one exists anyway, the loader keeps the copy in the first type dir
+// (directory order) and soft-skips the rest so the type of an id stays
+// unambiguous without taking the server down.
 func loadUserDir(dir string) (map[string]*Playbook, error) {
 	typeDirs, err := os.ReadDir(dir)
 	if err != nil {
@@ -401,7 +403,14 @@ func loadUserDir(dir string) (map[string]*Playbook, error) {
 			}
 			pb.Type = typeName
 			if existingType, dup := idType[pb.ID]; dup && existingType != typeName {
-				return nil, fmt.Errorf("user playbook id %q exists in multiple type dirs (%s and %s); pick one", pb.ID, existingType, typeName)
+				// Soft-skip the later copy rather than hard-fail: a
+				// hard error here takes the whole strategies MCP down
+				// on startup for every new session, dragging every
+				// playbook with it. Directory order is stable, so the
+				// first type dir keeps the id; warn so the operator can
+				// delete the stray copy.
+				fmt.Fprintf(os.Stderr, "strategies: skipping user playbook %s/%s: id %q already loaded from %s/%s (an id lives in one type dir; delete the copy that should not exist)\n", typeName, name, pb.ID, existingType, name)
+				continue
 			}
 			idType[pb.ID] = typeName
 			out[pb.ID] = pb
@@ -892,7 +901,7 @@ func WriteUserPlaybook(dir, typeName, id, body string, activate bool) (validatio
 
 // userTypeDirHolding returns the type dir under dir that already holds
 // <id>.yaml, or "" when none does. Keeps an id in a single type slot:
-// loadUserDir refuses a user dir where one id spans two type dirs.
+// loadUserDir only honours one copy when an id spans two type dirs.
 func userTypeDirHolding(dir, id string) string {
 	entries, err := os.ReadDir(dir)
 	if err != nil {

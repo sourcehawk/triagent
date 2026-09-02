@@ -171,6 +171,46 @@ nodes:
 	assert.False(t, present, "broken playbook should have been skipped")
 }
 
+// TestLoadPlaybooksFrom_IdInTwoTypeDirs keeps the strategies MCP up
+// when one id has a copy under two type dirs — the state an older
+// approve left behind before WriteUserPlaybook refused the second slot.
+// The first type dir in directory order wins, the other copy is skipped
+// with a stderr warning, and every other playbook still loads.
+func TestLoadPlaybooksFrom_IdInTwoTypeDirs(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	body := func(symptom string) string {
+		return `id: dup
+symptom: "` + symptom + `"
+entrypoint: a
+nodes:
+  a:
+    description: "step"
+`
+	}
+	other := `id: other
+symptom: "unaffected neighbour"
+entrypoint: a
+nodes:
+  a:
+    description: "step"
+`
+	for typ, content := range map[string]string{"investigation": body("first slot"), "verification": body("second slot")} {
+		require.NoError(t, os.MkdirAll(filepath.Join(dir, typ), 0o700), "mkdir %s", typ)
+		require.NoError(t, os.WriteFile(filepath.Join(dir, typ, "dup.yaml"), []byte(content), 0o600), "write %s", typ)
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "verification", "other.yaml"), []byte(other), 0o600), "write other")
+
+	books, err := LoadPlaybooksFrom("", "", dir)
+	require.NoError(t, err, "an id spanning two type dirs must not fail the whole load")
+	dup, ok := books["dup"]
+	require.True(t, ok, "dup should load from one of its slots")
+	assert.Equal(t, "investigation", dup.Type, "first type dir in directory order wins")
+	assert.Equal(t, "first slot", dup.Symptom, "the winning copy is the one in the first type dir")
+	_, ok = books["other"]
+	assert.True(t, ok, "neighbouring playbooks must still load")
+}
+
 // TestLoadPlaybooksFrom_IgnoresRepoArtefacts confirms README.md,
 // LICENSE, dot-prefixed dirs (.git, .github) and other repo-management
 // files at the system-dir root are skipped without error. The clone
