@@ -3,6 +3,8 @@ package strategies
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -209,17 +211,13 @@ type getPlaybookRawOut struct {
 	ID     string `json:"id"`
 	YAML   string `json:"yaml"`
 	Source string `json:"source"` // "system" or "user"
+	Type   string `json:"type"`   // the type slot the id lives in; a revision must be filed under the same slot
 }
 
-// getPlaybookRaw returns the raw YAML for one loaded playbook. Used by
-// the agent during a proposal flow to base an update on an existing
-// playbook (read it, modify it, propose under the same or a fresh id).
-//
-// "Raw" is stronger for the system set (we have the original YAML in
-// EmbeddedRawPlaybooks and return it byte-for-byte). User playbooks
-// aren't tracked with their raw bytes; we re-serialise from the parsed
-// in-memory representation, which loses comments and exact formatting
-// but stays semantically identical.
+// getPlaybookRaw returns the raw YAML for one loaded playbook plus the
+// type slot it lives in. Used by the agent during a proposal flow to
+// base an update on an existing playbook (read it, modify it, propose
+// under the same id and type, or under a fresh id).
 func (s *Server) getPlaybookRaw(ctx context.Context, req *mcp.CallToolRequest, in getPlaybookRawIn) (*mcp.CallToolResult, getPlaybookRawOut, error) {
 	if in.ID == "" {
 		return errorResult("id is required"), getPlaybookRawOut{}, nil
@@ -228,20 +226,45 @@ func (s *Server) getPlaybookRaw(ctx context.Context, req *mcp.CallToolRequest, i
 	if !ok {
 		return errorResult(fmt.Sprintf("playbook %q not found; call list_playbooks for valid ids", in.ID)), getPlaybookRawOut{}, nil
 	}
+	out := getPlaybookRawOut{ID: in.ID, Type: pb.Type}
+	// Raw bytes come from the tier the loaded copy was read from, so
+	// comments and formatting survive. Locked metas live under the
+	// launcher-bundled dir; for the rest the active copy wins — a
+	// user-dir file overrides the plugin tier, so a revision has to
+	// start from it or the operator's local edits vanish on approve.
+	if pb.Locked {
+		if data, err := os.ReadFile(filepath.Join(s.systemPlaybooksDir, pb.Type, in.ID+".yaml")); err == nil {
+			out.YAML, out.Source = string(data), "system"
+			return nil, out, nil
+		}
+	} else if pb.Type != "" && s.userPlaybooksDir != "" {
+		// The loader soft-skips a user file that fails to parse or
+		// validate and keeps the plugin copy active, so only a file
+		// that would have loaded counts as the override.
+		if data, err := os.ReadFile(filepath.Join(s.userPlaybooksDir, pb.Type, in.ID+".yaml")); err == nil {
+			if parsed, errs := ParseAndValidatePlaybookYAML(data); len(errs) == 0 && parsed.ID == in.ID {
+				out.YAML, out.Source = string(data), "user"
+				return nil, out, nil
+			}
+		}
+	}
 	systemRaw, err := SystemRawPlaybooks(s.pluginPlaybooksDir)
 	if err != nil {
 		return errorResult(fmt.Sprintf("read system playbooks: %v", err)), getPlaybookRawOut{}, nil
 	}
 	if raw, isSystem := systemRaw[in.ID]; isSystem {
-		return nil, getPlaybookRawOut{ID: in.ID, YAML: raw.YAML, Source: "system"}, nil
+		out.YAML, out.Source = raw.YAML, "system"
+		return nil, out, nil
 	}
-	// User playbook: re-serialise the parsed form. Round-trips cleanly
-	// for our own validator but loses comments/exact whitespace.
+	// No file on disk to hand back (in-memory fixtures): re-serialise
+	// the parsed form. Round-trips cleanly for our own validator but
+	// loses comments/exact whitespace.
 	rendered, err := RenderPlaybookYAML(pb)
 	if err != nil {
 		return errorResult(fmt.Sprintf("render user playbook %q: %v", in.ID, err)), getPlaybookRawOut{}, nil
 	}
-	return nil, getPlaybookRawOut{ID: in.ID, YAML: rendered, Source: "user"}, nil
+	out.YAML, out.Source = rendered, "user"
+	return nil, out, nil
 }
 
 // ── validate_playbook ──────────────────────────────────────────────────────
@@ -275,7 +298,7 @@ func (s *Server) validatePlaybook(ctx context.Context, req *mcp.CallToolRequest,
 
 type proposePlaybookDraftIn struct {
 	YAML string `json:"yaml" jsonschema:"the full playbook YAML to propose. Omit the version field — playbooks no longer carry a version field; git history is the version record."`
-	Type string `json:"type" jsonschema:"the type slot the playbook belongs to (one of the names returned by playbook_types — e.g. 'investigation' or 'general'). Required: the launcher routes the draft into <type>/ under the user playbooks dir, and the type slot is the source of truth for classification (no longer a YAML field)."`
+	Type string `json:"type" jsonschema:"the type slot the playbook belongs to (one of the names returned by playbook_types — e.g. 'investigation' or 'general'). Required: the launcher routes the draft into <type>/ under the user playbooks dir, and the type slot is the source of truth for classification (no longer a YAML field). A revision of an existing id must use the slot get_playbook_raw reports for it."`
 	Why  string `json:"why,omitempty" jsonschema:"one-sentence justification — surfaced in the diff card so the operator can audit later why the agent thought this was worth proposing"`
 }
 
@@ -328,6 +351,13 @@ func (s *Server) proposePlaybookDraft(ctx context.Context, req *mcp.CallToolRequ
 	pb, errs := ParseAndValidatePlaybookYAML([]byte(in.YAML))
 	if len(errs) > 0 {
 		return nil, proposePlaybookDraftOut{ValidationErrors: errs}, nil
+	}
+	// A revision stays in the slot its id already lives in. Filing it
+	// under another type would land a second <type>/<id>.yaml on
+	// approve, and the loader refuses a user dir where one id spans two
+	// type dirs — taking every strategies tool down with it.
+	if existing, ok := s.playbooks[pb.ID]; ok && existing.Type != "" && existing.Type != in.Type {
+		return errorResult(fmt.Sprintf("playbook %q lives in the %q type slot; pass type=%q to revise it (get_playbook_raw reports the slot), or pick a new id to file under %q", pb.ID, existing.Type, existing.Type, in.Type)), proposePlaybookDraftOut{}, nil
 	}
 
 	// Drafts no longer carry a version stamp. The version field has been

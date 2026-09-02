@@ -57,7 +57,7 @@ func ToolSpecs() []toolspec.ToolSpec {
 		{
 			Server:      "triagent-strategies",
 			Name:        "get_playbook_raw",
-			Description: "Return raw YAML for one playbook by id (base for a proposed update).",
+			Description: "Return raw YAML and the type slot for one playbook by id (base for a proposed update; a revision keeps the id and the slot).",
 			Inputs:      toolspec.FromStruct(getPlaybookRawIn{}),
 		},
 		{

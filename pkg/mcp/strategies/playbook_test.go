@@ -171,7 +171,6 @@ nodes:
 	assert.False(t, present, "broken playbook should have been skipped")
 }
 
-
 // TestLoadPlaybooksFrom_IgnoresRepoArtefacts confirms README.md,
 // LICENSE, dot-prefixed dirs (.git, .github) and other repo-management
 // files at the system-dir root are skipped without error. The clone
@@ -785,4 +784,31 @@ nodes:
 	pb, errs := ParseAndValidatePlaybookYAML([]byte(yaml))
 	require.Empty(t, errs)
 	assert.Equal(t, DispatchDefault, pb.Dispatch)
+}
+
+// TestWriteUserPlaybook_RejectsIDInAnotherTypeDir: an id lives in
+// exactly one type dir. Writing it under a second one would leave two
+// files the loader refuses to load, so the write is rejected as a
+// validation error that names the existing slot.
+func TestWriteUserPlaybook_RejectsIDInAnotherTypeDir(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	body := `id: backup
+schema_version: 1
+symptom: "first"
+entrypoint: a
+nodes:
+  a:
+    description: "step"
+`
+	errs, err := WriteUserPlaybook(dir, "verification", "backup", body, true)
+	require.NoError(t, err)
+	require.Empty(t, errs)
+
+	errs, err = WriteUserPlaybook(dir, "investigation", "backup", body, true)
+	require.NoError(t, err)
+	require.Len(t, errs, 1)
+	assert.Contains(t, errs[0], "verification")
+	_, statErr := os.Stat(filepath.Join(dir, "investigation", "backup.yaml"))
+	assert.ErrorIs(t, statErr, os.ErrNotExist, "no second copy is written")
 }

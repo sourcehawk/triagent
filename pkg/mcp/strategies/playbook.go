@@ -879,12 +879,34 @@ func WriteUserPlaybook(dir, typeName, id, body string, activate bool) (validatio
 	if err != nil {
 		return nil, fmt.Errorf("render yaml: %w", err)
 	}
+	if other := userTypeDirHolding(dir, id); other != "" && other != typeName {
+		return []string{fmt.Sprintf("playbook %q already lives in the %q type dir; an id can live in only one type dir", id, other)}, nil
+	}
 	typeDir := filepath.Join(dir, typeName)
 	if err := os.MkdirAll(typeDir, 0o700); err != nil {
 		return nil, fmt.Errorf("create type dir %s: %w", typeDir, err)
 	}
 	target := filepath.Join(typeDir, id+".yaml")
 	return nil, atomicWrite(target, rendered)
+}
+
+// userTypeDirHolding returns the type dir under dir that already holds
+// <id>.yaml, or "" when none does. Keeps an id in a single type slot:
+// loadUserDir refuses a user dir where one id spans two type dirs.
+func userTypeDirHolding(dir, id string) string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
+	}
+	for _, e := range entries {
+		if !e.IsDir() || e.Name() == ProposalsSubdir || !playbookTypePattern.MatchString(e.Name()) {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(dir, e.Name(), id+".yaml")); err == nil {
+			return e.Name()
+		}
+	}
+	return ""
 }
 
 // proposalIDPattern guards what we'll accept as a proposal id, used

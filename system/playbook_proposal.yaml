@@ -219,14 +219,16 @@ nodes:
   read_existing_for_revision:
     description: |
       Fetch the YAML of the existing playbook you'll be revising. Keep
-      the SAME id when you draft your version — the launcher's
-      proposal flow auto-bumps the version field (v1 → v2 → v3 …) on
-      approval and writes <id>.<new_version>.yaml alongside the
-      existing one.
+      the SAME id when you draft your version, and pass the `type`
+      that get_playbook_raw reports as `type` to
+      playbook_proposal_draft — an id lives in exactly one type slot,
+      and a draft filed under a different slot is rejected. On
+      approval the launcher overwrites <type>/<id>.yaml; git history
+      is the version record.
 
-      Don't invent a fresh id like "<original>_v2"; same-id versioning
-      means the operator picks which version is active in one place,
-      and rolling back from v3 → v2 stays one click away.
+      Don't invent a fresh id like "<original>_v2"; same-id revisions
+      keep one active version per id and let the operator roll back
+      through the file's history.
     suggested_calls:
       - tool: triagent-strategies/get_playbook_raw
         args:
