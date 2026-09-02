@@ -221,3 +221,34 @@ nodes:
 	assert.Equal(t, "system", out.Source)
 	assert.Equal(t, body, out.YAML)
 }
+
+// TestGetPlaybookRaw_SkipsInvalidUserOverride: the loader soft-skips a
+// user file that fails to parse or validate and keeps the plugin copy
+// active, so the raw bytes must come from the copy that actually loaded.
+func TestGetPlaybookRaw_SkipsInvalidUserOverride(t *testing.T) {
+	t.Parallel()
+	pluginDir := t.TempDir()
+	userDir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(pluginDir, "verification"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(userDir, "verification"), 0o755))
+	valid := `id: release_checks
+schema_version: 1
+symptom: upstream copy
+entrypoint: a
+nodes:
+  a:
+    description: a
+    terminal_advice: done
+`
+	require.NoError(t, os.WriteFile(filepath.Join(pluginDir, "verification", "release_checks.yaml"), []byte(valid), 0o644))
+	// Entrypoint names a node that does not exist: parses, fails validation.
+	require.NoError(t, os.WriteFile(filepath.Join(userDir, "verification", "release_checks.yaml"), []byte("id: release_checks\nschema_version: 1\nsymptom: broken\nentrypoint: missing\nnodes:\n  a:\n    description: a\n"), 0o644))
+
+	srv, err := New(Options{PluginPlaybooksDir: pluginDir, UserPlaybooksDir: userDir})
+	require.NoError(t, err)
+	res, out, err := srv.getPlaybookRaw(context.Background(), nil, getPlaybookRawIn{ID: "release_checks"})
+	require.NoError(t, err)
+	require.Nil(t, res)
+	assert.Equal(t, "system", out.Source)
+	assert.Equal(t, valid, out.YAML)
+}

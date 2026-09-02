@@ -238,9 +238,14 @@ func (s *Server) getPlaybookRaw(ctx context.Context, req *mcp.CallToolRequest, i
 			return nil, out, nil
 		}
 	} else if pb.Type != "" && s.userPlaybooksDir != "" {
+		// The loader soft-skips a user file that fails to parse or
+		// validate and keeps the plugin copy active, so only a file
+		// that would have loaded counts as the override.
 		if data, err := os.ReadFile(filepath.Join(s.userPlaybooksDir, pb.Type, in.ID+".yaml")); err == nil {
-			out.YAML, out.Source = string(data), "user"
-			return nil, out, nil
+			if parsed, errs := ParseAndValidatePlaybookYAML(data); len(errs) == 0 && parsed.ID == in.ID {
+				out.YAML, out.Source = string(data), "user"
+				return nil, out, nil
+			}
 		}
 	}
 	systemRaw, err := SystemRawPlaybooks(s.pluginPlaybooksDir)
