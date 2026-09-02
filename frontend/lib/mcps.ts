@@ -2,7 +2,7 @@
 // already on the Investigation DTO (promEnabled / docsPrefix / linkedRepos);
 // this module just turns it into a renderable list and sorts the entries.
 
-import type { Investigation, MCPCallStats, MCPProbeResult, ToolEntry } from "./api";
+import type { Investigation, LinkedRepo, MCPCallStats, MCPProbeResult, ToolEntry } from "./api";
 
 export type MCPCategory = "core" | "metrics" | "docs" | "git" | "wiki" | "slack" | "incidentio" | "cloud";
 
@@ -135,6 +135,30 @@ export function chipClasses(c: MCPCategory): string {
 export function logicalServer(wireAlias: string): string {
   if (wireAlias.startsWith("triagent-git-")) return "triagent-git";
   return wireAlias;
+}
+
+// expandRepoAliases turns the launcher's logical git tool set into the
+// per-repo entries a playbook actually addresses. The catalog lists each
+// git tool once under "triagent-git", but every linked repo runs its own
+// server named triagent-git-<alias>, and that aliased form is what
+// suggested_calls carry. The logical entry stays so system playbooks
+// written against the template form still resolve; one copy per alias
+// follows in repo order, deduped when two repos resolve to one alias.
+export function expandRepoAliases(tools: ToolEntry[], repos: LinkedRepo[]): ToolEntry[] {
+  const aliases: string[] = [];
+  for (const r of repos) {
+    const alias = r.alias || r.name;
+    if (!aliases.includes(alias)) aliases.push(alias);
+  }
+  if (aliases.length === 0) return tools;
+  const gitTools = tools.filter((t) => t.server === "triagent-git");
+  const out = [...tools];
+  for (const alias of aliases) {
+    for (const t of gitTools) {
+      out.push({ ...t, server: `triagent-git-${alias}` });
+    }
+  }
+  return out;
 }
 
 // groupTools buckets the flat tool list by server alias. Returns a Map

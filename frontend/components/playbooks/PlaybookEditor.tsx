@@ -9,7 +9,8 @@ import {
   useState,
 } from "react";
 import { useSearchParams } from "next/navigation";
-import { api, ApiError, type Capabilities, type SyncState, type ToolEntry } from "@/lib/api";
+import { api, ApiError, type Capabilities, type LinkedRepo, type SyncState, type ToolEntry } from "@/lib/api";
+import { expandRepoAliases } from "@/lib/mcps";
 import { useDialog } from "@/lib/dialog";
 import { EditorChatDrawer } from "@/components/playbooks/EditorChatDrawer";
 import { ProposalCard, type ProposalDraftPayload } from "@/components/playbooks/ProposalCard";
@@ -83,6 +84,11 @@ export function PlaybookEditor({ id, onBack, onMutated, onOpenPlaybook }: Props)
   // "latest" instead of the freshly-created commit.
   const [refetchKey, setRefetchKey] = useState(0);
   const [tools, setTools] = useState<ToolEntry[]>([]);
+  const [linkedRepos, setLinkedRepos] = useState<LinkedRepo[]>([]);
+  // The picker resolves suggested_calls against per-repo server names
+  // (triagent-git-<alias>), so the logical catalog is expanded with
+  // one entry per linked repo before it reaches the node editor.
+  const catalog = useMemo(() => expandRepoAliases(tools, linkedRepos), [tools, linkedRepos]);
   const [capabilities, setCapabilities] = useState<Capabilities | null>(null);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   // Right-aside view: "node" is the per-node editor; "tags" surfaces
@@ -555,6 +561,10 @@ export function PlaybookEditor({ id, onBack, onMutated, onOpenPlaybook }: Props)
   // on capabilities.gh.authenticated && capabilities.repoPath.valid.
   useEffect(() => {
     api.listTools().then(setTools).catch(() => setTools([]));
+    api
+      .listRepos()
+      .then((r) => setLinkedRepos([...r.defaults, ...r.user]))
+      .catch(() => setLinkedRepos([]));
     api
       .listPlaybookTypes()
       .then((types) =>
@@ -1390,7 +1400,7 @@ export function PlaybookEditor({ id, onBack, onMutated, onOpenPlaybook }: Props)
                 node={node}
                 allNodeIds={allNodeIds}
                 allPlaybookIds={allPlaybookIds.filter((p) => p !== draft.id)}
-                catalog={tools}
+                catalog={catalog}
                 readOnly={readOnly}
                 onChange={(next) => {
                   if (!selectedNode) return;
