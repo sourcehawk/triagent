@@ -180,6 +180,9 @@ func upstreamEnv(parent []string, overrides map[string]string) []string {
 		env = append(env, kv)
 	}
 	for k, v := range overrides {
+		if k == EnvUpstreams {
+			continue
+		}
 		env = append(env, k+"="+v)
 	}
 	return env

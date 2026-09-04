@@ -105,6 +105,7 @@ func TestBuildUpstreamCommand_InheritsBrokerEnvWithSpecOverride(t *testing.T) {
 
 	spec := UpstreamSpec{Command: "/bin/echo", Env: map[string]string{
 		"TRIAGENT_MCP_TELEMETRY_TOOL_PREFIX": "mcp__triagent-git-alerts__",
+		EnvUpstreams:                         "{\"from-spec\":{}}",
 	}}
 	cmd := buildUpstreamCommand(spec)
 
@@ -112,7 +113,7 @@ func TestBuildUpstreamCommand_InheritsBrokerEnvWithSpecOverride(t *testing.T) {
 	assert.Contains(t, cmd.Env, "TRIAGENT_MCP_TELEMETRY_TOOL_PREFIX=mcp__triagent-git-alerts__")
 	assert.NotContains(t, cmd.Env, "TRIAGENT_MCP_TELEMETRY_TOOL_PREFIX=mcp__triagent-parallel__")
 	for _, kv := range cmd.Env {
-		assert.False(t, strings.HasPrefix(kv, "TRIAGENT_MCP_PARALLEL_UPSTREAMS="), "upstream registry blob must not leak into upstreams: %s", kv)
+		assert.False(t, strings.HasPrefix(kv, EnvUpstreams+"="), "upstream registry blob must not leak into upstreams from the broker env or the spec: %s", kv)
 	}
 }
 
