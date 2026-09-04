@@ -3,9 +3,11 @@ package parallel
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -89,4 +91,34 @@ func TestBuildUpstreamCommand_PopulatesArgsAndEnv(t *testing.T) {
 	require.Equal(t, "/bin/echo", cmd.Path)
 	require.Equal(t, []string{"/bin/echo", "a", "b"}, cmd.Args)
 	require.Contains(t, cmd.Env, "K=V")
+}
+
+// Upstreams shell out (the git MCP runs `git fetch`), so they need the
+// broker's PATH, HOME and friends exactly as they would when Claude Code
+// launches them directly. The spec's env block layers on top and wins on
+// conflict, so an upstream keeps its own telemetry tool prefix rather than
+// inheriting the broker's.
+func TestBuildUpstreamCommand_InheritsBrokerEnvWithSpecOverride(t *testing.T) {
+	t.Setenv("PATH", "/parallel-test-bin")
+	t.Setenv("TRIAGENT_MCP_TELEMETRY_TOOL_PREFIX", "mcp__triagent-parallel__")
+	t.Setenv("TRIAGENT_MCP_PARALLEL_UPSTREAMS", "{}")
+
+	spec := UpstreamSpec{Command: "/bin/echo", Env: map[string]string{
+		"TRIAGENT_MCP_TELEMETRY_TOOL_PREFIX": "mcp__triagent-git-alerts__",
+		EnvUpstreams:                         "{\"from-spec\":{}}",
+	}}
+	cmd := buildUpstreamCommand(spec)
+
+	assert.Contains(t, cmd.Env, "PATH=/parallel-test-bin")
+	assert.Contains(t, cmd.Env, "TRIAGENT_MCP_TELEMETRY_TOOL_PREFIX=mcp__triagent-git-alerts__")
+	assert.NotContains(t, cmd.Env, "TRIAGENT_MCP_TELEMETRY_TOOL_PREFIX=mcp__triagent-parallel__")
+	for _, kv := range cmd.Env {
+		assert.False(t, strings.HasPrefix(kv, EnvUpstreams+"="), "upstream registry blob must not leak into upstreams from the broker env or the spec: %s", kv)
+	}
+}
+
+func TestBuildUpstreamCommand_EmptySpecEnvStillInheritsBrokerEnv(t *testing.T) {
+	t.Setenv("PATH", "/parallel-test-bin")
+	cmd := buildUpstreamCommand(UpstreamSpec{Command: "/bin/echo"})
+	assert.Contains(t, cmd.Env, "PATH=/parallel-test-bin")
 }
