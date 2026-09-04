@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
+	"strings"
 	"sync"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -150,18 +152,35 @@ func prodSpawner(spec UpstreamSpec) (*sdkmcp.ClientSession, func() error, error)
 	return sess, closeFn, nil
 }
 
-// buildUpstreamCommand assembles the *exec.Cmd for a given upstream. We
-// populate cmd.Env explicitly from the spec so the broker process's own
-// env doesn't leak into upstreams (each upstream's env block in mcp.json
-// is the full intended environment for that subprocess).
+// buildUpstreamCommand assembles the *exec.Cmd for a given upstream. The
+// subprocess gets the broker's own environment with the spec's env block
+// layered on top, which is the same shape Claude Code gives an MCP it
+// launches directly: PATH, HOME and the rest come from the parent so an
+// upstream that shells out (git fetch, kubectl) can find its binaries, and
+// the spec wins on conflict so each upstream keeps its own telemetry tool
+// prefix instead of the broker's. The broker's upstream registry blob is
+// dropped: it is large, carries every upstream's secrets, and means nothing
+// to a child.
 func buildUpstreamCommand(spec UpstreamSpec) *exec.Cmd {
 	cmd := exec.Command(spec.Command, spec.Args...)
-	if len(spec.Env) > 0 {
-		env := make([]string, 0, len(spec.Env))
-		for k, v := range spec.Env {
-			env = append(env, k+"="+v)
-		}
-		cmd.Env = env
-	}
+	cmd.Env = upstreamEnv(os.Environ(), spec.Env)
 	return cmd
+}
+
+func upstreamEnv(parent []string, overrides map[string]string) []string {
+	env := make([]string, 0, len(parent)+len(overrides))
+	for _, kv := range parent {
+		key, _, _ := strings.Cut(kv, "=")
+		if key == EnvUpstreams {
+			continue
+		}
+		if _, overridden := overrides[key]; overridden {
+			continue
+		}
+		env = append(env, kv)
+	}
+	for k, v := range overrides {
+		env = append(env, k+"="+v)
+	}
+	return env
 }
